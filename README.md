@@ -14,7 +14,11 @@ Implementation is in progress. No completed scan, repair, or provider integratio
 
 ## Qodo Code Review Evidence
 
-Pending. No substantive implementation PR has been merged. This section will link actual reviewed PRs, findings, decisions, and the final reviewed commits.
+[Implementation PR #1](https://github.com/VasuBansal7576/PaywallProof/pull/1) has received Qodo review. No substantive implementation PR has been merged yet.
+
+The [review of f808526](https://github.com/VasuBansal7576/PaywallProof/pull/1#issuecomment-5441252429) found runtime startup recovery failures, existing-secret permission gaps, optional invoice handling, a missing UI stopping state, and a specification inconsistency about the sandbox provider. Follow-up changes address those findings and require another review before merge. Earlier missing-entrypoint findings were resolved by adding the actual commands, not by removing them.
+
+Current executed checks and remaining acceptance gaps are recorded in [verification status](docs/verification-status.md). Unit test counts and installation probes do not establish a completed product run.
 
 ## Development disclosure
 

@@ -1,26 +1,61 @@
 import {afterEach,describe,expect,it,vi} from 'vitest';
-import {mkdtempSync,rmSync} from 'node:fs';
+import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
+import {createHash,randomUUID} from 'node:crypto';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Controller} from './controller.ts';
+import {createControlApp} from './http.ts';
 import {hashValue} from '../../../packages/core/src/index.ts';
 
 // Implementation-aware failure-injection tests. No provider or runtime evidence.
 const opened:{controller:Controller;directory:string}[]=[];
 const feature={id:'pro_export',method:'GET',path:'/api/export',denialStatuses:[403],browserPath:'/dashboard',actionTestId:'export-button',resultTestId:'export-result'} as const;
-function setup() {
+function setup(http=false) {
   const directory=mkdtempSync(join(tmpdir(),'pp-startup-'));
-  const controller=new Controller({databasePath:join(directory,'control.sqlite'),artifactDirectory:join(directory,'artifacts'),targetOrigin:'http://127.0.0.1:39981',workerOrigin:'http://127.0.0.1:39982',webOrigin:'http://127.0.0.1:39983',adapterToken:'synthetic-adapter',operatorToken:'synthetic-operator',replaySecret:'synthetic-replay',repository:'synthetic/repository',defaultRef:'a'.repeat(40),priceId:'price_synthetic',runtimeUrl:'http://127.0.0.1:39984',model:'synthetic'});
+  const config={databasePath:join(directory,'control.sqlite'),artifactDirectory:join(directory,'artifacts'),targetOrigin:'http://127.0.0.1:39981',workerOrigin:'http://127.0.0.1:39982',webOrigin:'http://127.0.0.1:39983',adapterToken:'synthetic-adapter',operatorToken:'synthetic-operator',replaySecret:'synthetic-replay',repository:'synthetic/repository',defaultRef:'a'.repeat(40),priceId:'price_synthetic',runtimeUrl:'http://127.0.0.1:39984',model:'synthetic'};
+  const service=http?createControlApp(config):null;
+  const controller=service?.controller??new Controller(config);
   opened.push({controller,directory});
   vi.spyOn(controller.target,'describe').mockResolvedValue({adapterVersion:'1',environment:'test',buildId:'a'.repeat(40),billingTimeModel:'provider_status',feature:{...feature,denialStatuses:[403]}});
   vi.spyOn(controller.runtime,'checkConnection').mockResolvedValue({model:'synthetic',local:true});
   const cancel=vi.spyOn(controller.runtime,'cancel').mockResolvedValue({});
   const project=controller.createProject({name:'Startup failure checks',repository:'synthetic/repository',ref:'a'.repeat(40),targetId:'reference',ownershipConfirmed:true,modelConsent:true});
   async function start(){const policy=await controller.proposePolicy(project.id,{schemaVersion:1,priceId:'price_synthetic',featureId:'pro_export',featureConfigHash:hashValue(feature),cancellation:'allow_until_period_end',requireInitialInvoicePaid:true,syncWindowSeconds:5,predicateVersion:'reference-export-v1'});return controller.createRun({projectId:project.id,policyHash:policy.hash,mode:'local_replay'});}
-  return {controller,start,cancel};
+  return {controller,start,cancel,app:service?.app,directory};
 }
 afterEach(()=>{vi.restoreAllMocks();for(const {controller,directory} of opened.splice(0)){controller.close();rmSync(directory,{recursive:true,force:true});}});
 describe('runtime startup failure recovery',()=>{
+  it('serves only authenticated, run-scoped and hash-verified screenshot bytes',async()=>{
+    const {controller,start,app,directory}=setup(true);
+    if(!app)throw new Error('HTTP fixture missing');
+    vi.spyOn(controller.runtime,'registerMcpServer').mockImplementation(()=>new Promise(()=>{}));
+    const run=await start(),id=`${randomUUID()}.png`;
+    // A synthetic PNG-signature fixture tests transport integrity, not browser evidence.
+    const bytes=Buffer.from([137,80,78,71,13,10,26,10,1,2,3]);
+    const metadata={id,runId:run.id,observationId:'synthetic-observation',sha256:createHash('sha256').update(bytes).digest('hex'),contentType:'image/png',source:'browser',collectedAt:new Date().toISOString()};
+    const path=join(directory,'artifacts',id);
+    writeFileSync(path,bytes);
+    controller.put('artifact',id,metadata);
+    const url=`http://127.0.0.1:39982/api/runs/${run.id}/artifacts/${id}`;
+    const request=()=>app.request(url,{headers:{Authorization:'Bearer synthetic-operator'}});
+    expect((await app.request(url)).status).toBe(401);
+    const response=await request();
+    expect(response.status).toBe(200);
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(bytes);
+    expect(response.headers.get('content-type')).toBe('image/png');
+    expect(response.headers.get('content-length')).toBe(String(bytes.length));
+    expect(response.headers.get('content-disposition')).toBe(`attachment; filename="${id}"`);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(controller.viewRun(run.id).artifacts).toEqual([metadata]);
+    controller.put('artifact',id,{...metadata,runId:'another-run'});
+    expect((await request()).status).toBe(403);
+    controller.put('artifact',id,metadata);
+    writeFileSync(path,Buffer.from([...bytes,4]));
+    const corrupted=await request();
+    expect(corrupted.status).toBe(422);
+    expect(await corrupted.json()).toMatchObject({error:{code:'ARTIFACT_CORRUPT'}});
+  });
   it('scopes model operation labels to their authorized run',async()=>{
     const {controller,start}=setup();
     vi.spyOn(controller.runtime,'registerMcpServer').mockImplementation(()=>new Promise(()=>{}));

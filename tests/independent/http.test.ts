@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createControlApp } from '../../apps/worker/src/http.ts';
@@ -357,5 +357,65 @@ describe('independent control HTTP: durable action idempotency', () => {
       expect(await json(await request(application, '/api/projects', 'GET', undefined, bearer()))).toEqual([project]);
       expect(await json(await request(application, '/api/runs', 'GET', undefined, bearer()))).toEqual([]);
     }
+  });
+});
+
+describe('independent control HTTP: authenticated screenshot route without seeded runs', () => {
+  const screenshotId = '01234567-89ab-4def-8abc-0123456789ab.png';
+  const screenshotPath = `/api/runs/missing-run/artifacts/${screenshotId}`;
+
+  it.each([screenshotId, 'not-an-artifact.png'])('requires authentication before artifact or run lookup for %s', async (id) => {
+    const application = open();
+    await expectError(await request(application, `/api/runs/missing-run/artifacts/${id}`), 401, 'UNAUTHORIZED');
+  });
+
+  it('rejects an incorrect bearer token without returning screenshot bytes', async () => {
+    const application = open();
+    const response = await request(application, screenshotPath, 'GET', undefined, { authorization: 'Bearer WRONG_SYNTHETIC_ARTIFACT_TOKEN' });
+    expect(response.headers.get('content-type') ?? '').not.toMatch(/^image\/png(?:;|$)/i);
+    await expectError(response, 401, 'UNAUTHORIZED');
+  });
+
+  it('rejects an invalid session cookie', async () => {
+    const application = open();
+    const current = await login(application);
+    const separator = current.cookie.indexOf('=');
+    const forgedCookie = `${current.cookie.slice(0, separator + 1)}SYNTHETIC_INVALID_SESSION`;
+    await expectError(await request(application, screenshotPath, 'GET', undefined, { cookie: forgedCookie, origin: webOrigin }), 401, 'UNAUTHORIZED');
+  });
+
+  it('accepts session authentication for a read without requiring mutation tokens, then rejects the unknown run', async () => {
+    const application = open();
+    const current = await login(application);
+    const response = await request(application, screenshotPath, 'GET', undefined, { cookie: current.cookie, origin: webOrigin });
+    await expectError(response, 404);
+  });
+
+  it('requires an existing run before any artifact file can be returned', async () => {
+    mkdirSync(artifactDirectory, { recursive: true });
+    const syntheticPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZfkAAAAASUVORK5CYII=', 'base64');
+    writeFileSync(join(artifactDirectory, screenshotId), syntheticPng);
+    const application = open();
+    const response = await request(application, screenshotPath, 'GET', undefined, bearer());
+    expect(response.headers.get('content-type') ?? '').not.toMatch(/^image\/png(?:;|$)/i);
+    expect(response.headers.get('content-disposition') ?? '').not.toContain(screenshotId);
+    const body = await response.clone().text();
+    expect(body).not.toContain(artifactDirectory);
+    expect(body).not.toContain(syntheticPng.toString('base64'));
+    await expectError(response, 404);
+  });
+
+  it('applies the configured Origin restriction to screenshot reads', async () => {
+    const application = open();
+    await expectError(await request(application, screenshotPath, 'GET', undefined, {
+      ...bearer(), origin: 'https://unapproved.example.invalid',
+    }), 403, 'ORIGIN_REJECTED');
+  });
+
+  it('applies the configured Host restriction to screenshot reads', async () => {
+    const application = open();
+    await expectError(await request(application, screenshotPath, 'GET', undefined, {
+      ...bearer(), host: 'unapproved.example.invalid',
+    }), 403, 'HOST_REJECTED');
   });
 });

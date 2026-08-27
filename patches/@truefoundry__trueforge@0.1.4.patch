@@ -1,8 +1,8 @@
 diff --git a/dist/main.js b/dist/main.js
-index ef38f43d24c3d95115a63f3f8a807b858cc02e08..f89da5bc26b3b61ded0ffeb77774783118a6ecb8 100644
+index ef38f43d24c3d95115a63f3f8a807b858cc02e08..afccd84ed05ca22ddb409fb7c3a9966556bb0ef0 100644
 --- a/dist/main.js
 +++ b/dist/main.js
-@@ -993,7 +993,19 @@ function denySharedDefaultWritePaths() {
+@@ -993,7 +993,29 @@ function denySharedDefaultWritePaths() {
    return getDefaultWritePaths().filter((path7) => !path7.startsWith("/dev/"));
  }
  function platformAllowRead(platform) {
@@ -20,10 +20,20 @@ index ef38f43d24c3d95115a63f3f8a807b858cc02e08..f89da5bc26b3b61ded0ffeb777747831
 +    throw new Error("Refusing a broad Python runtime read allowance");
 +  }
 +  return executable;
++}
++function paywallproofExecTimeoutSeconds() {
++  const value = process.env["PAYWALLPROOF_LOCAL_EXEC_TIMEOUT_SECONDS"];
++  if (value === void 0 || value === "") return 60;
++  if (!/^[0-9]+$/.test(value)) throw new Error("Invalid local execution timeout");
++  const seconds = Number(value);
++  if (!Number.isSafeInteger(seconds) || seconds < 60 || seconds > 450) {
++    throw new Error("Local execution timeout must be between 60 and 450 seconds");
++  }
++  return seconds;
  }
  function filesystemPolicy(params) {
    return {
-@@ -1573,7 +1585,7 @@ var init_LocalSandboxProvider = __esm({
+@@ -1573,7 +1595,7 @@ var init_LocalSandboxProvider = __esm({
            }
            let python;
            for (const name of PYTHON_CANDIDATES) {
@@ -32,3 +42,11 @@ index ef38f43d24c3d95115a63f3f8a807b858cc02e08..f89da5bc26b3b61ded0ffeb777747831
              if (resolved === void 0) {
                pythonAttempts.push({ kind: "python", name, resolved: void 0 });
                continue;
+@@ -6734,6 +6756,7 @@ async function resolveSandboxProvider({
+     return void 0;
+   }
+   return new LocalSandboxProvider({
++    defaultExecTimeoutSeconds: paywallproofExecTimeoutSeconds(),
+     sandboxRootPathParent: join4(config_default.LOCAL_SANDBOX_ROOT_PARENT, localSandboxSessionSegment(sessionId)),
+     codeModeSocketParentPath: config_default.CODE_MODE_SOCKET_PARENT,
+     support,

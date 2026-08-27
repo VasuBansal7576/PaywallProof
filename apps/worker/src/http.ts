@@ -9,6 +9,7 @@ import { Controller, equalSecret, coverageLimits, TOOL_NAMES, type ControllerCon
 import { ControlError, RUN_LIMITS } from '../../../packages/control/src/index.ts';
 import { hashValue, identifier } from '../../../packages/core/src/index.ts';
 import { redact } from '../../../packages/evidence/src/index.ts';
+import { ArtifactError } from './artifacts.ts';
 
 type Variables={csrfToken:string};
 export function createControlApp(config:ControllerConfig) {
@@ -29,6 +30,7 @@ export function createControlApp(config:ControllerConfig) {
     await next();
   });
   app.onError((error,c)=>{
+    if(error instanceof ArtifactError)return c.json({error:{code:error.code,message:error.message}},error.status);
     const code=error instanceof ControlError?error.code:error instanceof z.ZodError||error instanceof SyntaxError?'INVALID_INPUT':'REQUEST_FAILED';
     const status=code==='NOT_FOUND'?404:code==='INVALID_INPUT'?400:code==='TARGET_SCOPE_REJECTED'?403:code==='PREFLIGHT_BLOCKED'?422:code.includes('APPROVAL')||code.includes('CONFLICT')||code.includes('IN_FLIGHT')?409:422;
     return c.json({error:{code,message:code==='REQUEST_FAILED'?'The request failed. No success was recorded.':code.replaceAll('_',' ')}},status);
@@ -96,6 +98,10 @@ export function createControlApp(config:ControllerConfig) {
     return c.json({runs:results,message:'Only recorded run-owned fixtures are eligible for cleanup. Reports and unrelated users are preserved.'});
   });
   app.get('/api/runs/:id',c=>c.json(controller.viewRun(c.req.param('id'))));
+  app.get('/api/runs/:id/artifacts/:artifactId',async c=>{
+    const artifact=await controller.artifact(c.req.param('id'),c.req.param('artifactId'));
+    return new Response(artifact.bytes,{headers:{'Content-Type':artifact.metadata.contentType,'Content-Disposition':`attachment; filename="${artifact.metadata.id}"`,'Content-Length':String(artifact.bytes.byteLength),'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+  });
   app.get('/api/runs/:id/events',c=>{const after=z.coerce.number().int().nonnegative().parse(c.req.query('after')??'0');const events=controller.runs.events({runId:c.req.param('id'),after});return c.json({events,cursor:events.at(-1)?.sequence??after});});
   app.post('/api/runs/:id/approvals/:approvalId',async c=>c.json(await controller.decidePlan(c.req.param('id'),c.req.param('approvalId'),await c.req.json())));
   app.post('/api/runs/:id/cancel',async c=>{z.strictObject({}).parse(await c.req.json());return c.json(await controller.cancel(c.req.param('id')));});

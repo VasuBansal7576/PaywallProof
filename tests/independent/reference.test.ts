@@ -361,6 +361,110 @@ describe('independent reference: signed synthetic lifecycle', () => {
     await expectExport(target, (await session(target, user)).cookie, 403);
   });
 
+  it.each(['omitted', 'null'])('retains same-subscription payment across update and deletion with %s invoice', async (absence) => {
+    const target = open();
+    const user = await createUser(target);
+    await link(target, user);
+    const current = await session(target, user);
+    await replayAccepted(target, event());
+    const latest_invoice = absence === 'omitted' ? undefined : null;
+    await replayAccepted(target, event({ id: 'evt_update_without_invoice', type: 'customer.subscription.updated', created: 1_800_000_100 }, {
+      latest_invoice, cancel_at_period_end: true,
+    }));
+    expect(await json(await request(target, `/staging/users/${user.principalId}/billing?runId=${runId}`)))
+      .toMatchObject({ subscriptionId: 'sub_local_owned', status: 'active', cancelAtPeriodEnd: true, initialInvoicePaid: true });
+    await expectExport(target, current.cookie, 200);
+    await replayAccepted(target, event({ id: 'evt_delete_without_invoice', type: 'customer.subscription.deleted', created: 1_800_000_200 }, {
+      latest_invoice, status: 'canceled', cancel_at_period_end: true,
+    }));
+    expect(await json(await request(target, `/staging/users/${user.principalId}/billing?runId=${runId}`)))
+      .toMatchObject({ subscriptionId: 'sub_local_owned', status: 'canceled', initialInvoicePaid: true });
+    await expectExport(target, current.cookie, 403);
+  });
+
+  it.each(['omitted', 'null'])('accepts a new subscription with %s invoice without inventing initial payment', async (absence) => {
+    const target = open();
+    const user = await createUser(target);
+    await link(target, user);
+    await replayAccepted(target, event({}, { latest_invoice: absence === 'omitted' ? undefined : null }));
+    expect(await json(await request(target, `/staging/users/${user.principalId}/billing?runId=${runId}`)))
+      .toMatchObject({ subscriptionId: 'sub_local_owned', status: 'active', initialInvoicePaid: false });
+    await expectExport(target, (await session(target, user)).cookie, 403);
+  });
+
+  it.each(['omitted', 'null'])('rejects replacing the bound subscription even with %s invoice', async (absence) => {
+    const target = open();
+    const user = await createUser(target);
+    await link(target, user);
+    const current = await session(target, user);
+    await replayAccepted(target, event());
+    await expectExport(target, current.cookie, 200);
+    const original = await json(await request(target, `/staging/users/${user.principalId}/billing?runId=${runId}`));
+    await expectSafeError(await replay(target, event({ id: 'evt_replacement_unpaid', created: 1_800_000_100 }, {
+      id: 'sub_local_replacement', latest_invoice: absence === 'omitted' ? undefined : null,
+    })));
+    expect(await json(await request(target, `/staging/users/${user.principalId}/billing?runId=${runId}`)))
+      .toEqual(original);
+    await expectExport(target, current.cookie, 200);
+    await expectSafeError(await replay(target, event({ id: 'evt_replacement_paid', type: 'customer.subscription.updated', created: 1_800_000_200 }, {
+      id: 'sub_local_replacement',
+      latest_invoice: { id: 'in_replacement_creation', livemode: false, status: 'paid', billing_reason: 'subscription_create', customer: customerId,
+        parent: { subscription_details: { subscription: 'sub_local_replacement' } } },
+    })));
+    expect(await json(await request(target, `/staging/users/${user.principalId}/billing?runId=${runId}`)))
+      .toEqual(original);
+    await expectExport(target, current.cookie, 200);
+  });
+
+  it('does not treat a differing invoice ID alone as foreign ownership', async () => {
+    const target = open();
+    const user = await createUser(target);
+    await link(target, user);
+    await replayAccepted(target, event({}, {
+      latest_invoice: { id: 'in_another_synthetic_id', livemode: false, status: 'paid', billing_reason: 'subscription_create', customer: customerId,
+        parent: { subscription_details: { subscription: 'sub_local_owned' } } },
+    }));
+    await expectExport(target, (await session(target, user)).cookie, 200);
+  });
+
+  it.each([
+    'in_unexpanded_synthetic_invoice', {}, { livemode: false }, { status: 'paid' },
+    { livemode: false, status: 123 }, { livemode: true, status: 'paid', billing_reason: 'subscription_create' },
+  ])('does not ignore a malformed supplied invoice after initial payment was established', async (latest_invoice) => {
+    const target = open();
+    const user = await createUser(target);
+    await link(target, user);
+    const current = await session(target, user);
+    await replayAccepted(target, event());
+    await expectExport(target, current.cookie, 200);
+    await expectSafeError(await replay(target, event({
+      id: 'evt_later_malformed_invoice', type: 'customer.subscription.updated', created: 1_800_000_100,
+    }, { latest_invoice })), 400);
+    expect(await json(await request(target, `/staging/users/${user.principalId}/billing?runId=${runId}`)))
+      .toMatchObject({ subscriptionId: 'sub_local_owned', status: 'active', initialInvoicePaid: true });
+    await expectExport(target, current.cookie, 200);
+  });
+
+  it.each([
+    { customer: 'cus_foreign' },
+    { parent: { subscription_details: { subscription: 'sub_foreign' } } },
+    { subscription: 'sub_foreign' },
+  ])('does not ignore foreign invoice identity after initial payment was established', async (foreignIdentity) => {
+    const target = open();
+    const user = await createUser(target);
+    await link(target, user);
+    const current = await session(target, user);
+    await replayAccepted(target, event());
+    await expectSafeError(await replay(target, event({
+      id: 'evt_later_foreign_invoice', type: 'customer.subscription.updated', created: 1_800_000_100,
+    }, { latest_invoice: {
+      id: 'in_synthetic_foreign_identity', livemode: false, status: 'paid', billing_reason: 'subscription_create', ...foreignIdentity,
+    } })));
+    expect(await json(await request(target, `/staging/users/${user.principalId}/billing?runId=${runId}`)))
+      .toMatchObject({ subscriptionId: 'sub_local_owned', status: 'active', initialInvoicePaid: true });
+    await expectExport(target, current.cookie, 200);
+  });
+
   it('stores exact event duplicates across reopen and rejects reuse for different raw bytes', async () => {
     const target = open();
     const user = await createUser(target);
