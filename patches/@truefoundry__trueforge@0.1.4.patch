@@ -1,0 +1,34 @@
+diff --git a/dist/main.js b/dist/main.js
+index ef38f43d24c3d95115a63f3f8a807b858cc02e08..f89da5bc26b3b61ded0ffeb77774783118a6ecb8 100644
+--- a/dist/main.js
++++ b/dist/main.js
+@@ -993,7 +993,19 @@ function denySharedDefaultWritePaths() {
+   return getDefaultWritePaths().filter((path7) => !path7.startsWith("/dev/"));
+ }
+ function platformAllowRead(platform) {
+-  return [...ALLOW_READ_BY_PLATFORM[platform]];
++  const python = paywallproofPythonOverride();
++  return [...ALLOW_READ_BY_PLATFORM[platform], ...python === void 0 ? [] : [dirname2(dirname2(python))]];
++}
++function paywallproofPythonOverride() {
++  const override = process.env["PAYWALLPROOF_LOCAL_PYTHON"];
++  if (override === void 0 || override === "") return void 0;
++  if (!isAbsolute2(override)) throw new Error("PAYWALLPROOF_LOCAL_PYTHON must be an absolute interpreter path");
++  const executable = realpathSync2(override);
++  const runtimeRoot = dirname2(dirname2(executable));
++  if (runtimeRoot === "/" || runtimeRoot === process.env["HOME"] || dirname2(runtimeRoot) === "/") {
++    throw new Error("Refusing a broad Python runtime read allowance");
++  }
++  return executable;
+ }
+ function filesystemPolicy(params) {
+   return {
+@@ -1573,7 +1585,7 @@ var init_LocalSandboxProvider = __esm({
+           }
+           let python;
+           for (const name of PYTHON_CANDIDATES) {
+-            const resolved = await resolveCommandOnHost({ platform, name });
++            const resolved = paywallproofPythonOverride() ?? await resolveCommandOnHost({ platform, name });
+             if (resolved === void 0) {
+               pythonAttempts.push({ kind: "python", name, resolved: void 0 });
+               continue;

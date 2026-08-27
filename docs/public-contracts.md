@@ -40,6 +40,8 @@ An allowed response must be HTTP 200 with an object body whose `fixtureMarker` p
 
 These are low-level pure primitives. A primitive pass is not an authoritative scenario result. The later evidence boundary must enforce observation IDs, provenance, ownership, freshness, target identity, immutable feature configuration, synchronization deadlines, and repeated confirmation before recording assertions. The model never supplies replacement evidence to that boundary.
 
+Transport-failure addition: when `transportError` is true, `status` may be null to represent the absence of any HTTP response. Do not manufacture an HTTP status for a blocked connection. A null status remains invalid when `transportError` is false. All transport failures remain inconclusive.
+
 ## Further boundaries
 
 HTTP, MCP, persistence, approval, and browser contracts will be added before their independent test slices. Existing routes and required behaviors are specified in PRD sections 8 through 14. No seam-specific tests may depend on internal collaborators. There is no implementation source in this contract package.

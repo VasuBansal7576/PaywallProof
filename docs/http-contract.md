@@ -1,0 +1,21 @@
+# Product UI API contract
+
+All paths are same-origin `/api`. Next proxies to the private worker. JSON requests. Mutation requests after login must include `X-CSRF-Token` from `/api/session` and `X-Request-Id` generated once per user action, reused only to retry the identical action. Cookies are HttpOnly. No secrets enter chat, report, model prompts, or source.
+
+Errors are JSON `{error:{code,message}}`; non-2xx must be displayed, never converted to a successful state.
+
+- POST /api/login `{token}` => `{csrfToken}` plus session cookie. The operator token is in ignored `.local/operator-token`, configured by local launcher. No seeded account or password. GET /api/session => `{csrfToken}` or 401.
+- GET /api/config => `{target:{id:'reference',origin}, repository, defaultRef, stripeConfigured:boolean, priceId:string, model:string, limits, coverageLimits:string[]}`. Missing Stripe credentials is explicit, not a validation pass.
+- GET /api/projects => project array.
+- POST /api/projects `{name,repository,ref,targetId:'reference',ownershipConfirmed:true,modelConsent:true}` => project `{id,name,repository,ref,targetId,ownershipConfirmed,modelConsent}`. Repository/target must match server configuration.
+- POST /api/projects/:id/preflight `{mode:'stripe_sandbox'|'local_replay'}` => `{ready:boolean,checks:[{name,status:'pass'|'blocked',detail}],target?:{buildId,feature,...}}`. local_replay is synthetic signed event replay against the actual target. It does not verify Stripe.
+- POST /api/projects/:id/policies accepts createPolicy input from public-contracts.md. Returns immutable policy. UI gets featureConfigHash from preflight field `featureConfigHash`; default sync window60, predicateVersion `reference-export-v1`, schemaVersion1, cancellation allow_until_period_end, requireInitialInvoicePaid true, featureId pro_export, configured priceId. GET /api/projects/:id/policies => policy array.
+- POST /api/runs `{projectId,policyHash,mode}` => run record. The server rechecks prerequisites before creation. Unready runs return 422 with blockers. GET /api/runs => run list.
+- GET /api/runs/:id => `{run, runtime, scenarios, observations, cleanup, repairs, coverageLimits}`. run fields follow control-contract, runtime nullable otherwise `{sessionId,turnId,lastSequenceNumber,status,error?,pendingApprovals?}`. scenarios array `{id,api:{verdict,code},browser:{verdict,code},state:{verdict,code},observationIds}`; empty means untested. observations metadata/redacted payloads only. Runtime errors do not mean passing run. Poll read endpoints only; never create a run/turn on reconnect.
+- GET /api/runs/:id/events?after=N => `{events:[{sequence,type,payload,occurredAt}],cursor}`. Resumable durable event batch. UI may poll. Streaming transport can be added without changing replay semantics.
+- POST /api/runs/:id/approvals/:approvalId `{decision:'allow'|'deny',bindingHash}` => run record. Display whole plan, mode, target, policy, fixed object limits, local model, expiry, cleanup permission before decision. If TrueForge has not reached the matching runtime tool approval yet, return 409 RUNTIME_APPROVAL_PENDING; button can retry explicitly. Never imply owner approval auto-authorizes PR publication.
+- POST /api/runs/:id/cancel `{}` => run record. Explain in-flight actions can finish; no further scenario begins.
+- POST /api/runs/:id/repairs `{}` => repair state or typed unmet prerequisite error. Must not imply repair succeeded if unavailable. Actual repair will expose diff, test evidence, exact publication approval and local replay limitation.
+- GET /api/runs/:id/report?format=json|markdown => downloadable report with real scenario coverage, evidence refs, versions, immutable policy, cleanup, repairs, limitations. Reports escape untrusted content when rendered.
+
+Initial UI must show honest empty states, distinct Untested/Inconclusive/Blocked, sidebar project/run navigation, local-replay warning, and accessible keyboard controls. No fake projects, stats, results, findings or repair diffs. The complete required screens remain in PRD; implement controls for actual endpoints only and disclose blocked operations.

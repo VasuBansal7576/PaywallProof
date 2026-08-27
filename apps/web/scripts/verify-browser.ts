@@ -1,0 +1,40 @@
+import { readFile, mkdir } from 'node:fs/promises';
+import { chromium, expect } from '@playwright/test';
+
+const token = (await readFile('.local/operator-token', 'utf8')).trim();
+const browser = await chromium.launch({ headless: true });
+try {
+  const page = await browser.newPage({ viewport: { width: 1512, height: 1100 } });
+  await page.goto('http://127.0.0.1:3000');
+  await page.getByLabel('Operator token', { exact: true }).fill(token);
+  await page.getByRole('button', { name: 'Open workspace', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Workspace overview', exact: true })).toBeVisible();
+  await mkdir('apps/web/.local', { recursive: true });
+  await page.screenshot({ path: 'apps/web/.local/overview.png', fullPage: true });
+  await page.getByRole('link', { name: 'Connect project', exact: true }).first().click();
+  const name = `Browser verification ${new Date().toISOString().slice(11, 19)}`;
+  await page.getByLabel('Project name', { exact: true }).fill(name);
+  await page.getByRole('checkbox', { name: /I own or am authorized/ }).check();
+  await page.getByRole('checkbox', { name: /I approve processing/ }).check();
+  await page.getByRole('button', { name: 'Connect project', exact: true }).click();
+  await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Check prerequisites/ })).toBeDisabled();
+  await page.getByRole('radio').first().check();
+  await page.getByRole('button', { name: /Check prerequisites/ }).click();
+  await expect(page.locator('.check-row')).toHaveCount(3, { timeout: 30_000 });
+  await expect(page.locator('.replay-warning')).toContainText('synthetic billing events');
+  await page.getByRole('button', { name: 'Save immutable policy', exact: true }).click();
+  await expect(page.getByLabel('Saved policy version', { exact: true })).toBeVisible();
+  await page.screenshot({ path: 'apps/web/.local/project-policy.png', fullPage: true });
+  await page.reload();
+  await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
+  await expect(page.getByLabel('Saved policy version', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Check prerequisites/ })).toBeDisabled();
+  await page.getByRole('radio').last().check();
+  await page.getByRole('button', { name: /Check prerequisites/ }).click();
+  await expect(page.locator('.check-row')).toHaveCount(3, { timeout: 30_000 });
+  await page.screenshot({ path: 'apps/web/.local/stripe-preflight.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: 'apps/web/.local/mobile-project.png', fullPage: true });
+  process.stdout.write('PASS: actual product sign-in, project creation, explicit mode selection, preflight receipts, immutable policy, and reload persistence. No run or provider mutation started by this browser check.\n');
+} finally { await browser.close(); }
