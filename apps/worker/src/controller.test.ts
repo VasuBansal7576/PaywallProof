@@ -21,6 +21,17 @@ function setup() {
 }
 afterEach(()=>{vi.restoreAllMocks();for(const {controller,directory} of opened.splice(0)){controller.close();rmSync(directory,{recursive:true,force:true});}});
 describe('runtime startup failure recovery',()=>{
+  it('scopes model operation labels to their authorized run',async()=>{
+    const {controller,start}=setup();
+    vi.spyOn(controller.runtime,'registerMcpServer').mockImplementation(()=>new Promise(()=>{}));
+    for(let index=0;index<2;index++){
+      const run=await start();
+      // This unit test supplies approval through the real public control store.
+      controller.runs.decidePlan({runId:run.id,approvalId:run.approval.id,bindingHash:run.approval.bindingHash,decision:'allow'});
+      await expect(controller.tool(run.id,'cleanup_run',{runId:run.id,operationId:'op_1'})).resolves.toMatchObject({operation:'cleanup'});
+      expect(controller.viewRun(run.id).run.status).toBe('completed');
+    }
+  });
   it('terminates an unapprovable run and releases its project lock when registration fails',async()=>{
     const {controller,start}=setup();
     vi.spyOn(controller.runtime,'registerMcpServer').mockRejectedValue(new Error('synthetic registration failure'));

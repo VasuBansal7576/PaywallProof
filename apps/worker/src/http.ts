@@ -113,13 +113,13 @@ export function createControlApp(config:ControllerConfig) {
     }
     c.header('Content-Disposition',`attachment; filename="paywallproof-${report.run.id}.json"`);return c.json(report);
   });
-  app.all('/mcp',async c=>{
+  for(const path of ['/mcp','/mcp/:runId'])app.all(path,async c=>{
     const bearer=c.req.header('authorization')?.replace(/^Bearer /,'');
     const scope=bearer?z.object({runId:identifier}).safeParse(controller.get('mcp-token',hashValue(bearer))):null;
-    if(!scope?.success)return c.json({error:'Unauthorized'},401);
+    if(!scope?.success||c.req.param('runId')!==scope.data.runId)return c.json({error:'Unauthorized'},401);
     const server=new McpServer({name:'paywallproof',version:'0.1.0'});
     for(const name of TOOL_NAMES){
-      const fields={runId:identifier,operationId:identifier};
+      const fields={runId:z.literal(scope.data.runId),operationId:identifier};
       const inputSchema=name==='change_test_subscription'?z.strictObject({...fields,action:z.enum(['create','schedule'])}):name==='probe_feature'?z.strictObject({...fields,scenarioId:z.enum(['SC01','SC02','SC03','SC04'])}):name==='observe_billing'?z.strictObject({...fields,scenarioId:z.enum(['SC01','SC02','SC03','SC04']).optional()}):z.strictObject(fields);
       server.registerTool(name,{description:`${name} for the authorized PaywallProof run. No arbitrary host, SQL, shell, merge or deployment.`,inputSchema},async input=>{
       try{return {content:[{type:'text',text:JSON.stringify(redact(await controller.tool(scope.data.runId,name,input),secrets))}]};}
