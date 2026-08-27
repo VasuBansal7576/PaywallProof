@@ -24,6 +24,7 @@ while(Date.now()<deadline) {
   const summary=JSON.stringify({status:detail.run.status,runtime:detail.runtime?.status,scenarios:detail.scenarios});
   if(summary!==previous){process.stdout.write(summary+'\n');previous=summary;}
   if(detail.runtimeError||detail.runtime?.status==='error')throw new Error(`Runtime failed: ${JSON.stringify(detail.runtimeError??detail.runtime)}`);
+  if(detail.run.status==='canceled')throw new Error('The verification run was canceled; no pass is claimed.');
   if(!approved&&detail.runtime?.status==='approval') {
     // The owner authorized this local verification. Approval remains scoped to this exact synthetic run.
     await call(`/api/runs/${run.id}/approvals/${run.approval.id}`,{decision:'allow',bindingHash:run.approval.bindingHash});approved=true;

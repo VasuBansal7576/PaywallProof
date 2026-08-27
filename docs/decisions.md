@@ -6,13 +6,15 @@ The owner prohibits monetary charges and allows specification changes while pres
 
 The local server started on `127.0.0.1:8790`, created its database inside the ignored `.local` directory, and reported `Local sandbox fallback is available` on macOS. No Daytona account or provider was configured. The existing Ollama model was registered through the official SDK as a local OpenAI-compatible provider.
 
-This verifies startup and configuration only. Successful model tool execution, generated-code isolation, approval, reconnect, and product behavior still need verification. Until those checks pass, do not claim the sandbox integration is complete.
+The first probe verified startup and configuration only. Subsequent fresh sessions executed a sandbox Python command with output 42, exercised a restricted MCP approval and continuation, rejected a stale approval, and resumed the same turn after disconnect. Separate file-transfer and reverse Unix-socket probes verified actual bytes, HTTP responses and exit codes while TCP bind remained denied. These establish runtime capabilities, not complete product acceptance or a verified repair.
 
-Once validated, the local provider is an additional permitted implementation of the required TrueForge sandbox, preserving the generated-code execution and safety requirements. Daytona remains an alternative only if no-charge operation is independently established. The original Daytona-specific statements in PRD sections 2, 7, 10, and 17 are superseded for the local configuration by this verified provider option, not by execution of generated code in an unrestricted worker.
+PRD version 1.2 now explicitly permits the verified local provider as an additional implementation of the required TrueForge sandbox. The owner authorized specification changes and forbids charges; no product capability or acceptance requirement is removed. Daytona remains an alternative only if no-charge operation is independently established. Generated code must never run in an unrestricted worker. This corrects the earlier mismatch between this decision record and the authoritative PRD identified by Qodo.
 
 Sources: https://trueforge.dev/sandbox, https://trueforge.dev/models, https://github.com/truefoundry/trueforge/blob/main/packages/trueforge/src/sandbox/localRuntime.ts, and the pinned installed package.
 
 The first actual sandbox execution failed during venv creation. Direct reproduction found a missing libexpat symbol in the machine's existing Homebrew Python 3.14, outside the sandbox. The startup probe does not check venv creation and therefore did not catch this. Bundled Python 3.12 creates a venv successfully, but TrueForge 0.1.4 uses a fixed command lookup path and has no supported interpreter override. Do not change system Python symlinks or broaden sandbox access to the user's home directory. A narrowly scoped, reviewed interpreter compatibility fix must preserve sandbox restrictions and be retested with a new session.
+
+The pinned pnpm patch adds an explicit absolute interpreter override and grants read access only to its resolved runtime prefix. Fresh-session execution passed with the bundled Python 3.12. No system interpreter, home-directory mount, or network permission was changed. Machine-specific probe artifacts remain in ignored `.local`; reproducible installation verification is `pnpm test:runtime`.
 
 ## 2026-08-27: Independent contract review before implementation
 

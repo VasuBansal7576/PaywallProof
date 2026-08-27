@@ -60,12 +60,13 @@ export function replayBilling(event: VerifiedEvent, user: User, priceId: string)
   if (!event.type.startsWith('customer.subscription.')) throw new TargetError('REPLAY_REQUIRES_SUBSCRIPTION_EVENT', 422);
   const subscription = subscriptionSchema.parse(event.data.object);
   const billing = normalizeSubscription(subscription, user, priceId);
-  const invoice = replayInvoiceSchema.parse(subscription.latest_invoice);
-  if (invoice.customer && resourceId(invoice.customer) !== billing.customerId) throw new TargetError('INVOICE_CUSTOMER_MISMATCH', 403);
-  const invoiceSubscription = invoice.parent?.subscription_details?.subscription ?? invoice.subscription;
-  if (invoiceSubscription && resourceId(invoiceSubscription) !== billing.subscriptionId) throw new TargetError('INVOICE_SUBSCRIPTION_MISMATCH', 403);
+  const invoice = subscription.latest_invoice === undefined || subscription.latest_invoice === null ? null : replayInvoiceSchema.parse(subscription.latest_invoice);
+  if (invoice?.customer && resourceId(invoice.customer) !== billing.customerId) throw new TargetError('INVOICE_CUSTOMER_MISMATCH', 403);
+  for (const invoiceSubscription of [invoice?.parent?.subscription_details?.subscription, invoice?.subscription]) {
+    if (invoiceSubscription && resourceId(invoiceSubscription) !== billing.subscriptionId) throw new TargetError('INVOICE_SUBSCRIPTION_MISMATCH', 403);
+  }
   // A first paid creation invoice establishes this fact; renewals cannot erase it.
-  const paidCreation = invoice.status === 'paid' && (!invoice.billing_reason || invoice.billing_reason === 'subscription_create');
+  const paidCreation = invoice?.status === 'paid' && (!invoice.billing_reason || invoice.billing_reason === 'subscription_create');
   billing.initialInvoicePaid = paidCreation || (user.subscription_id === billing.subscriptionId && user.initial_invoice_paid === 1);
   if (event.type === 'customer.subscription.deleted' && billing.status !== 'canceled') throw new TargetError('EVENT_STATUS_MISMATCH', 422);
   return billing;

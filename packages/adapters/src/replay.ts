@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import Stripe from 'stripe';
 import { z } from 'zod';
-import { billingSchema, type Billing } from '../../core/src/index.ts';
+import { billingSchema, hashValue, type Billing } from '../../core/src/index.ts';
 import { TargetTransport } from './network.ts';
 
 /** Explicit synthetic lifecycle for local testing. This adapter never calls Stripe. */
@@ -11,12 +11,12 @@ export class LocalReplayAdapter {
     this.database=new Database(config.databasePath);
     this.database.exec('CREATE TABLE IF NOT EXISTS replay_billing(run_id TEXT PRIMARY KEY,billing TEXT NOT NULL);');
   }
-  createCustomer(runId:string) {return {customerId:`cus_replay_${runId}`};}
+  createCustomer(runId:string) {return {customerId:`cus_replay_${hashValue({runId})}`};}
   async createSubscription(runId:string,operationId:string) {
     const existing=this.database.prepare('SELECT billing FROM replay_billing WHERE run_id=?').get(runId);
     const billing:Billing = existing ? billingSchema.parse(JSON.parse(z.object({billing:z.string()}).parse(existing).billing)) : {
-      livemode:false,identityResolved:true,noSubscriptionConfirmed:false,customerId:`cus_replay_${runId}`,
-      subscription:{id:`sub_replay_${runId}`,customerId:`cus_replay_${runId}`,priceId:this.config.priceId,status:'active',initialInvoicePaid:true,cancelAtPeriodEnd:false,periodEnd:Math.floor(Date.now()/1000)+30*86400,billingTime:Math.floor(Date.now()/1000)},
+      livemode:false,identityResolved:true,noSubscriptionConfirmed:false,customerId:this.createCustomer(runId).customerId,
+      subscription:{id:`sub_replay_${hashValue({runId})}`,customerId:this.createCustomer(runId).customerId,priceId:this.config.priceId,status:'active',initialInvoicePaid:true,cancelAtPeriodEnd:false,periodEnd:Math.floor(Date.now()/1000)+30*86400,billingTime:Math.floor(Date.now()/1000)},
     };
     this.save(runId,billing);
     await this.deliver(runId,operationId,'customer.subscription.created',billing);

@@ -2,7 +2,7 @@
 
 ## Product requirements and implementation specification
 
-Version: 1.1  
+Version: 1.2  
 Prepared: August 27, 2026  
 Owner: Vasu  
 Status: Ready for implementation planning. No product has been implemented or tested by this document.  
@@ -90,12 +90,12 @@ Existing tools already automate checkout tests. PaywallProof's proposed focus is
 | Authentication | Ordinary test-user sessions through a staging adapter | Admin credentials must not influence access probes |
 | Test control | One run at a time per project | Avoid conflicting fixtures, patches, and clock changes |
 | Agent runtime | TrueForge, with the official TypeScript SDK | Required by the hackathon |
-| Generated-code execution | TrueForge's configured Daytona sandbox | The current documented provider; verify access before coding |
+| Generated-code execution | TrueForge's verified local sandbox provider, or Daytona with independently confirmed no-charge access | Preserve generated-code isolation and verify the actual runtime boundary |
 | Development review | Qodo on every substantive GitHub PR | Required by the hackathon |
 | Product deployment | Single operator, local/private control interface | Public multi-tenant operation is outside the MVP |
 | Finding publication | Local report first, GitHub PR only with approval | A scan must remain useful without write permission |
 
-Stripe's test infrastructure does not move funds. TrueForge currently documents Daytona as its sandbox provider. These are verified product constraints, not capabilities implemented by this project. [Stripe](https://docs.stripe.com/testing) · [TrueForge](https://trueforge.dev/sandbox)
+Stripe's test infrastructure does not move funds. TrueForge's sandbox documentation describes Daytona; its pinned 0.1.4 release also supplies a local provider based on sandbox-runtime. The local option adds a permitted provider without removing sandbox execution, credential separation, network isolation, or acceptance requirements. Installation probes alone do not complete product acceptance. See [the provider decision and evidence](docs/decisions.md). [Stripe](https://docs.stripe.com/testing) · [TrueForge](https://trueforge.dev/sandbox)
 
 ### 2.2 What the MVP includes
 
@@ -328,7 +328,7 @@ flowchart TD
 	Controller --> Store[Durable run and evidence store]
 	Controller --> TF[TrueForge session]
 	TF --> Tools[Restricted PaywallProof MCP tools]
-	TF --> Sandbox[Daytona sandbox for code inspection and patch tests]
+	TF --> Sandbox[Verified TrueForge sandbox for code inspection and patch tests]
 	Tools --> Stripe[Stripe sandbox adapter]
 	Tools --> Target[Staging app adapter and browser runner]
 	Tools --> GitHub[Approved GitHub publication]
@@ -378,7 +378,7 @@ The restricted MCP service owns credentials and validates every tool call. It ex
 
 The core package is pure. It receives typed snapshots and returns verdicts. It never calls a model, Stripe, GitHub, or a browser.
 
-The target adapter reads normalized app state and provisions isolated users. The trusted MCP service runs fixed Playwright probe code in an isolated browser context per test user. The model can propose approved selectors and routes, but cannot execute arbitrary generated code inside the credential-bearing worker. Generated scripts and patch tests run only in the Daytona sandbox.
+The target adapter reads normalized app state and provisions isolated users. The trusted MCP service runs fixed Playwright probe code in an isolated browser context per test user. The model can propose approved selectors and routes, but cannot execute arbitrary generated code inside the credential-bearing worker. Generated scripts and patch tests run only in the verified TrueForge sandbox.
 
 The repair sandbox reads a sanitized checkout and tests changes in a disposable target instance. The required repair path uses local replay with synthetic fixtures and no provider keys. A real Stripe rerun against a patched preview is an additional verification path, described in section 13.
 
@@ -591,7 +591,7 @@ Repository code is untrusted. Review package scripts before execution, disable u
 
 Browser sessions contain only disposable test-user credentials. The default patch-test application uses synthetic fixtures and signed local replay, with no external billing access. If the optional real patched-preview path is added, use a broker restricted to that child run's test objects. Do not give the sandbox broad Stripe or GitHub keys.
 
-A Daytona sandbox cannot access a developer's host through its own `localhost`. The initial spike must establish an explicit reachable test endpoint and network path. Do not proceed with a diagram that assumes this connectivity exists.
+A remote Daytona sandbox cannot access a developer's host through its own `localhost`. The local provider also restricts network listeners. The initial spike must establish and test an explicit endpoint and network path for the selected provider. A local bridge must not dial a model-writable socket path or relay arbitrary hosts. Do not proceed with a diagram that assumes this connectivity exists.
 
 ### 10.4 Qodo responsibilities
 
@@ -806,11 +806,11 @@ Create decisions in `docs/decisions.md` when a verified SDK or environment const
 
 Each substantive package uses PRs reviewed by Qodo before merge. Small PRs are preferred, but don't split a change into fragments that cannot be tested.
 
-IP00 is a feasibility gate. Missing Daytona access, unreachable target networking, or unsupported approval semantics must be resolved or surfaced immediately. Do not spend the first day polishing a dashboard while these remain unknown.
+IP00 is a feasibility gate. Missing access to an approved TrueForge sandbox provider, unreachable target networking, or unsupported approval semantics must be resolved or surfaced immediately. Provider startup is not evidence that generated-code execution or the product workflow passed.
 
-### 15.3 Scope cuts under deadline pressure
+### 15.3 Preserve scope and disclose incomplete verification
 
-Cut optional subagents, extra billing scenarios, public onboarding, scheduled runs, PDF export, and polished charts first. Keep the core lifecycle, actual protected-feature evidence, approval enforcement, reconnect safety, Qodo trail, and an honest report.
+The owner does not authorize feature cuts based on development effort or deadlines. Preserve every accepted capability and required check. Optional work remains optional as specified elsewhere; it must not be used to imply that an incomplete required path is complete.
 
 If the live repair rerun cannot be finished, retain a locally tested draft patch with its limitation. Do not fabricate an integration success. If the real core Stripe run itself cannot be completed, the stated MVP is incomplete.
 
@@ -870,9 +870,9 @@ Before claiming demand, ask a prospective user to supply an owned staging app, i
 
 ### 17.3 Inputs needed before implementation
 
-The builder needs an owned GitHub repository, Qodo installation, a TrueForge runtime, a model API connection, Daytona access, a Stripe sandbox, and a reachable staging target or the bundled reference app.
+The builder needs an owned GitHub repository, Qodo installation, a TrueForge runtime, a verified no-charge model connection, an approved TrueForge sandbox provider, a Stripe sandbox, and a reachable staging target or the bundled reference app.
 
-The first integration spike must settle the exact SDK versions, sandbox network route, webhook delivery setup, and supported target session mechanism. Browser probes run in the trusted MCP service with isolated user contexts, while generated code runs in Daytona. These are explicit environment-dependent setup choices, not permission to defer the core architecture.
+The first integration spike must settle the exact SDK versions, sandbox network route, webhook delivery setup, and supported target session mechanism. Browser probes run in the trusted MCP service with isolated user contexts, while generated code runs in the configured TrueForge sandbox. These are explicit environment-dependent setup choices, not permission to defer the core architecture.
 
 ## 18. Sources
 
