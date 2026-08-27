@@ -3,6 +3,9 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync }
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { openRepairStore, patchHash, repairBranch, validateRepairPaths } from '../../packages/repair/src/index.ts';
+import { createRepairReplayPlan, replayPayload } from '../../packages/repair/src/oracle.ts';
+import { createPolicy } from '../../packages/core/src/index.ts';
+import { EvidenceStore } from '../../packages/evidence/src/index.ts';
 
 // Independent store/filesystem tests. Verification receipts are synthetic inputs,
 // not proof of a sandbox execution. No provider, push, PR, or test runner is called.
@@ -556,5 +559,380 @@ describe('independent repair: exact publication approvals without provider write
     const pending = await store.requestPublication({ proposalId: record.id, title: 'Synthetic title', body: 'Synthetic body' });
     await expectRejected(() => store.decidePublication(publicationDecision(pending, { extra: true })), 'INVALID_INPUT');
     await expectRejected(() => store.decidePublication(publicationDecision(pending, { decision: 'approve' })), 'INVALID_INPUT');
+  });
+});
+
+type ReplayObservation = Parameters<typeof createRepairReplayPlan>[0]['observations'][number];
+type ReplayInput = Omit<Parameters<typeof createRepairReplayPlan>[0], 'observations'> & { observations: ReplayObservation[] };
+type ReplayPlan = ReturnType<typeof createRepairReplayPlan>;
+type ReplayScenario = 'SC01' | 'SC02' | 'SC03' | 'SC04';
+type ReplayBilling = ReplayPlan['states'][ReplayScenario];
+const replayScenarios: ReplayScenario[] = ['SC01', 'SC02', 'SC03', 'SC04'];
+const originalReplayRun = 'synthetic_original_replay_run';
+const originalReplayBuild = 'synthetic_original_build';
+const originalCustomer = 'cus_SYNTHETIC_ORIGINAL_PRIVATE_CUSTOMER';
+const originalSubscription = 'sub_SYNTHETIC_ORIGINAL_PRIVATE_SUBSCRIPTION';
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+function replayPolicy() {
+  return createPolicy({
+    schemaVersion: 1, priceId: 'price_synthetic_replay', featureId: 'export', featureConfigHash: 'a'.repeat(64),
+    cancellation: 'allow_until_period_end', requireInitialInvoicePaid: true, syncWindowSeconds: 60, predicateVersion: 'synthetic-export-v1',
+  });
+}
+
+function replayBilling(scenarioId: ReplayScenario): ReplayBilling {
+  if (scenarioId === 'SC01') return {
+    livemode: false, identityResolved: true, noSubscriptionConfirmed: true, customerId: null, subscription: null,
+  };
+  return {
+    livemode: false, identityResolved: true, noSubscriptionConfirmed: false, customerId: originalCustomer,
+    subscription: {
+      id: originalSubscription, customerId: originalCustomer, priceId: 'price_synthetic_replay',
+      status: scenarioId === 'SC04' ? 'canceled' : 'active', initialInvoicePaid: true,
+      cancelAtPeriodEnd: scenarioId === 'SC03', periodEnd: 20_000,
+      billingTime: scenarioId === 'SC02' ? 10_000 : scenarioId === 'SC03' ? 15_000 : 20_000,
+    },
+  };
+}
+
+function replaySubscription(scenarioId: Exclude<ReplayScenario, 'SC01'>, change: Partial<NonNullable<ReplayBilling['subscription']>>) {
+  const billing = replayBilling(scenarioId);
+  if (!billing.subscription) throw new Error('Expected synthetic paid subscription');
+  return { ...billing, subscription: { ...billing.subscription, ...change } };
+}
+
+async function recordedReplay(scenarioId: ReplayScenario, overrides: Record<string, unknown> = {}): Promise<ReplayObservation> {
+  const evidence = new EvidenceStore(join(directory, 'replay-observation-fixtures.sqlite'));
+  try {
+    const payload = replayBilling(scenarioId);
+    return await evidence.record({
+      runId: originalReplayRun, scenarioId,
+      subjectId: scenarioId === 'SC01' ? 'synthetic_original_free_user' : 'synthetic_original_paid_user',
+      source: 'stripe', policyHash: replayPolicy().hash, targetBuild: originalReplayBuild,
+      observedAt: initialTime + replayScenarios.indexOf(scenarioId) * 1_000,
+      billingTime: payload.subscription?.billingTime ?? null,
+      mode: 'local_replay', payload, ...overrides,
+    });
+  } finally {
+    await evidence.close();
+  }
+}
+
+async function replayInputs(): Promise<ReplayInput> {
+  const observations: ReplayObservation[] = [];
+  for (const scenario of replayScenarios) observations.push(await recordedReplay(scenario));
+  return { runId: originalReplayRun, targetBuild: originalReplayBuild, policy: replayPolicy(), observations };
+}
+
+function replaceScenario(input: ReplayInput, scenario: ReplayScenario, replacement: ReplayObservation): ReplayInput {
+  return { ...input, observations: input.observations.map((record) => record.scenarioId === scenario ? replacement : record) };
+}
+
+async function expectReplayRejected(action: () => unknown, code?: string) {
+  let caught: unknown;
+  try { await action(); } catch (error) { caught = error; }
+  expect(caught).toBeInstanceOf(Error);
+  if (code) expect(caught).toMatchObject({ code });
+}
+
+function requiredSubscription(plan: ReplayPlan, scenario: Exclude<ReplayScenario, 'SC01'>) {
+  const subscription = plan.states[scenario].subscription;
+  if (!subscription) throw new Error('Expected synthetic plan subscription');
+  return subscription;
+}
+
+// Only frozen-plan generation and JSON construction are exercised below.
+// EvidenceStore hashes these synthetic fixtures; no provider observation, browser
+// action, signed target replay, runtime execution or repair acceptance is claimed.
+describe('independent repair replay: isolated identities and recorded billing facts', () => {
+  it.each(['local_replay', 'stripe_sandbox'] as const)('creates an explicitly synthetic plan from coherent %s-labeled fixture records', async (mode) => {
+    const input = await replayInputs();
+    for (const scenario of replayScenarios) {
+      const index = input.observations.findIndex((record) => record.scenarioId === scenario);
+      input.observations[index] = await recordedReplay(scenario, { mode });
+    }
+    const plan = createRepairReplayPlan(input);
+    expect(plan).toMatchObject({ schemaVersion: 1, mode: 'local_replay', policyHash: input.policy.hash });
+    expect(plan.runId).toMatch(uuidPattern);
+    expect(plan.runId).not.toBe(input.runId);
+    expect(plan.markers.free).toMatch(uuidPattern);
+    expect(plan.markers.paid).toMatch(uuidPattern);
+    expect(new Set([plan.runId, plan.markers.free, plan.markers.paid]).size).toBe(3);
+    expect(plan.states.SC01).toEqual(replayBilling('SC01'));
+    const customer = plan.states.SC02.customerId;
+    const subscription = requiredSubscription(plan, 'SC02').id;
+    expect(customer).toMatch(/^cus_replay_\S+$/);
+    expect(subscription).toMatch(/^sub_replay_\S+$/);
+    for (const scenario of ['SC02', 'SC03', 'SC04'] as const) {
+      const original = replayBilling(scenario);
+      expect(plan.states[scenario]).toEqual({
+        ...original, customerId: customer, subscription: { ...original.subscription, customerId: customer, id: subscription },
+      });
+    }
+    expect(JSON.stringify(plan)).not.toContain(originalCustomer);
+    expect(JSON.stringify(plan)).not.toContain(originalSubscription);
+    expect(JSON.stringify(plan)).not.toContain('synthetic_original_paid_user');
+  });
+
+  it('creates separate run, marker and billing identities on every new plan', async () => {
+    const input = await replayInputs();
+    const first = createRepairReplayPlan(input);
+    const second = createRepairReplayPlan(input);
+    expect(second.runId).not.toBe(first.runId);
+    expect(second.markers.free).not.toBe(first.markers.free);
+    expect(second.markers.paid).not.toBe(first.markers.paid);
+    expect(second.states.SC02.customerId).not.toBe(first.states.SC02.customerId);
+    expect(requiredSubscription(second, 'SC02').id).not.toBe(requiredSubscription(first, 'SC02').id);
+    expect(second.policyHash).toBe(first.policyHash);
+  });
+
+  it('keeps the selected snapshot times instead of replacing them with wall-clock time', async () => {
+    let input = await replayInputs();
+    const changed = replaySubscription('SC04', { billingTime: 25_123 });
+    input = replaceScenario(input, 'SC04', await recordedReplay('SC04', { payload: changed, billingTime: 25_123, observedAt: 1_000 }));
+    const plan = createRepairReplayPlan(input);
+    expect(requiredSubscription(plan, 'SC02').billingTime).toBe(10_000);
+    expect(requiredSubscription(plan, 'SC03').billingTime).toBe(15_000);
+    expect(requiredSubscription(plan, 'SC04').billingTime).toBe(25_123);
+    for (const scenario of ['SC02', 'SC03', 'SC04'] as const) expect(requiredSubscription(plan, scenario).periodEnd).toBe(20_000);
+  });
+
+  it('preserves an unpaid initial-invoice fact in the canceled state', async () => {
+    const input = replaceScenario(await replayInputs(), 'SC04', await recordedReplay('SC04', { payload: replaySubscription('SC04', { initialInvoicePaid: false }) }));
+    const plan = createRepairReplayPlan(input);
+    expect(requiredSubscription(plan, 'SC02').initialInvoicePaid).toBe(true);
+    expect(requiredSubscription(plan, 'SC03').initialInvoicePaid).toBe(true);
+    expect(requiredSubscription(plan, 'SC04').initialInvoicePaid).toBe(false);
+  });
+
+  it('does not mutate frozen observations or policy and detaches the resulting plan', async () => {
+    const input = await replayInputs();
+    const before = JSON.stringify(input);
+    for (const observation of input.observations) {
+      if (observation.payload && typeof observation.payload === 'object') {
+        const subscription: unknown = Reflect.get(observation.payload, 'subscription');
+        if (subscription && typeof subscription === 'object') Object.freeze(subscription);
+        Object.freeze(observation.payload);
+      }
+      Object.freeze(observation);
+    }
+    Object.freeze(input.observations);
+    Object.freeze(input);
+    const plan = createRepairReplayPlan(input);
+    expect(JSON.stringify(input)).toBe(before);
+    mutate(plan.states.SC03.subscription, { billingTime: 0 });
+    expect(JSON.stringify(input)).toBe(before);
+  });
+
+  it('does not let later input changes rewrite a generated plan or its replay bytes', async () => {
+    const input = await replayInputs();
+    const plan = createRepairReplayPlan(input);
+    const before = JSON.stringify(plan);
+    const payloadBefore = replayPayload(plan, 'SC03');
+    const observed = input.observations.find((record) => record.scenarioId === 'SC03');
+    if (!observed) throw new Error('Expected SC03 fixture');
+    mutate(observed, { runId: 'changed-input-run', sha256: '0'.repeat(64) });
+    mutate(observed.payload, { customerId: 'changed-input-customer', subscription: null });
+    expect(JSON.stringify(plan)).toBe(before);
+    expect(replayPayload(plan, 'SC03')).toBe(payloadBefore);
+  });
+});
+
+describe('independent repair replay: authoritative selection and isolation', () => {
+  it.each(replayScenarios)('rejects missing %s evidence rather than inventing it', async (scenario) => {
+    const input = await replayInputs();
+    await expectReplayRejected(() => createRepairReplayPlan({ ...input, observations: input.observations.filter((record) => record.scenarioId !== scenario) }), 'REPAIR_BILLING_EVIDENCE_REQUIRED');
+  });
+
+  it.each<[string, unknown]>([
+    ['runId', 'synthetic_foreign_run'], ['targetBuild', 'synthetic_foreign_build'],
+    ['policyHash', 'f'.repeat(64)], ['source', 'application'],
+  ])('cannot substitute a record with a different %s', async (field, value) => {
+    const input = replaceScenario(await replayInputs(), 'SC03', await recordedReplay('SC03', { [field]: value }));
+    await expectReplayRejected(() => createRepairReplayPlan(input), 'REPAIR_BILLING_EVIDENCE_REQUIRED');
+  });
+
+  it.each<[string, unknown]>([
+    ['runId', 'synthetic_foreign_run'], ['targetBuild', 'synthetic_foreign_build'],
+    ['policyHash', 'f'.repeat(64)], ['source', 'browser'],
+  ])('ignores a newer out-of-scope %s record instead of contaminating the selected state', async (field, value) => {
+    const input = await replayInputs();
+    const foreign = await recordedReplay('SC03', { [field]: value, observedAt: initialTime + 99_000 });
+    input.observations.push({ ...foreign, sha256: '0'.repeat(64) });
+    const plan = createRepairReplayPlan(input);
+    expect(requiredSubscription(plan, 'SC03').billingTime).toBe(15_000);
+  });
+
+  it('uses the latest timestamp rather than input array order', async () => {
+    const input = await replayInputs();
+    const latest = await recordedReplay('SC03', { observedAt: initialTime + 50_000, billingTime: 18_123, payload: replaySubscription('SC03', { billingTime: 18_123 }) });
+    input.observations.unshift(latest);
+    input.observations.reverse();
+    expect(requiredSubscription(createRepairReplayPlan(input), 'SC03').billingTime).toBe(18_123);
+  });
+
+  it('does not fall back from a corrupt newest digest to older valid evidence', async () => {
+    const input = await replayInputs();
+    const latest = await recordedReplay('SC03', { observedAt: initialTime + 50_000 });
+    input.observations.push({ ...latest, sha256: '0'.repeat(64) });
+    await expectReplayRejected(() => createRepairReplayPlan(input), 'REPAIR_BILLING_EVIDENCE_REQUIRED');
+  });
+
+  it('does not fall back when the newest payload has changed without its stored digest', async () => {
+    const input = await replayInputs();
+    const latest = await recordedReplay('SC03', { observedAt: initialTime + 50_000 });
+    input.observations.push({ ...latest, payload: replaySubscription('SC03', { billingTime: 17_777 }) });
+    await expectReplayRejected(() => createRepairReplayPlan(input), 'REPAIR_BILLING_EVIDENCE_REQUIRED');
+  });
+
+  it('does not fall back from a correctly hashed but invalid newest state', async () => {
+    const input = await replayInputs();
+    input.observations.push(await recordedReplay('SC03', { observedAt: initialTime + 50_000, payload: replaySubscription('SC03', { cancelAtPeriodEnd: false }) }));
+    await expectReplayRejected(() => createRepairReplayPlan(input), 'REPAIR_BILLING_EVIDENCE_REQUIRED');
+  });
+
+  it('selects a newer valid record instead of an older invalid state', async () => {
+    const input = await replayInputs();
+    input.observations.push(await recordedReplay('SC03', { observedAt: initialTime, payload: replaySubscription('SC03', { cancelAtPeriodEnd: false }) }));
+    expect(requiredSubscription(createRepairReplayPlan(input), 'SC03').cancelAtPeriodEnd).toBe(true);
+  });
+
+  it('allows duplicate latest snapshots only when their payload and scope agree', async () => {
+    const input = await replayInputs();
+    input.observations.push(await recordedReplay('SC03'));
+    expect(requiredSubscription(createRepairReplayPlan(input), 'SC03').billingTime).toBe(15_000);
+  });
+
+  it.each(['payload', 'subjectId', 'mode'] as const)('rejects conflicting latest-timestamp ties in %s', async (field) => {
+    const input = await replayInputs();
+    const overrides = field === 'payload'
+      ? { payload: replaySubscription('SC03', { billingTime: 16_000 }) }
+      : field === 'subjectId' ? { subjectId: 'synthetic_different_paid_user' } : { mode: 'stripe_sandbox' };
+    input.observations.push(await recordedReplay('SC03', overrides));
+    await expectReplayRejected(() => createRepairReplayPlan(input), 'REPAIR_BILLING_EVIDENCE_REQUIRED');
+  });
+
+  it.each(replayScenarios)('rejects mixed execution mode in selected %s evidence', async (scenario) => {
+    const input = replaceScenario(await replayInputs(), scenario, await recordedReplay(scenario, { mode: 'stripe_sandbox' }));
+    await expectReplayRejected(() => createRepairReplayPlan(input), 'REPAIR_BILLING_EVIDENCE_REQUIRED');
+  });
+
+  it.each(['SC02', 'SC03', 'SC04'] as const)('rejects a different paid subject in %s', async (scenario) => {
+    const input = replaceScenario(await replayInputs(), scenario, await recordedReplay(scenario, { subjectId: 'synthetic_other_paid_subject' }));
+    await expectReplayRejected(() => createRepairReplayPlan(input), 'REPAIR_BILLING_EVIDENCE_REQUIRED');
+  });
+
+  it('rejects free/paid subject collisions', async () => {
+    const input = replaceScenario(await replayInputs(), 'SC01', await recordedReplay('SC01', { subjectId: 'synthetic_original_paid_user' }));
+    await expectReplayRejected(() => createRepairReplayPlan(input), 'REPAIR_BILLING_EVIDENCE_REQUIRED');
+  });
+
+  it.each(['SC03', 'SC04'] as const)('rejects incompatible customer, subscription or period identity in %s', async (scenario) => {
+    for (const payload of [
+      { ...replaySubscription(scenario, { customerId: 'cus_synthetic_other' }), customerId: 'cus_synthetic_other' },
+      replaySubscription(scenario, { id: 'sub_synthetic_other' }),
+      replaySubscription(scenario, { periodEnd: 19_000 }),
+    ]) {
+      const input = replaceScenario(await replayInputs(), scenario, await recordedReplay(scenario, { payload }));
+      await expectReplayRejected(() => createRepairReplayPlan(input), 'REPAIR_BILLING_EVIDENCE_REQUIRED');
+    }
+  });
+
+  it('rejects changed or forged policy instead of reusing a recorded hash', async () => {
+    const input = await replayInputs();
+    const changed = { ...input.policy, syncWindowSeconds: 5 };
+    await expectReplayRejected(() => createRepairReplayPlan({ ...input, policy: changed }));
+    await expectReplayRejected(() => createRepairReplayPlan({ ...input, policy: { ...input.policy, hash: '0'.repeat(64) } }));
+  });
+});
+
+describe('independent repair replay: missing, malformed and unsupported state', () => {
+  it.each(replayScenarios)('rejects live, unresolved or wrong-price %s state with honest hashes', async (scenario) => {
+    const original = replayBilling(scenario);
+    const invalid: unknown[] = [{ ...original, livemode: true }, { ...original, identityResolved: false }];
+    if (scenario !== 'SC01') invalid.push(replaySubscription(scenario, { priceId: 'price_synthetic_wrong' }));
+    for (const payload of invalid) {
+      const input = replaceScenario(await replayInputs(), scenario, await recordedReplay(scenario, { payload }));
+      await expectReplayRejected(() => createRepairReplayPlan(input), 'REPAIR_BILLING_EVIDENCE_REQUIRED');
+    }
+  });
+
+  it.each<[ReplayScenario, unknown]>([
+    ['SC01', { ...replayBilling('SC01'), noSubscriptionConfirmed: false }],
+    ['SC01', { ...replayBilling('SC01'), customerId: 'cus_synthetic_free' }],
+    ['SC01', replayBilling('SC02')],
+    ['SC02', replaySubscription('SC02', { status: 'trialing' })],
+    ['SC02', replaySubscription('SC02', { initialInvoicePaid: false })],
+    ['SC02', replaySubscription('SC02', { cancelAtPeriodEnd: true })],
+    ['SC03', replaySubscription('SC03', { initialInvoicePaid: false })],
+    ['SC03', replaySubscription('SC03', { cancelAtPeriodEnd: false })],
+    ['SC03', replaySubscription('SC03', { billingTime: 20_000 })],
+    ['SC04', replaySubscription('SC04', { status: 'active' })],
+    ['SC04', replaySubscription('SC04', { billingTime: 19_999 })],
+    ['SC03', replaySubscription('SC03', { customerId: 'cus_synthetic_mismatched_mapping' })],
+    ['SC03', { ...replayBilling('SC03'), noSubscriptionConfirmed: true }],
+    ['SC03', null], ['SC03', {}],
+    ['SC03', { ...replayBilling('SC03'), email: 'synthetic-private@example.invalid' }],
+  ])('rejects invalid required %s snapshot %# instead of synthesizing a replacement', async (scenario, payload) => {
+    const input = replaceScenario(await replayInputs(), scenario, await recordedReplay(scenario, { payload }));
+    await expectReplayRejected(() => createRepairReplayPlan(input), 'REPAIR_BILLING_EVIDENCE_REQUIRED');
+  });
+});
+
+describe('independent repair replay: deterministic explicit synthetic event payloads', () => {
+  it.each<[Exclude<ReplayScenario, 'SC01'>, string]>([
+    ['SC02', 'customer.subscription.created'], ['SC03', 'customer.subscription.updated'], ['SC04', 'customer.subscription.deleted'],
+  ])('constructs %s from its exact frozen state and synthetic identities', async (scenario, type) => {
+    const input = await replayInputs();
+    const plan = createRepairReplayPlan(input);
+    const before = JSON.stringify(plan);
+    const state = requiredSubscription(plan, scenario);
+    const serialized = replayPayload(plan, scenario);
+    expect(typeof serialized).toBe('string');
+    expect(replayPayload(plan, scenario)).toBe(serialized);
+    expect(JSON.stringify(plan)).toBe(before);
+    expect(serialized).not.toContain(originalCustomer);
+    expect(serialized).not.toContain(originalSubscription);
+    expect(serialized).not.toContain(originalReplayRun);
+    expect(serialized).not.toContain('synthetic_original_paid_user');
+    const event = JSON.parse(serialized);
+    expect(event).toEqual({
+      id: expect.stringMatching(/\S/), object: 'event', type, livemode: false, created: state.billingTime,
+      data: { object: {
+        id: state.id, object: 'subscription', livemode: false, customer: state.customerId,
+        metadata: { runId: plan.runId }, status: state.status, cancel_at_period_end: state.cancelAtPeriodEnd,
+        items: { data: [{ price: { id: state.priceId, livemode: false }, current_period_end: state.periodEnd }], has_more: false },
+        latest_invoice: {
+          id: expect.stringMatching(/\S/), object: 'invoice', livemode: false, status: state.initialInvoicePaid ? 'paid' : 'open',
+          customer: state.customerId, billing_reason: 'subscription_create', parent: { subscription_details: { subscription: state.id } },
+        },
+      } },
+    });
+  });
+
+  it('retains identical payloads when the same plan is serialized and reopened for patched execution', async () => {
+    const plan = createRepairReplayPlan(await replayInputs());
+    const restored = JSON.parse(JSON.stringify(plan));
+    for (const scenario of ['SC02', 'SC03', 'SC04'] as const) expect(replayPayload(restored, scenario)).toBe(replayPayload(plan, scenario));
+  });
+
+  it('uses different deterministic events for different scenarios', async () => {
+    const plan = createRepairReplayPlan(await replayInputs());
+    const ids = ['SC02', 'SC03', 'SC04'].map((scenario) => JSON.parse(Reflect.apply(replayPayload, undefined, [plan, scenario])).id);
+    expect(new Set(ids).size).toBe(3);
+  });
+
+  it('renders open invoice status only for the recorded false payment fact', async () => {
+    const input = replaceScenario(await replayInputs(), 'SC04', await recordedReplay('SC04', { payload: replaySubscription('SC04', { initialInvoicePaid: false }) }));
+    const plan = createRepairReplayPlan(input);
+    const canceled = JSON.parse(replayPayload(plan, 'SC04'));
+    expect(canceled.data.object.latest_invoice.status).toBe('open');
+    expect(JSON.parse(replayPayload(plan, 'SC02')).data.object.latest_invoice.status).toBe('paid');
+  });
+
+  it.each(['SC01', 'SC00', 'SC05', '', null])('rejects unsupported replay scenario %s', async (scenario) => {
+    const plan = createRepairReplayPlan(await replayInputs());
+    await expectReplayRejected(() => Reflect.apply(replayPayload, undefined, [plan, scenario]));
   });
 });

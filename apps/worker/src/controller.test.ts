@@ -5,7 +5,12 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Controller} from './controller.ts';
 import {createControlApp} from './http.ts';
-import {hashValue} from '../../../packages/core/src/index.ts';
+import {createPolicy,hashValue} from '../../../packages/core/src/index.ts';
+import {observeFeature} from '../../../packages/evidence/src/probe.ts';
+import {TrueForgeAdapter,type RuntimeTurn,type RuntimeApproval} from '../../../packages/adapters/src/trueforge.ts';
+import {patchHash,repairBranch} from '../../../packages/repair/src/index.ts';
+import type {RepairJob} from './repairs.ts';
+import {SECURITY_CONTROLS} from '../../../packages/repair/src/controls.ts';
 
 // Implementation-aware failure-injection tests. No provider or runtime evidence.
 const opened:{controller:Controller;directory:string}[]=[];
@@ -23,8 +28,39 @@ function setup(http=false) {
   async function start(){const policy=await controller.proposePolicy(project.id,{schemaVersion:1,priceId:'price_synthetic',featureId:'pro_export',featureConfigHash:hashValue(feature),cancellation:'allow_until_period_end',requireInitialInvoicePaid:true,syncWindowSeconds:5,predicateVersion:'reference-export-v1'});return controller.createRun({projectId:project.id,policyHash:policy.hash,mode:'local_replay'});}
   return {controller,start,cancel,app:service?.app,directory};
 }
-afterEach(()=>{vi.restoreAllMocks();for(const {controller,directory} of opened.splice(0)){controller.close();rmSync(directory,{recursive:true,force:true});}});
+afterEach(()=>{vi.useRealTimers();vi.restoreAllMocks();for(const {controller,directory} of opened.splice(0)){controller.close();rmSync(directory,{recursive:true,force:true});}});
 describe('runtime startup failure recovery',()=>{
+  it.each([{readDelay:1000,verdict:'pass'},{readDelay:15000,verdict:'inconclusive'}])('keeps truthful completion timestamps after cold browser startup: $verdict',async({readDelay,verdict})=>{
+    const {controller}=setup();
+    const started=Date.now();vi.useFakeTimers();vi.setSystemTime(started);
+    const policy=createPolicy({schemaVersion:1,priceId:'price_synthetic',featureId:'pro_export',featureConfigHash:hashValue(feature),cancellation:'allow_until_period_end',requireInitialInvoicePaid:true,syncWindowSeconds:5,predicateVersion:'reference-export-v1'});
+    const denial={status:403,body:{error:'ACCESS_DENIED'},transportError:false,denialStatuses:[403]};
+    vi.spyOn(controller.target,'session').mockResolvedValue({cookie:'pp_session=synthetic',expiresAt:new Date(started+100000).toISOString()});
+    vi.spyOn(controller.browser,'probe').mockImplementation(async()=>{vi.setSystemTime(started+12000);return {probe:denial,artifact:{id:'synthetic-timing-fixture.png',sha256:'a'.repeat(64),contentType:'image/png',source:'browser',collectedAt:new Date().toISOString()}};});
+    vi.spyOn(controller.target,'snapshot').mockResolvedValue({principalId:'synthetic-free',runId:'synthetic-probe-run',customerId:null,status:'none',buildId:'a'.repeat(40)});
+    vi.spyOn(controller.target,'probe').mockResolvedValue(denial);
+    const result=await observeFeature({store:controller.evidence,target:controller.target,browser:controller.browser,runId:'synthetic-probe-run',scenarioId:'SC01',subjectId:'synthetic-free',fixtureMarker:'synthetic-private-marker',policy,targetBuild:'a'.repeat(40),mode:'local_replay',notBefore:started,billing:async()=>{vi.setSystemTime(started+12000+readDelay);return {livemode:false,identityResolved:true,noSubscriptionConfirmed:true,customerId:null,subscription:null};}});
+    expect(result.api.verdict).toBe(verdict);
+    const records=controller.evidence.list('synthetic-probe-run');
+    expect(records.find(item=>item.source==='browser')?.observedAt).toBe(started+12000);
+    expect(records.find(item=>item.source==='stripe')?.observedAt).toBe(started+12000+readDelay);
+    if(readDelay>10000)expect(result.api.code).toBe('EVIDENCE_STALE');
+  });
+  it('revokes the MCP capability if cancellation wins during registration',async()=>{
+    const {controller,start}=setup();
+    let release:()=>void=()=>{};
+    vi.spyOn(controller.runtime,'registerMcpServer').mockImplementation(async()=>{
+      await new Promise<void>(resolve=>{release=resolve;});
+      return {data:{name:'synthetic',authStatus:{status:'not_required'},manifest:{type:'remote',name:'synthetic',url:'http://127.0.0.1:39984/mcp',description:'Synthetic'}}};
+    });
+    const create=vi.spyOn(controller.runtime,'createSession');
+    const run=await start();
+    await controller.cancel(run.id);release();
+    await new Promise(resolve=>setTimeout(resolve,20));
+    expect(controller.runs.getRun(run.id).status).toBe('canceled');
+    expect(controller.list('mcp-token')).toEqual([]);
+    expect(create).not.toHaveBeenCalled();
+  });
   it('serves only authenticated, run-scoped and hash-verified screenshot bytes',async()=>{
     const {controller,start,app,directory}=setup(true);
     if(!app)throw new Error('HTTP fixture missing');
@@ -84,5 +120,67 @@ describe('runtime startup failure recovery',()=>{
     const run=await start();
     await expect.poll(()=>controller.viewRun(run.id).run.status,{timeout:500}).toBe('canceled');
     expect(cancel).toHaveBeenCalledWith({sessionId:'synthetic-session'});
+  });
+});
+
+function verifiedRepairFixture(controller:Controller){
+  const runId=randomUUID(),jobId=randomUUID(),findingId='SC04:api';
+  const changes=[{path:'packages/reference/src/index.ts',content:'// Synthetic approval test input. Never executed.\n'}];
+  const proposal=controller.repairs.store.propose({runId,findingId,attempt:1,baseCommit:'a'.repeat(40),baseBranch:'main',repository:'synthetic/repository',branch:repairBranch(runId,findingId,1),policyHash:'b'.repeat(64),oracleHash:'c'.repeat(64),allowedPaths:changes.map(change=>change.path),changes,diffHash:patchHash(changes),verificationMode:'local_replay',failureCode:'SYNTHETIC_FAILURE',summary:'Synthetic approval fixture',reportUrl:'http://127.0.0.1:39983/synthetic'});
+  const receipt=(checkId:string,failed=false)=>({id:randomUUID(),executionId:'synthetic-no-execution',checkId,oracleHash:'c'.repeat(64),policyHash:'b'.repeat(64),baseCommit:'a'.repeat(40),diffHash:failed?null:patchHash(changes),artifactHash:'d'.repeat(64),observedAt:Date.now(),exitCode:failed?1:0,outcome:failed?'fail':'pass',failureCode:failed?'SYNTHETIC_FAILURE':null});
+  controller.repairs.store.recordVerification({proposalId:proposal.id,before:receipt(findingId,true),after:receipt(findingId),regressions:['SC01','SC02','SC03','SC04',...SECURITY_CONTROLS].map(id=>receipt(id))});
+  const createdAt=Date.now();
+  const job:RepairJob={id:jobId,runId,findingId,attempt:1,createdAt,deadline:createdAt+900000,state:'verified_local',sessionId:'synthetic-session',turnId:'synthetic-before',proposalId:proposal.id,error:null,runtimeOperations:[],checks:[]};
+  controller.put(`repair-job:${runId}`,jobId,job);controller.put('repair-job-index',jobId,{runId,id:jobId});
+  return {runId,jobId,proposalId:proposal.id};
+}
+function syntheticTurn(id:string,previousTurnId:string|null='synthetic-before',approval=false):RuntimeTurn{
+  return {id,previousTurnId,sessionId:'synthetic-session',createdAt:new Date().toISOString(),state:{status:'done',completedAt:new Date().toISOString(),output:null,requiredActions:approval?[{type:'tool.approval_required',id:'synthetic-event',createdAt:new Date().toISOString(),threadId:'synthetic-thread',toolCalls:[{id:'synthetic-call',sourceEventId:'synthetic-source'}]}]:[]}};
+}
+describe('repair publication recovery with synthetic runtime responses',()=>{
+  it.each([false,true])('does not dispatch again after an uncertain request; continuation exists: %s',async exists=>{
+    const {controller}=setup(),fixture=verifiedRepairFixture(controller);
+    const dispatch=vi.spyOn(TrueForgeAdapter.prototype,'continueTurn').mockRejectedValue(new Error('synthetic response lost'));
+    const lookup=vi.spyOn(TrueForgeAdapter.prototype,'findContinuation').mockResolvedValue(exists?syntheticTurn('synthetic-gate',undefined,true):undefined);
+    vi.spyOn(TrueForgeAdapter.prototype,'inspectTurn').mockResolvedValue(syntheticTurn('synthetic-gate',undefined,true));
+    await expect(controller.repairs.requestPublication(fixture.runId,fixture.jobId)).rejects.toThrow('synthetic response lost');
+    await controller.repairs.requestPublication(fixture.runId,fixture.jobId);
+    await controller.repairs.recover();
+    expect(dispatch).toHaveBeenCalledTimes(1);expect(lookup).toHaveBeenCalled();
+    await expect.poll(()=>controller.get('repair-publication-runtime',fixture.jobId)).toMatchObject(exists?{turnId:'synthetic-gate',status:'approval'}:{status:'error',error:'PUBLICATION_OUTCOME_UNKNOWN_NO_REDISPATCH'});
+    expect(controller.repairs.store.get(fixture.proposalId).approval?.decision).toBe('pending');
+  });
+  it.each(['allow','deny'] as const)('recovers a lost %s continuation without repeating that decision',async decision=>{
+    const {controller}=setup(),fixture=verifiedRepairFixture(controller);
+    vi.spyOn(TrueForgeAdapter.prototype,'continueTurn').mockResolvedValue(syntheticTurn('synthetic-gate',undefined,true));
+    vi.spyOn(TrueForgeAdapter.prototype,'inspectTurn').mockImplementation(async({turnId})=>syntheticTurn(turnId,undefined,turnId==='synthetic-gate'));
+    await controller.repairs.requestPublication(fixture.runId,fixture.jobId);
+    await expect.poll(()=>controller.get('repair-publication-runtime',fixture.jobId)).toMatchObject({status:'approval'});
+    const gate:RuntimeApproval={threadId:'synthetic-thread',toolCallId:'synthetic-call',sourceEventId:'synthetic-source',tool:{id:'synthetic-call',type:'function',function:{name:'publish_repair_pr',arguments:JSON.stringify({runId:fixture.runId,operationId:fixture.proposalId})},toolInfo:{type:'mcp',name:'publish_repair_pr',serverId:`paywallproof_${fixture.runId.replaceAll('-','')}`,serverName:'synthetic'}}};
+    vi.spyOn(TrueForgeAdapter.prototype,'inspectApprovals').mockResolvedValue([gate]);
+    const dispatch=vi.spyOn(TrueForgeAdapter.prototype,'continueApproval').mockRejectedValue(new Error('synthetic decision response lost'));
+    vi.spyOn(TrueForgeAdapter.prototype,'findContinuation').mockResolvedValue(syntheticTurn('synthetic-decision','synthetic-gate'));
+    const approval=controller.repairs.store.get(fixture.proposalId).approval;if(!approval)throw new Error('Missing synthetic approval');
+    const request={decision,bindingHash:approval.bindingHash};
+    await expect(controller.repairs.decidePublication(fixture.runId,fixture.jobId,approval.id,request)).rejects.toThrow('synthetic decision response lost');
+    await controller.repairs.decidePublication(fixture.runId,fixture.jobId,approval.id,request);
+    await controller.repairs.recover();
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch.mock.calls[0]?.[0].decisions[0]?.approval.status).toBe(decision);
+    expect(controller.repairs.store.get(fixture.proposalId).approval?.decision).toBe(decision);
+    await expect(controller.repairs.decidePublication(fixture.runId,fixture.jobId,approval.id,{...request,decision:decision==='allow'?'deny':'allow'})).rejects.toMatchObject({code:'APPROVAL_CONFLICT'});
+    expect(controller.repairs.store.get(fixture.proposalId).progress).toBeNull();
+  });
+  it.each(['wrong-run','malformed-json','wrong-server'])('rejects a %s runtime approval before owner authorization',async mismatch=>{
+    const {controller}=setup(),fixture=verifiedRepairFixture(controller);
+    vi.spyOn(TrueForgeAdapter.prototype,'continueTurn').mockResolvedValue(syntheticTurn('synthetic-gate',undefined,true));
+    vi.spyOn(TrueForgeAdapter.prototype,'inspectTurn').mockResolvedValue(syntheticTurn('synthetic-gate',undefined,true));
+    const dispatch=vi.spyOn(TrueForgeAdapter.prototype,'continueApproval');
+    await controller.repairs.requestPublication(fixture.runId,fixture.jobId);
+    await expect.poll(()=>controller.get('repair-publication-runtime',fixture.jobId)).toMatchObject({status:'approval'});
+    vi.spyOn(TrueForgeAdapter.prototype,'inspectApprovals').mockResolvedValue([{threadId:'synthetic-thread',toolCallId:'synthetic-call',sourceEventId:'synthetic-source',tool:{id:'synthetic-call',type:'function',function:{name:'publish_repair_pr',arguments:mismatch==='malformed-json'?'{':JSON.stringify({runId:mismatch==='wrong-run'?'different-run':fixture.runId,operationId:fixture.proposalId})},toolInfo:{type:'mcp',name:'publish_repair_pr',serverId:mismatch==='wrong-server'?'different-server':`paywallproof_${fixture.runId.replaceAll('-','')}`,serverName:'synthetic'}}}]);
+    const approval=controller.repairs.store.get(fixture.proposalId).approval;if(!approval)throw new Error('Missing synthetic approval');
+    await expect(controller.repairs.decidePublication(fixture.runId,fixture.jobId,approval.id,{decision:'allow',bindingHash:approval.bindingHash})).rejects.toMatchObject({code:'RUNTIME_APPROVAL_MISMATCH'});
+    expect(dispatch).not.toHaveBeenCalled();expect(controller.repairs.store.get(fixture.proposalId).approval?.decision).toBe('pending');
   });
 });

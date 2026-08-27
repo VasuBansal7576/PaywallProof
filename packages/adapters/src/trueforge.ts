@@ -26,7 +26,7 @@ export class TrueForgeAdapter {
   private readonly model: string;
 
   constructor(options: { baseUrl?: string; model?: string; timeoutSeconds?: number } = {}) {
-    this.model = options.model ?? "paywallproof-local/qwen3-4b-nothink";
+    this.model = options.model ?? "paywallproof-local/qwen3-4b-instruct";
     this.client = new TrueForge({
       baseUrl: localUrl(options.baseUrl ?? "http://127.0.0.1:8790"),
       timeoutInSeconds: options.timeoutSeconds ?? 180,
@@ -106,6 +106,14 @@ export class TrueForgeAdapter {
     const { data } = await this.client.sessions.createTurn(options.sessionId, {
       input: [{ type: "user.message", content: options.input }],
     });
+    return data;
+  }
+
+  async continueTurn(options:{sessionId:string;previousTurnId:string;input:string}) {
+    let latest:RuntimeTurn|undefined;
+    for await(const turn of await this.client.sessions.listTurns(options.sessionId))latest=turn;
+    if(!latest||latest.id!==options.previousTurnId||latest.state.status!=='done'||latest.state.requiredActions.length)throw new Error('Runtime continuation requires the latest completed turn without pending approvals.');
+    const {data}=await this.client.sessions.createTurn(options.sessionId,{previousTurnId:options.previousTurnId,input:[{type:'user.message',content:options.input}]});
     return data;
   }
 

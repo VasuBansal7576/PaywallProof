@@ -15,8 +15,8 @@ export const policySchema = z.object({
 });
 export type Policy = z.infer<typeof policySchema>;
 export const runSchema = z.object({
-  id: z.string(), projectId: z.string(), policy: policySchema, targetBuild: z.string(), featureConfigHash: z.string(), mode: modeSchema,
-  status: z.enum(['awaiting_plan_approval', 'running', 'completed', 'canceled']), outcome: z.enum(['passed', 'failed', 'inconclusive']).nullable(),
+  id: z.string(), projectId: z.string(), policy: policySchema, targetBuild: z.string(), featureConfigHash: z.string(), projectConfigHash: z.string().optional(), mode: modeSchema,
+  status: z.enum(['awaiting_plan_approval', 'running', 'stopping', 'completed', 'canceled']), outcome: z.enum(['passed', 'failed', 'inconclusive']).nullable(),
   createdAt: z.number(), startedAt: z.number().nullable(), verdicts: z.array(z.string()),
   approval: z.object({ id: z.string(), bindingHash: z.string(), expiresAt: z.number(), decision: z.enum(['pending', 'allow', 'deny']) }),
 });
@@ -28,6 +28,7 @@ export const detailSchema = z.object({
   run: runSchema,
   runtime: z.object({ sessionId: z.string(), turnId: z.string(), lastSequenceNumber: z.number(), status: z.string(), error: z.unknown().optional(), pendingApprovals: z.unknown().optional() }).nullable(),
   runtimeError: z.object({ code: z.string(), message: z.string() }).nullable().optional(),
+  artifacts: z.array(z.unknown()).optional(),
   scenarios: z.array(scenarioSchema), observations: z.array(z.unknown()), cleanup: z.unknown(), repairs: z.array(z.unknown()), coverageLimits: z.array(z.string()),
 });
 export type RunDetail = z.infer<typeof detailSchema>;

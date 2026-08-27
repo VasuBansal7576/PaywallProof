@@ -23,7 +23,8 @@ function beneath(root:string,path:string){const rel=relative(root,path);return r
 /** Reads raw Git blobs only. Never checks out or executes repository files on the host. */
 export async function readRepairSource(options:{repositoryRoot:string;baseCommit:string;repository:string;paths?:readonly string[]}) {
   const request=metadataSchema.parse({...options,paths:options.paths??REFERENCE_REPAIR_PATHS});
-  if(new Set(request.paths).size!==request.paths.length)throw new RepairError('REPAIR_SCOPE_REJECTED');
+  const foldedPaths=request.paths.map(path=>path.toLowerCase());
+  if(new Set(foldedPaths).size!==request.paths.length||foldedPaths.some(path=>foldedPaths.some(other=>other!==path&&other.startsWith(`${path}/`))))throw new RepairError('REPAIR_SCOPE_REJECTED');
   const root=await realpath(options.repositoryRoot);
   const git=async(args:string[])=>execute('git',['--no-pager','--no-replace-objects','-C',root,...args],{encoding:'buffer',maxBuffer:2*1024*1024,timeout:10000});
   const {stdout:remote}=await git(['config','--get','remote.origin.url']);

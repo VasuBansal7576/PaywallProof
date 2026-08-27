@@ -45,6 +45,12 @@ function commit() {
   return git(['rev-parse', 'HEAD']).toString('utf8').trim();
 }
 
+function commitSyntheticSourceTree(entries: string[]) {
+  const sourceTree = git(['mktree'], Buffer.from(`${entries.join('\n')}\n`)).toString().trim();
+  const rootTree = git(['mktree'], Buffer.from(`040000 tree ${sourceTree}\tsrc\n`)).toString().trim();
+  return git(['commit-tree', rootTree, '-p', baseCommit, '-m', 'Synthetic case-collision fixture']).toString().trim();
+}
+
 function collect(overrides: Record<string, unknown> = {}) {
   return readRepairSource({ repositoryRoot, baseCommit, repository, paths: [sourcePath], ...overrides });
 }
@@ -221,6 +227,42 @@ describe('independent repair checkout: exact provenance and source path policy',
     await rejected(() => collect({ paths: [sourcePath, sourcePath] }));
     await rejected(() => collect({ paths: [sourcePath, sourcePath.toUpperCase()] }));
     await rejected(() => collect({ paths: ['src', sourcePath] }));
+  });
+
+  it('rejects two distinct committed blobs whose requested paths collide by case', async () => {
+    const upperBytes = Buffer.from('export const syntheticUpper = true;\n');
+    const lowerBytes = Buffer.from('export const syntheticLower = true;\n');
+    const upperBlob = git(['hash-object', '-w', '--stdin'], upperBytes).toString().trim();
+    const lowerBlob = git(['hash-object', '-w', '--stdin'], lowerBytes).toString().trim();
+    baseCommit = commitSyntheticSourceTree([
+      `100644 blob ${upperBlob}\tFoo.ts`,
+      `100644 blob ${lowerBlob}\tfoo.ts`,
+    ]);
+    // Git plumbing can preserve both names on case-insensitive host filesystems.
+    expect(git(['ls-tree', '-r', '--name-only', baseCommit]).toString().trim().split('\n')).toEqual(['src/Foo.ts', 'src/foo.ts']);
+    expect(git(['cat-file', 'blob', `${baseCommit}:src/Foo.ts`])).toEqual(upperBytes);
+    expect(git(['cat-file', 'blob', `${baseCommit}:src/foo.ts`])).toEqual(lowerBytes);
+    const before = treeSnapshot();
+    await rejected(() => collect({ paths: ['src/Foo.ts', 'src/foo.ts'] }));
+    expect(treeSnapshot()).toEqual(before);
+  });
+
+  it('rejects committed file and descendant paths that collide after case normalization', async () => {
+    const parentBytes = Buffer.from('export const syntheticParent = true;\n');
+    const childBytes = Buffer.from('export const syntheticChild = true;\n');
+    const parentBlob = git(['hash-object', '-w', '--stdin'], parentBytes).toString().trim();
+    const childBlob = git(['hash-object', '-w', '--stdin'], childBytes).toString().trim();
+    const childTree = git(['mktree'], Buffer.from(`100644 blob ${childBlob}\tchild.ts\n`)).toString().trim();
+    baseCommit = commitSyntheticSourceTree([
+      `100644 blob ${parentBlob}\tFoo.ts`,
+      `040000 tree ${childTree}\tfoo.ts`,
+    ]);
+    expect(git(['ls-tree', '-r', '--name-only', baseCommit]).toString().trim().split('\n')).toEqual(['src/Foo.ts', 'src/foo.ts/child.ts']);
+    expect(git(['cat-file', 'blob', `${baseCommit}:src/Foo.ts`])).toEqual(parentBytes);
+    expect(git(['cat-file', 'blob', `${baseCommit}:src/foo.ts/child.ts`])).toEqual(childBytes);
+    const before = treeSnapshot();
+    await rejected(() => collect({ paths: ['src/Foo.ts', 'src/foo.ts/child.ts'] }));
+    expect(treeSnapshot()).toEqual(before);
   });
 
   it('rejects empty selection, missing paths and directories', async () => {

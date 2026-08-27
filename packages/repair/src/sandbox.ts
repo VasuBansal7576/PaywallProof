@@ -165,13 +165,15 @@ setTimeout(() => { for (const socket of sockets) socket.destroy(); server.close(
 
 const bridgeResponseSchema = z.object({ kind: z.literal('response'), id: z.string(), status: z.number().int().min(100).max(599).optional(), headers: z.record(z.string(), z.union([z.string(), z.array(z.string())])).optional(), body: z.string().max(Math.ceil(MAX_HTTP_BYTES / 3) * 4).optional(), error: z.string().optional() });
 type BridgeResponse = z.infer<typeof bridgeResponseSchema>;
-function safeRequestHeaders(headers: IncomingHttpHeaders, adapterToken: string): Record<string, string> {
+export function safeRequestHeaders(headers: IncomingHttpHeaders, adapterToken: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const name of ['content-type', 'accept', 'cookie', 'stripe-signature', 'authorization']) {
     const value = headers[name];
     if (value === undefined) continue;
     if (typeof value !== 'string' || value.length > 4096 || /[\r\n]/.test(value)) throw new Error('BRIDGE_HEADERS_REJECTED');
-    if (name === 'authorization' && value !== `Bearer ${adapterToken}`) throw new Error('BRIDGE_HEADERS_REJECTED');
+    // The one fixed invalid token reaches the target for negative auth controls.
+    // Other bearer credentials remain forbidden, including arbitrary host secrets.
+    if (name === 'authorization' && value !== `Bearer ${adapterToken}` && value !== 'Bearer invalid_synthetic_token') throw new Error('BRIDGE_HEADERS_REJECTED');
     if (name === 'cookie' && !/^pp_session=[A-Za-z0-9._~-]{1,512}$/.test(value)) throw new Error('BRIDGE_HEADERS_REJECTED');
     out[name] = value;
   }
@@ -366,7 +368,9 @@ export class RepairSandboxRunner {
       if (call.toolInfo.type !== 'truefoundry-system' || call.toolInfo.name !== 'exec') { if (expectedCommand) fail(operation, 'EXACT_EXEC_REQUIRED'); continue; }
       let args: unknown; try { args = JSON.parse(call.function.arguments); } catch { fail(operation, 'EXEC_ARGUMENTS_INVALID'); }
       const parsed = z.object({ command: z.string(), cwd: z.string().optional(), env: z.record(z.string(), z.string()).optional() }).safeParse(args);
-      if (!parsed.success || expectedCommand && (parsed.data.command !== expectedCommand || parsed.data.cwd !== undefined || parsed.data.env !== undefined)) fail(operation, 'EXACT_EXEC_REQUIRED');
+      if (!parsed.success || expectedCommand && (parsed.data.command !== expectedCommand
+        || parsed.data.cwd !== undefined && parsed.data.cwd !== '.'
+        || parsed.data.env !== undefined && Object.keys(parsed.data.env).length !== 0)) fail(operation, 'EXACT_EXEC_REQUIRED');
       const response = events.find(e => e.type === 'tool.response' && e.toolCallId === call.id);
       if (!response || response.type !== 'tool.response') fail(operation, 'EXEC_RECEIPT_MISSING');
       let value: unknown; try { value = JSON.parse(response.content); } catch { fail(operation, 'EXEC_RECEIPT_INVALID'); }

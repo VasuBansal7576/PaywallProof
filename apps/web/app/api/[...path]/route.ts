@@ -19,7 +19,7 @@ async function proxy(request: Request): Promise<Response> {
       ...(request.method === 'GET' || request.method === 'HEAD' ? {} : { body: await request.arrayBuffer() }),
     });
     const outputHeaders = new Headers({ 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
-    for (const name of ['content-type', 'content-disposition']) {
+    for (const name of ['content-type', 'content-disposition', 'content-length']) {
       const value = response.headers.get(name);
       if (value) outputHeaders.set(name, value);
     }

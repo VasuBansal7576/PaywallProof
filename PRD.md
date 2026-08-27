@@ -177,6 +177,8 @@ Do not present a suspected code location as a verified root cause until a repair
 
 The owner selects **Prepare repair**. The agent edits an isolated checkout and runs the original failing test plus regression checks. The interface shows the diff, changed files, test evidence, and limitations.
 
+Because the original run is already terminal, this explicit request starts a separate local repair job with its own persisted 15-minute active-execution limit. It reuses the run's TrueForge session but does not renew its expired billing authorization or mutate its original fixtures. Restarting the worker does not reset the repair job's deadline. Publication approval is a separate, expiring decision after verification.
+
 The owner separately approves **Publish PR**. Publishing does not merge the PR or deploy the change. The original staging run stays failed until a new run verifies the changed staging deployment.
 
 ### 3.6 Screen inventory

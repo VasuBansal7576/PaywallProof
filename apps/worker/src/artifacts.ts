@@ -64,6 +64,7 @@ function storageError(error: unknown): ArtifactError {
 
 /** Read-only service. The caller authenticates the operator and verifies the run exists. */
 export function createArtifactService(options: ArtifactServiceOptions) {
+  if (!options || typeof options !== 'object') throw new ArtifactError('ARTIFACT_CONFIGURATION_INVALID');
   const parsed = configurationSchema.safeParse({ rootDirectory: options.rootDirectory, retentionMs: options.retentionMs ?? 7 * 24 * 60 * 60 * 1000, maxBytes: options.maxBytes ?? 10 * 1024 * 1024 });
   if (!parsed.success || typeof options.lookup !== 'function' || (options.now !== undefined && typeof options.now !== 'function') || !constants.O_NOFOLLOW || !constants.O_DIRECTORY) throw new ArtifactError('ARTIFACT_CONFIGURATION_INVALID');
   const config = parsed.data;
@@ -117,6 +118,7 @@ export function createArtifactService(options: ArtifactServiceOptions) {
       let file;
       try { file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); }
       catch (error) { throw storageError(error); }
+      let result: { kind: 'verified'; bytes: Uint8Array<ArrayBuffer> } | { kind: 'failed'; error: ArtifactError };
       try {
         await verifyRoot();
         const before = await file.stat();
@@ -137,9 +139,13 @@ export function createArtifactService(options: ArtifactServiceOptions) {
         await verifyRoot();
         const signature = [137, 80, 78, 71, 13, 10, 26, 10];
         if (!signature.every((value, index) => bytes[index] === value) || createHash('sha256').update(bytes).digest('hex') !== metadata.sha256) throw new ArtifactError('ARTIFACT_CORRUPT');
-        return { bytes, metadata };
-      } catch (error) { throw storageError(error); }
-      finally { await file.close(); }
+        result = { kind: 'verified', bytes };
+      } catch (error) { result = { kind: 'failed', error: storageError(error) }; }
+      let closeError: ArtifactError | undefined;
+      try { await file.close(); } catch (error) { closeError = storageError(error); }
+      if (result.kind === 'failed') throw result.error;
+      if (closeError) throw closeError;
+      return { bytes: result.bytes, metadata };
     },
   };
 }

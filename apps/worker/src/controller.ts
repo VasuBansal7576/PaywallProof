@@ -1,17 +1,20 @@
 import Database from 'better-sqlite3';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { z } from 'zod';
 import { openRunStore, ControlError, RUN_LIMITS } from '../../../packages/control/src/index.ts';
 import { createPolicy, hashValue, identifier, parseJson, policySchema, type Billing, type Verdict } from '../../../packages/core/src/index.ts';
 import { EvidenceStore, redact, type EvidenceEvaluation } from '../../../packages/evidence/src/index.ts';
-import { observeFeature } from '../../../packages/evidence/src/probe.ts';
+import { observeFeature, observeScenario } from '../../../packages/evidence/src/probe.ts';
 import { ReferenceTargetAdapter, TargetTransport } from '../../../packages/adapters/src/network.ts';
 import { BrowserRunner } from '../../../packages/adapters/src/browser.ts';
 import { StripeSandboxAdapter, STRIPE_API_VERSION } from '../../../packages/adapters/src/stripe.ts';
 import { LocalReplayAdapter } from '../../../packages/adapters/src/replay.ts';
 import { TrueForgeAdapter } from '../../../packages/adapters/src/trueforge.ts';
 import { createArtifactService } from './artifacts.ts';
+import { RepairCoordinator } from './repairs.ts';
+import { oracleFingerprint } from '../../../packages/repair/src/oracle.ts';
 
 export type ControllerConfig = {
   databasePath:string;artifactDirectory:string;targetOrigin:string;workerOrigin:string;webOrigin:string;
@@ -49,6 +52,9 @@ export class Controller {
   readonly replay:LocalReplayAdapter;
   readonly database:Database.Database;
   readonly artifacts:ReturnType<typeof createArtifactService>;
+  readonly repairs:RepairCoordinator;
+  private readonly repositoryRoot=resolve(import.meta.dirname,'../../..');
+  private readonly oracleBinding:ReturnType<typeof oracleFingerprint>;
   private readonly watchers=new Set<string>();
   private readonly activeTools=new Set<string>();
   private readonly approvalLocks=new Set<string>();
@@ -67,6 +73,15 @@ export class Controller {
     this.runtime=new TrueForgeAdapter({baseUrl:config.runtimeUrl,model:config.model});
     this.stripe=config.stripeKey&&config.stripeAccountId?new StripeSandboxAdapter({key:config.stripeKey,accountId:config.stripeAccountId,priceId:config.priceId,databasePath:config.databasePath,beforeMutation:(runId,kind)=>this.guardMutation(runId,kind)}):null;
     this.replay=new LocalReplayAdapter({databasePath:config.databasePath,priceId:config.priceId,adapterToken:config.adapterToken,replaySecret:config.replaySecret,transport,beforeMutation:runId=>{this.active(runId);}});
+    this.oracleBinding=oracleFingerprint(this.repositoryRoot);
+    this.repairs=new RepairCoordinator({repositoryRoot:this.repositoryRoot,repository:config.repository,databasePath:config.databasePath,artifactDirectory:config.artifactDirectory,runtimeUrl:config.runtimeUrl,model:config.model,webOrigin:config.webOrigin,documents:{put:(kind,id,value)=>this.put(kind,id,value),get:(kind,id)=>this.get(kind,id),list:kind=>this.list(kind)},source:async runId=>{
+      const run=this.runs.getRun(runId);
+      if(run.status!=='completed')throw new ControlError('REPAIR_REQUIRES_COMPLETED_RUN');
+      const binding=z.object({hash:z.string()}).safeParse(this.get('oracle',runId));
+      if(!binding.success)throw new ControlError('ORIGINAL_RERUN_REQUIRED');
+      const runtime=runtimeSchema.parse(this.get('runtime',runId));
+      return {runId,baseCommit:run.targetBuild,policy:run.policy,oracleHash:binding.data.hash,scenarios:this.scenarios(runId),observations:this.evidence.list(runId),runtime};
+    }});
   }
   put(kind:string,id:string,value:unknown) {this.database.prepare('INSERT INTO control_documents VALUES(?,?,?) ON CONFLICT(kind,id) DO UPDATE SET value=excluded.value').run(kind,id,JSON.stringify(parseJson(value)));}
   get(kind:string,id:string):unknown {
@@ -111,8 +126,11 @@ export class Controller {
     const preflight=await this.preflight(request.projectId,request.mode);
     if(!preflight.ready||!preflight.target)throw new ControlError('PREFLIGHT_BLOCKED');
     if(hashValue(preflight.target.feature)!==policy.featureConfigHash)throw new ControlError('POLICY_TARGET_MISMATCH');
+    const oracle=await this.oracleBinding;
+    if((await oracleFingerprint(this.repositoryRoot)).hash!==oracle.hash)throw new ControlError('WORKER_SOURCE_CHANGED_RESTART_REQUIRED');
     const run=this.runs.createRun({projectId:request.projectId,policy,targetBuild:preflight.target.buildId,featureConfigHash:policy.featureConfigHash,mode:request.mode,projectConfigHash:this.configurationHash()});
     this.put('run-index',run.id,{id:run.id});
+    this.put('oracle',run.id,oracle);
     this.saveContext(run.id,{free:null,paid:null,customerId:null,fixturesReady:false,subscriptionCreated:false,scheduled:false,advanced:false,completedScenarios:[],cleanup:[]});
     void this.startRuntime(run.id).catch(error=>this.failRuntimeStartup(run.id,error));
     return run;
@@ -124,6 +142,7 @@ export class Controller {
     try{await this.finishStop(runId);}catch(stopError){this.put('stop-error',runId,{message:this.safeError(stopError)});}
   }
   private async startRuntime(runId:string) {
+    if(this.runs.getRun(runId).status!=='awaiting_plan_approval')throw new ControlError('RUN_CANCELED');
     // Persist a start intent; an uncertain session creation is never retried automatically.
     if(this.get('runtime-intent',runId))throw new ControlError('RUNTIME_OUTCOME_UNKNOWN');
     this.put('runtime-intent',runId,{at:Date.now()});
@@ -218,6 +237,9 @@ export class Controller {
     if(this.activeTools.has(runId))throw new ControlError('IN_FLIGHT_EFFECT_UNRESOLVED');
     if(this.runs.getRun(runId).approval.decision==='allow')await this.cleanup(runId);
     this.runs.cancelRun(runId);
+    // The SDK has no MCP-registration deletion API. Revoke the local capability
+    // so a stale runtime registration cannot authenticate any further request.
+    this.database.prepare("DELETE FROM control_documents WHERE kind='mcp-token' AND json_extract(value,'$.runId')=?").run(runId);
     }finally{this.stopLocks.delete(runId);}
   }
   private guardMutation(runId:string,kind:string) {
@@ -257,6 +279,7 @@ export class Controller {
     if(request.runId!==boundRunId)throw new ControlError('OWNERSHIP_MISMATCH');
     if(!TOOL_NAMES.includes(name))throw new ControlError('TOOL_UNSUPPORTED');
     if(request.action!==undefined&&name!=='change_test_subscription'||request.scenarioId!==undefined&&!['probe_feature','observe_billing'].includes(name))throw new ControlError('INVALID_INPUT');
+    if(name==='publish_repair_pr')return this.repairs.publishFromTool(boundRunId,supplied.operationId);
     if(name==='inspect_project')return {project:this.project(this.runs.getRun(boundRunId).projectId),target:await this.target.describe()};
     if(name==='check_connections')return this.preflight(this.runs.getRun(boundRunId).projectId,this.runs.getRun(boundRunId).mode);
     if(this.activeTools.has(boundRunId))throw new ControlError('OPERATION_IN_FLIGHT');
@@ -331,25 +354,7 @@ export class Controller {
     const run=this.active(runId),context=this.context(runId);
     const expected=['SC01','SC02','SC03','SC04'][context.completedScenarios.length];
     if(scenario!==expected||!context.fixturesReady||scenario==='SC02'&&!context.subscriptionCreated||scenario==='SC03'&&!context.scheduled||scenario==='SC04'&&!context.advanced)throw new ControlError('SCENARIO_ORDER');
-    // Provider state confirmation precedes the application's synchronization deadline.
-    const providerDeadline=Date.now()+90_000;let billing:Billing;
-    for(;;){this.active(runId);try{
-      billing=await this.billing(runId,scenario);
-      const subscription=billing.subscription;
-      const established=scenario==='SC01'?billing.noSubscriptionConfirmed&&!subscription:
-        scenario==='SC02'?subscription?.status==='active'&&subscription.initialInvoicePaid&&!subscription.cancelAtPeriodEnd:
-        scenario==='SC03'?subscription?.status==='active'&&subscription.initialInvoicePaid&&subscription.cancelAtPeriodEnd&&subscription.billingTime<subscription.periodEnd:
-        subscription?.status==='canceled'&&subscription.billingTime>=subscription.periodEnd;
-      if(established)break;
-    }catch{if(Date.now()>=providerDeadline)throw new ControlError('PROVIDER_UNAVAILABLE');}if(Date.now()>=providerDeadline)throw new ControlError('SYNC_TIMEOUT');await new Promise(resolve=>setTimeout(resolve,1000));}
-    const confirmedAt=Date.now(),deadline=confirmedAt+run.policy.syncWindowSeconds*1000;
-    let result:EvidenceEvaluation;
-    for(;;){this.active(runId);result=await this.probeCycle(runId,scenario,confirmedAt);const verdicts=[result.api.verdict,result.browser.verdict,result.state.verdict];if(verdicts.every(verdict=>verdict==='pass'))break;if(Date.now()>=deadline){
-      const final=await this.probeCycle(runId,scenario,deadline);
-      const repeated=await this.probeCycle(runId,scenario,deadline);
-      for(const key of ['api','browser','state'] as const){if(repeated[key].verdict==='fail'&&(final[key].verdict!=='fail'||final[key].code!==repeated[key].code))repeated[key]={verdict:'inconclusive',code:'UNSTABLE_CONTRADICTION'};}
-      repeated.observationIds=[...final.observationIds,...repeated.observationIds];result=repeated;break;
-    }await new Promise(resolve=>setTimeout(resolve,1000));}
+    const result=await observeScenario({scenarioId:scenario,policy:run.policy,billing:()=>this.billing(runId,scenario),collect:notBefore=>this.probeCycle(runId,scenario,notBefore),assertActive:()=>{this.active(runId);}});
     this.active(runId);const record={id:scenario,...result};this.put(`scenario:${runId}`,scenario,record);context.completedScenarios.push(scenario);this.saveContext(runId,context);return record;
   }
   scenarios(runId:string):(EvidenceEvaluation&{id:ScenarioId})[] {
@@ -374,12 +379,12 @@ export class Controller {
   }
   viewRun(runId:string) {
     const run=this.runs.getRun(runId),context=this.context(runId);
-    return {run,runtime:this.get('runtime',runId),runtimeError:this.get('runtime-error',runId),stopError:this.get('stop-error',runId),limitsHit:this.get('limit-hit',runId),scenarios:this.scenarios(runId),observations:this.evidence.list(runId),artifacts:this.list('artifact').filter(value=>z.object({runId:z.string()}).parse(value).runId===runId),cleanup:context.cleanup,repairs:this.list(`repairs:${runId}`),coverageLimits};
+    return {run,runtime:this.get('runtime',runId),runtimeError:this.get('runtime-error',runId),stopError:this.get('stop-error',runId),limitsHit:this.get('limit-hit',runId),scenarios:this.scenarios(runId),observations:this.evidence.list(runId),artifacts:this.list('artifact').filter(value=>z.object({runId:z.string()}).parse(value).runId===runId),cleanup:context.cleanup,repairs:this.repairs.view(runId),coverageLimits};
   }
   async artifact(runId:string,artifactId:string){this.runs.getRun(runId);return this.artifacts.read({runId,artifactId});}
   report(runId:string) {
     const view=this.viewRun(runId);
-    return {...view,parentRunId:null,project:this.project(view.run.projectId),versions:{stripeApi:STRIPE_API_VERSION,stripeSdk:'22.6.0',trueforge:'0.1.4',trueforgeSdk:'0.1.3',predicate:view.run.policy.predicateVersion},limits:RUN_LIMITS,generatedAt:new Date().toISOString()};
+    return {...view,parentRunId:null,project:this.project(view.run.projectId),versions:{stripeApi:STRIPE_API_VERSION,stripeSdk:'22.6.0',trueforge:'0.1.4',trueforgeSdk:'0.1.3',predicate:view.run.policy.predicateVersion},oracle:this.get('oracle',runId),limits:RUN_LIMITS,generatedAt:new Date().toISOString()};
   }
   async recover() {for(const value of this.list('run-index')){
     const {id}=z.object({id:identifier}).parse(value),run=this.runs.getRun(id);
@@ -387,6 +392,6 @@ export class Controller {
     this.armWatchdog(id);const state=runtimeSchema.safeParse(this.get('runtime',id));
     if(run.status==='awaiting_plan_approval'&&(!state.success||state.data.status==='error')){await this.failRuntimeStartup(id,new Error('Runtime startup interrupted; no new session or turn was dispatched.'));continue;}
     if(state.success&&state.data.status==='running')void this.watchRuntime(id);
-  }}
-  close(){for(const timer of this.watchdogs.values())clearTimeout(timer);this.runs.close();this.evidence.close();this.stripe?.close();this.replay.close();this.database.close();}
+  }await this.repairs.recover();}
+  close(){for(const timer of this.watchdogs.values())clearTimeout(timer);this.repairs.close();this.runs.close();this.evidence.close();this.stripe?.close();this.replay.close();this.database.close();}
 }

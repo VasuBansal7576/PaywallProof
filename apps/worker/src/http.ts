@@ -10,6 +10,7 @@ import { ControlError, RUN_LIMITS } from '../../../packages/control/src/index.ts
 import { hashValue, identifier } from '../../../packages/core/src/index.ts';
 import { redact } from '../../../packages/evidence/src/index.ts';
 import { ArtifactError } from './artifacts.ts';
+import { RepairError } from '../../../packages/repair/src/index.ts';
 
 type Variables={csrfToken:string};
 export function createControlApp(config:ControllerConfig) {
@@ -31,7 +32,7 @@ export function createControlApp(config:ControllerConfig) {
   });
   app.onError((error,c)=>{
     if(error instanceof ArtifactError)return c.json({error:{code:error.code,message:error.message}},error.status);
-    const code=error instanceof ControlError?error.code:error instanceof z.ZodError||error instanceof SyntaxError?'INVALID_INPUT':'REQUEST_FAILED';
+    const code=error instanceof ControlError||error instanceof RepairError?error.code:error instanceof z.ZodError||error instanceof SyntaxError?'INVALID_INPUT':'REQUEST_FAILED';
     const status=code==='NOT_FOUND'?404:code==='INVALID_INPUT'?400:code==='TARGET_SCOPE_REJECTED'?403:code==='PREFLIGHT_BLOCKED'?422:code.includes('APPROVAL')||code.includes('CONFLICT')||code.includes('IN_FLIGHT')?409:422;
     return c.json({error:{code,message:code==='REQUEST_FAILED'?'The request failed. No success was recorded.':code.replaceAll('_',' ')}},status);
   });
@@ -106,11 +107,11 @@ export function createControlApp(config:ControllerConfig) {
   app.post('/api/runs/:id/approvals/:approvalId',async c=>c.json(await controller.decidePlan(c.req.param('id'),c.req.param('approvalId'),await c.req.json())));
   app.post('/api/runs/:id/cancel',async c=>{z.strictObject({}).parse(await c.req.json());return c.json(await controller.cancel(c.req.param('id')));});
   app.post('/api/runs/:id/repairs',async c=>{
-    z.strictObject({}).parse(await c.req.json());
-    const view=controller.viewRun(c.req.param('id'));
-    if(!view.scenarios.some(result=>result.api.verdict==='fail'||result.browser.verdict==='fail'||result.state.verdict==='fail'))throw new ControlError('REPAIR_REQUIRES_CONFIRMED_FAILURE');
-    throw new ControlError('REPAIR_EXECUTION_NOT_YET_VERIFIED');
+    return c.json(await controller.repairs.start(c.req.param('id'),await c.req.json()),202);
   });
+  app.post('/api/runs/:id/repairs/:jobId/cancel',async c=>{z.strictObject({}).parse(await c.req.json());return c.json(controller.repairs.cancel(c.req.param('id'),c.req.param('jobId')));});
+  app.post('/api/runs/:id/repairs/:jobId/publication-request',async c=>{z.strictObject({}).parse(await c.req.json());return c.json(await controller.repairs.requestPublication(c.req.param('id'),c.req.param('jobId')),202);});
+  app.post('/api/runs/:id/repairs/:jobId/approvals/:approvalId',async c=>c.json(await controller.repairs.decidePublication(c.req.param('id'),c.req.param('jobId'),c.req.param('approvalId'),await c.req.json())));
   app.get('/api/runs/:id/report',c=>{
     const report=controller.report(c.req.param('id'));
     if(c.req.query('format')==='markdown'){

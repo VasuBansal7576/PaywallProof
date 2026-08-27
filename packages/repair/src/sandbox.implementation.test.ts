@@ -7,7 +7,7 @@ import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import type { TrueForgeApi } from '@truefoundry/trueforge-sdk';
-import { RepairSandboxRunner, type SandboxRunInput, type SandboxRuntimeState } from './sandbox.ts';
+import { RepairSandboxRunner, safeRequestHeaders, type SandboxRunInput, type SandboxRuntimeState } from './sandbox.ts';
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), listTurns: vi.fn(), listEvents: vi.fn(), createTurn: vi.fn(), downloadSandboxFile: vi.fn(), checkConnection: vi.fn(), cancel: vi.fn(), resumeStream: vi.fn(), inspectTurn: vi.fn(), listTurnEvents: vi.fn(), syntheticRoot: '' }));
 vi.mock('node:fs/promises', async importOriginal => {
@@ -24,11 +24,12 @@ vi.mock('../../adapters/src/trueforge.ts', () => ({ TrueForgeAdapter: class {
 } }));
 const execute = promisify(execFile);
 let root = '', counter = 0, latest = 'previous', lost = false, alter = false, omitReceipt = false;
+let execExtras: Record<string, unknown> = {};
 const children: ChildProcess[] = [], events = new Map<string, TrueForgeApi.SessionEvent[]>(), inputs = new Map<string, string>();
 const done = (): TrueForgeApi.TurnStateDone => ({ status: 'done', completedAt: new Date().toISOString(), output: null, requiredActions: [] });
 const turn = (id: string): TrueForgeApi.Turn => ({ id, sessionId: 'synthetic-session', previousTurnId: null, createdAt: new Date().toISOString(), state: done() });
 beforeEach(async () => {
-  vi.clearAllMocks(); counter = 0; latest = 'previous'; lost = false; alter = false; omitReceipt = false; events.clear(); inputs.clear();
+  vi.clearAllMocks(); counter = 0; latest = 'previous'; lost = false; alter = false; omitReceipt = false; execExtras = {}; events.clear(); inputs.clear();
   root = await mkdtemp(join(tmpdir(), 'pp-runner-implementation-'));
   mocks.syntheticRoot = join(homedir(), 'Library', 'Application Support', 'trueforge', 'sandboxes', 'synthetic-session', '00000000000000000000000000');
   await mkdir(join(root, 'uploads'));
@@ -59,7 +60,7 @@ beforeEach(async () => {
     if (match?.[1]) {
       const command = match[1], script = command.slice(5);
       const result = await execute(process.execPath, [script], { cwd: root, env: { NODE_ENV: 'development', PATH: `${dirname(process.execPath)}:/usr/bin:/bin`, HOME: root, TMPDIR: root }, timeout: 10_000, maxBuffer: 100_000 });
-      observed.push({ type: 'model.message', id: `${turnId}-call`, threadId: 'main', createdAt: new Date().toISOString(), toolCalls: [{ type: 'function', id: `${turnId}-tool`, function: { name: 'exec', arguments: JSON.stringify({ command, intent: 'synthetic implementation test' }) }, toolInfo: { type: 'truefoundry-system', name: 'exec' } }] });
+      observed.push({ type: 'model.message', id: `${turnId}-call`, threadId: 'main', createdAt: new Date().toISOString(), toolCalls: [{ type: 'function', id: `${turnId}-tool`, function: { name: 'exec', arguments: JSON.stringify({ command, intent: 'synthetic implementation test', ...execExtras }) }, toolInfo: { type: 'truefoundry-system', name: 'exec' } }] });
       if (!omitReceipt) observed.push({ type: 'tool.response', id: `${turnId}-response`, threadId: 'main', createdAt: new Date().toISOString(), toolCallId: `${turnId}-tool`, content: JSON.stringify({ success: true, response: { exitCode: 0, result: result.stdout } }) });
     } else if (alter && input.includes('sanitized checkout')) {
       const workspace = /checkout is in (pp_[a-f0-9]+)\./.exec(input)?.[1];
@@ -82,6 +83,12 @@ function request(): SandboxRunInput {
 }
 
 describe('repair runner implementation with synthetic SDK, no model/provider', () => {
+  it('forwards only the disposable token or the fixed negative-test token',()=>{
+    expect(safeRequestHeaders({authorization:'Bearer disposable-only'},'disposable-only')).toEqual({authorization:'Bearer disposable-only'});
+    expect(safeRequestHeaders({authorization:'Bearer invalid_synthetic_token'},'disposable-only')).toEqual({authorization:'Bearer invalid_synthetic_token'});
+    expect(safeRequestHeaders({},'disposable-only')).toEqual({});
+    for(const authorization of ['Bearer arbitrary-host-secret','Basic synthetic','Bearer disposable-only\r\nX-Injected: 1'])expect(()=>safeRequestHeaders({authorization},'disposable-only')).toThrow('BRIDGE_HEADERS_REJECTED');
+  });
   it('hash binds uploaded and materialized bytes, keeps existing turn chain, and retains exec receipt', async () => {
     const states: SandboxRuntimeState[] = [], input = request(); input.onState = async state => { states.push(state); };
     const result = await new RepairSandboxRunner().run(input);
@@ -155,6 +162,16 @@ describe('repair runner implementation with synthetic SDK, no model/provider', (
     mocks.cancel.mockClear();
     await expect(new RepairSandboxRunner().run(request())).rejects.toMatchObject({ code: 'RUNTIME_PREVIOUS_TURN_REJECTED' });
     expect(mocks.cancel).not.toHaveBeenCalled();
+  });
+  it('accepts only explicit empty exec defaults as equivalent to omission', async () => {
+    execExtras = { cwd: '.', env: {} };
+    const result = await new RepairSandboxRunner().run(request());
+    expect(result.execReceipts).toHaveLength(1);
+    expect(result.execReceipts[0]?.output).toContain('42\n');
+  });
+  it.each([{ cwd: '/tmp' }, { cwd: './' }, { cwd: '../' }, { env: { PATH: '/tmp' } }])('rejects exec scope/environment override %j', async override => {
+    execExtras = override;
+    await expect(new RepairSandboxRunner().run(request())).rejects.toMatchObject({ code: 'EXACT_EXEC_REQUIRED' });
   });
   it.each(['../escape', '/tmp/escape', 'src/.env', 'tests/oracle.ts', 'src/value.cjs/child'])('rejects protected or conflicting transfer path %s before runtime access', async path => {
     const input = request(); input.files.push({ path, bytes: Buffer.from('x'), role: 'source' }); input.allowedPaths.push(path);

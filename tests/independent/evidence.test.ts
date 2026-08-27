@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createPolicy } from '../../packages/core/src/index.ts';
 import { EvidenceStore, evaluateEvidence, redact } from '../../packages/evidence/src/index.ts';
+import { observeScenario } from '../../packages/evidence/src/probe.ts';
 
 // Independent public-boundary tests. Every payload and secret is synthetic.
 // Stored browser payloads here are test inputs, not proof of browser execution.
@@ -31,11 +32,11 @@ function credentialCanary(prefixParts: string[], suffixLength: number) {
   return `${prefixParts.join('_')}_${suffix}`;
 }
 
-function approvedPolicy() {
+function approvedPolicy(syncWindowSeconds = 60) {
   return createPolicy({
     schemaVersion: 1, priceId: 'price_pro', featureId: 'export', featureConfigHash: 'a'.repeat(64),
     cancellation: 'allow_until_period_end', requireInitialInvoicePaid: true,
-    syncWindowSeconds: 60, predicateVersion: 'export-v1',
+    syncWindowSeconds, predicateVersion: 'export-v1',
   });
 }
 
@@ -419,5 +420,379 @@ describe('independent evidence: provenance and freshness', () => {
     await close(store);
     const reopened = open();
     expect(await evaluateEvidence(reopened, evaluationInput(ids))).toEqual(before);
+  });
+});
+
+type ProbeOptions = Parameters<typeof observeScenario>[0];
+type ProbeScenario = ProbeOptions['scenarioId'];
+type ProbeBilling = Awaited<ReturnType<ProbeOptions['billing']>>;
+type ProbeChannel = 'api' | 'browser' | 'state';
+type ProbeVerdict = Evaluation['api']['verdict'];
+const probeChannels: ProbeChannel[] = ['api', 'browser', 'state'];
+
+function probeClock() {
+  let time = observedNow;
+  const waits: number[] = [];
+  return {
+    now: () => time,
+    advance: (milliseconds: number) => { time += milliseconds; },
+    wait: async (milliseconds: number) => {
+      expect(Number.isFinite(milliseconds)).toBe(true);
+      expect(milliseconds).toBeGreaterThan(0);
+      waits.push(milliseconds);
+      time += milliseconds;
+      if (time > observedNow + 500_000 || waits.length > 10_000) throw new Error('Synthetic timing harness bound exceeded');
+    },
+    waits,
+  };
+}
+
+function scenarioBilling(scenarioId: ProbeScenario): ProbeBilling {
+  if (scenarioId === 'SC01') return {
+    livemode: false, identityResolved: true, noSubscriptionConfirmed: true, customerId: null, subscription: null,
+  };
+  return {
+    livemode: false, identityResolved: true, noSubscriptionConfirmed: false, customerId: 'cus_synthetic_probe',
+    subscription: {
+      id: 'sub_synthetic_probe', customerId: 'cus_synthetic_probe', priceId: 'price_pro',
+      status: scenarioId === 'SC04' ? 'canceled' : 'active', initialInvoicePaid: true,
+      cancelAtPeriodEnd: scenarioId === 'SC03', periodEnd: 2_000,
+      billingTime: scenarioId === 'SC04' ? 2_000 : 1_000,
+    },
+  };
+}
+
+function subscriptionChange(scenarioId: ProbeScenario, change: Partial<NonNullable<ProbeBilling['subscription']>>): ProbeBilling {
+  const billing = scenarioBilling(scenarioId);
+  if (!billing.subscription) throw new Error('Synthetic subscription fixture required');
+  return { ...billing, subscription: { ...billing.subscription, ...change } };
+}
+
+function syntheticEvaluation(label: string, changes: Partial<Pick<Evaluation, ProbeChannel>> = {}): Evaluation {
+  return {
+    api: { verdict: 'pass', code: 'SYNTHETIC_API_PASS' },
+    browser: { verdict: 'pass', code: 'SYNTHETIC_BROWSER_PASS' },
+    state: { verdict: 'pass', code: 'SYNTHETIC_STATE_PASS' },
+    observationIds: sourceSlots.map(([source]) => `synthetic_${label}_${source}`),
+    ...changes,
+  };
+}
+
+function allSynthetic(verdict: ProbeVerdict, label: string): Evaluation {
+  return syntheticEvaluation(label, {
+    api: { verdict, code: 'SYNTHETIC_API_RESULT' },
+    browser: { verdict, code: 'SYNTHETIC_BROWSER_RESULT' },
+    state: { verdict, code: 'SYNTHETIC_STATE_RESULT' },
+  });
+}
+
+async function postBoundaryResult(first: Evaluation, second: Evaluation) {
+  const clock = probeClock();
+  const boundary = observedNow + 60_000;
+  const postCalls: { time: number; notBefore: number }[] = [];
+  const result = await observeScenario({
+    scenarioId: 'SC02', policy: approvedPolicy(), billing: async () => scenarioBilling('SC02'),
+    now: clock.now, wait: clock.wait,
+    collect: async (notBefore) => {
+      if (clock.now() < boundary) {
+        expect(notBefore).toBe(observedNow);
+        return allSynthetic('inconclusive', 'within_window');
+      }
+      postCalls.push({ time: clock.now(), notBefore });
+      if (postCalls.length > 2) throw new Error('Unexpected additional post-boundary collection');
+      expect(notBefore).toBeGreaterThanOrEqual(boundary);
+      expect(notBefore).toBeLessThanOrEqual(clock.now());
+      return postCalls.length === 1 ? first : second;
+    },
+  });
+  expect(clock.now()).toBeGreaterThanOrEqual(boundary);
+  expect(postCalls).toHaveLength(2);
+  for (const call of postCalls) expect(call.time).toBeGreaterThanOrEqual(boundary);
+  for (const id of [...first.observationIds, ...second.observationIds]) expect(result.observationIds).toContain(id);
+  return result;
+}
+
+describe('independent shared probe: provider establishment and bounds', () => {
+  it.each<ProbeScenario>(['SC01', 'SC02', 'SC03', 'SC04'])('collects an established %s without waiting when every channel passes', async (scenarioId) => {
+    const clock = probeClock();
+    const candidate = syntheticEvaluation('early_success');
+    const notBeforeValues: number[] = [];
+    const result = await observeScenario({
+      scenarioId, policy: approvedPolicy(), billing: async () => scenarioBilling(scenarioId), now: clock.now, wait: clock.wait,
+      collect: async (notBefore) => { notBeforeValues.push(notBefore); return candidate; },
+    });
+    expect(result).toEqual(candidate);
+    expect(notBeforeValues).toEqual([observedNow]);
+    expect(clock.waits).toEqual([]);
+  });
+
+  it.each<[ProbeScenario, string, ProbeBilling]>([
+    ['SC01', 'unconfirmed free state', { ...scenarioBilling('SC01'), noSubscriptionConfirmed: false }],
+    ['SC01', 'existing subscription', scenarioBilling('SC02')],
+    ['SC02', 'unpaid initial invoice', subscriptionChange('SC02', { initialInvoicePaid: false })],
+    ['SC02', 'scheduled cancellation', subscriptionChange('SC02', { cancelAtPeriodEnd: true })],
+    ['SC02', 'nonactive status', subscriptionChange('SC02', { status: 'past_due' })],
+    ['SC03', 'unscheduled cancellation', subscriptionChange('SC03', { cancelAtPeriodEnd: false })],
+    ['SC03', 'unpaid initial invoice', subscriptionChange('SC03', { initialInvoicePaid: false })],
+    ['SC03', 'period boundary already reached', subscriptionChange('SC03', { billingTime: 2_000 })],
+    ['SC04', 'cancellation not confirmed', subscriptionChange('SC04', { status: 'active' })],
+    ['SC04', 'billing time before boundary', subscriptionChange('SC04', { billingTime: 1_999 })],
+  ])('does not collect %s with %s until the provider confirms', async (scenarioId, _reason, pending) => {
+    const clock = probeClock();
+    const reads: number[] = [];
+    const collected: number[] = [];
+    await observeScenario({
+      scenarioId, policy: approvedPolicy(), now: clock.now, wait: clock.wait,
+      billing: async () => { reads.push(clock.now()); return reads.length === 1 ? pending : scenarioBilling(scenarioId); },
+      collect: async (notBefore) => { collected.push(clock.now()); expect(notBefore).toBe(observedNow + 1_000); return syntheticEvaluation('established'); },
+    });
+    expect(reads).toEqual([observedNow, observedNow + 1_000]);
+    expect(collected).toEqual([observedNow + 1_000]);
+  });
+
+  it('retries temporary provider errors and starts freshness at actual confirmation', async () => {
+    const clock = probeClock();
+    let reads = 0;
+    await observeScenario({
+      scenarioId: 'SC02', policy: approvedPolicy(), now: clock.now, wait: clock.wait,
+      billing: async () => { reads += 1; if (reads < 3) throw new Error('Synthetic temporary provider rejection'); return scenarioBilling('SC02'); },
+      collect: async (notBefore) => { expect(notBefore).toBe(observedNow + 2_000); return syntheticEvaluation('recovered'); },
+    });
+    expect(reads).toBe(3);
+    expect(clock.waits).toEqual([1_000, 1_000]);
+  });
+
+  it.each(['unestablished', 'unavailable'] as const)('stops %s provider polling at exactly 90 seconds without collecting', async (kind) => {
+    const clock = probeClock();
+    const reads: number[] = [];
+    let collected = 0;
+    await expect(observeScenario({
+      scenarioId: 'SC02', policy: approvedPolicy(), now: clock.now, wait: clock.wait,
+      billing: async () => {
+        reads.push(clock.now());
+        if (kind === 'unavailable') throw new Error('Synthetic unavailable provider');
+        return subscriptionChange('SC02', { initialInvoicePaid: false });
+      },
+      collect: async () => { collected += 1; return syntheticEvaluation('must_not_collect'); },
+    })).rejects.toMatchObject({ code: kind === 'unavailable' ? 'PROVIDER_UNAVAILABLE' : 'SYNC_TIMEOUT' });
+    expect(reads).toEqual(Array.from({ length: 91 }, (_, index) => observedNow + index * 1_000));
+    expect(clock.now()).toBe(observedNow + 90_000);
+    expect(collected).toBe(0);
+  });
+
+  it('accepts provider confirmation exactly at the 90-second bound', async () => {
+    const clock = probeClock();
+    await observeScenario({
+      scenarioId: 'SC02', policy: approvedPolicy(), now: clock.now, wait: clock.wait,
+      billing: async () => clock.now() < observedNow + 90_000 ? subscriptionChange('SC02', { initialInvoicePaid: false }) : scenarioBilling('SC02'),
+      collect: async (notBefore) => { expect(notBefore).toBe(observedNow + 90_000); return syntheticEvaluation('at_provider_bound'); },
+    });
+    expect(clock.now()).toBe(observedNow + 90_000);
+  });
+
+  it('rejects a provider read that returns established state after the 90-second bound', async () => {
+    const clock = probeClock();
+    let collected = 0;
+    await expect(observeScenario({
+      scenarioId: 'SC02', policy: approvedPolicy(), now: clock.now, wait: clock.wait,
+      billing: async () => { clock.advance(90_001); return scenarioBilling('SC02'); },
+      collect: async () => { collected += 1; return syntheticEvaluation('late_provider'); },
+    })).rejects.toMatchObject({ code: 'SYNC_TIMEOUT' });
+    expect(collected).toBe(0);
+  });
+});
+
+describe('independent shared probe: full window and independent confirmation', () => {
+  it.each([5, 60, 300])('preserves the full approved %s-second window after provider confirmation', async (seconds) => {
+    const clock = probeClock();
+    const policy = approvedPolicy(seconds);
+    const originalPolicy = JSON.stringify(policy);
+    const confirmedAt = observedNow + 2_000;
+    const boundary = confirmedAt + seconds * 1_000;
+    const postIds: string[] = [];
+    let postCount = 0;
+    await observeScenario({
+      scenarioId: 'SC02', policy, now: clock.now, wait: clock.wait,
+      billing: async () => clock.now() < confirmedAt ? subscriptionChange('SC02', { initialInvoicePaid: false }) : scenarioBilling('SC02'),
+      collect: async (notBefore) => {
+        expect(clock.now()).toBeGreaterThanOrEqual(confirmedAt);
+        if (clock.now() < boundary) {
+          expect(notBefore).toBe(confirmedAt);
+          return allSynthetic('fail', 'before_boundary');
+        }
+        postCount += 1;
+        expect(notBefore).toBeGreaterThanOrEqual(boundary);
+        expect(notBefore).toBeLessThanOrEqual(clock.now());
+        const evaluation = allSynthetic('fail', `post_${postCount}`);
+        postIds.push(...evaluation.observationIds);
+        return evaluation;
+      },
+    }).then((result) => {
+      expect(postCount).toBe(2);
+      expect(result.api.verdict).toBe('fail');
+      for (const id of postIds) expect(result.observationIds).toContain(id);
+    });
+    expect(clock.now()).toBeGreaterThanOrEqual(boundary);
+    expect(JSON.stringify(policy)).toBe(originalPolicy);
+  });
+
+  it.each<ProbeVerdict>(['fail', 'inconclusive', 'unsupported', 'skipped'])('does not end the window early for %s evidence', async (verdict) => {
+    const clock = probeClock();
+    const boundary = observedNow + 60_000;
+    let postCount = 0;
+    const result = await observeScenario({
+      scenarioId: 'SC02', policy: approvedPolicy(), now: clock.now, wait: clock.wait,
+      billing: async () => scenarioBilling('SC02'),
+      collect: async (notBefore) => {
+        if (clock.now() >= boundary) {
+          postCount += 1;
+          expect(notBefore).toBeGreaterThanOrEqual(boundary);
+          expect(notBefore).toBeLessThanOrEqual(clock.now());
+        }
+        return allSynthetic(verdict, `nonpass_${postCount}`);
+      },
+    });
+    expect(clock.now()).toBeGreaterThanOrEqual(boundary);
+    expect(postCount).toBe(2);
+    for (const channel of probeChannels) expect(result[channel].verdict).toBe(verdict);
+  });
+
+  it.each(probeChannels)('does not finish early when only %s lacks a pass', async (channel) => {
+    const clock = probeClock();
+    let calls = 0;
+    const result = await observeScenario({
+      scenarioId: 'SC02', policy: approvedPolicy(), now: clock.now, wait: clock.wait,
+      billing: async () => scenarioBilling('SC02'),
+      collect: async () => {
+        calls += 1;
+        return calls === 1 ? syntheticEvaluation('one_missing', { [channel]: { verdict: 'inconclusive', code: 'SYNTHETIC_MISSING' } }) : syntheticEvaluation('all_pass');
+      },
+    });
+    expect(calls).toBeGreaterThanOrEqual(2);
+    expect(result).toEqual(syntheticEvaluation('all_pass'));
+  });
+
+  for (const channel of probeChannels) {
+    it(`retains a repeated same-reason ${channel} failure`, async () => {
+      const failure = { verdict: 'fail' as const, code: 'SYNTHETIC_STABLE_REASON' };
+      const result = await postBoundaryResult(syntheticEvaluation('first', { [channel]: failure }), syntheticEvaluation('second', { [channel]: failure }));
+      expect(result[channel]).toEqual(failure);
+      for (const other of probeChannels.filter((item) => item !== channel)) expect(result[other].verdict).toBe('pass');
+    });
+
+    it(`does not combine different ${channel} failure reasons`, async () => {
+      const first = syntheticEvaluation('first', { [channel]: { verdict: 'fail', code: 'SYNTHETIC_REASON_A' } });
+      const second = syntheticEvaluation('second', { [channel]: { verdict: 'fail', code: 'SYNTHETIC_REASON_B' } });
+      expect((await postBoundaryResult(first, second))[channel]).toEqual({ verdict: 'inconclusive', code: 'UNSTABLE_CONTRADICTION' });
+    });
+
+    it.each<ProbeVerdict>(['pass', 'inconclusive', 'unsupported', 'skipped'])(`requires the first post-boundary ${channel} result to fail, not %s`, async (verdict) => {
+      const first = syntheticEvaluation('first', { [channel]: { verdict, code: 'SYNTHETIC_SAME_CODE' } });
+      const second = syntheticEvaluation('second', { [channel]: { verdict: 'fail', code: 'SYNTHETIC_SAME_CODE' } });
+      expect((await postBoundaryResult(first, second))[channel]).toEqual({ verdict: 'inconclusive', code: 'UNSTABLE_CONTRADICTION' });
+    });
+
+    it.each<ProbeVerdict>(['pass', 'inconclusive', 'unsupported', 'skipped'])(`does not promote the second ${channel} %s into an earlier failure`, async (verdict) => {
+      const first = syntheticEvaluation('first', { [channel]: { verdict: 'fail', code: 'SYNTHETIC_PREVIOUS_FAILURE' } });
+      const current = { verdict, code: 'SYNTHETIC_CURRENT_RESULT' };
+      const result = await postBoundaryResult(first, syntheticEvaluation('second', { [channel]: current }));
+      expect(result[channel]).toEqual(current);
+    });
+  }
+
+  it('compares channels independently without mutating either original evaluation', async () => {
+    const first = syntheticEvaluation('immutable_first', {
+      api: { verdict: 'fail', code: 'SYNTHETIC_API_STABLE' },
+      browser: { verdict: 'fail', code: 'SYNTHETIC_BROWSER_A' },
+    });
+    const second = syntheticEvaluation('immutable_second', {
+      api: { verdict: 'fail', code: 'SYNTHETIC_API_STABLE' },
+      browser: { verdict: 'fail', code: 'SYNTHETIC_BROWSER_B' },
+      state: { verdict: 'fail', code: 'STATE_DRIFT' },
+    });
+    const before = JSON.stringify([first, second]);
+    for (const evaluation of [first, second]) {
+      for (const channel of probeChannels) Object.freeze(evaluation[channel]);
+      Object.freeze(evaluation.observationIds);
+      Object.freeze(evaluation);
+    }
+    const result = await postBoundaryResult(first, second);
+    expect(result).toMatchObject({
+      api: { verdict: 'fail', code: 'SYNTHETIC_API_STABLE' },
+      browser: { verdict: 'inconclusive', code: 'UNSTABLE_CONTRADICTION' },
+      state: { verdict: 'inconclusive', code: 'UNSTABLE_CONTRADICTION' },
+    });
+    expect(JSON.stringify([first, second])).toBe(before);
+  });
+});
+
+describe('independent shared probe: authorization and exception propagation', () => {
+  it('rejects revoked authorization before any provider or feature call', async () => {
+    const denied = new Error('Synthetic authorization revoked');
+    let providerCalls = 0;
+    let collections = 0;
+    await expect(observeScenario({
+      scenarioId: 'SC02', policy: approvedPolicy(), assertActive: async () => { throw denied; },
+      billing: async () => { providerCalls += 1; return scenarioBilling('SC02'); },
+      collect: async () => { collections += 1; return syntheticEvaluation('unauthorized'); },
+    })).rejects.toBe(denied);
+    expect(providerCalls).toBe(0);
+    expect(collections).toBe(0);
+  });
+
+  it('does not swallow authorization revoked while polling as a provider error', async () => {
+    const clock = probeClock();
+    const denied = new Error('Synthetic polling authorization revoked');
+    let providerCalls = 0;
+    let collections = 0;
+    await expect(observeScenario({
+      scenarioId: 'SC02', policy: approvedPolicy(), now: clock.now, wait: clock.wait,
+      assertActive: async () => { if (providerCalls > 0) throw denied; },
+      billing: async () => { providerCalls += 1; throw new Error('Synthetic provider read rejection'); },
+      collect: async () => { collections += 1; return syntheticEvaluation('unauthorized'); },
+    })).rejects.toBe(denied);
+    expect(providerCalls).toBe(1);
+    expect(collections).toBe(0);
+  });
+
+  it.each(['after_provider', 'during_window', 'after_first_post', 'after_second_post', 'after_early_success'] as const)('rechecks authorization %s', async (stage) => {
+    const clock = probeClock();
+    const denied = new Error(`Synthetic revoked ${stage}`);
+    const boundary = observedNow + 60_000;
+    let active = true;
+    let collections = 0;
+    let postCollections = 0;
+    await expect(observeScenario({
+      scenarioId: 'SC02', policy: approvedPolicy(), now: clock.now, wait: clock.wait,
+      assertActive: async () => { if (!active) throw denied; },
+      billing: async () => { if (stage === 'after_provider') active = false; return scenarioBilling('SC02'); },
+      collect: async () => {
+        collections += 1;
+        if (clock.now() >= boundary) postCollections += 1;
+        if (stage === 'during_window' || stage === 'after_early_success') active = false;
+        if (stage === 'after_first_post' && postCollections === 1) active = false;
+        if (stage === 'after_second_post' && postCollections === 2) active = false;
+        return allSynthetic(stage === 'after_early_success' ? 'pass' : 'fail', `auth_${collections}`);
+      },
+    })).rejects.toBe(denied);
+    if (stage === 'after_provider') expect(collections).toBe(0);
+    if (stage === 'during_window' || stage === 'after_early_success') expect(collections).toBe(1);
+    if (stage === 'after_first_post') expect(postCollections).toBe(1);
+    if (stage === 'after_second_post') expect(postCollections).toBe(2);
+  });
+
+  it.each(['within_window', 'first_post', 'second_post'] as const)('propagates a %s collection exception unchanged', async (stage) => {
+    const clock = probeClock();
+    const failure = new Error(`Synthetic collection exception ${stage}`);
+    let postCollections = 0;
+    await expect(observeScenario({
+      scenarioId: 'SC02', policy: approvedPolicy(), now: clock.now, wait: clock.wait,
+      billing: async () => scenarioBilling('SC02'),
+      collect: async () => {
+        if (clock.now() >= observedNow + 60_000) postCollections += 1;
+        if (stage === 'within_window' || (stage === 'first_post' && postCollections === 1) || (stage === 'second_post' && postCollections === 2)) throw failure;
+        return allSynthetic('inconclusive', `exception_${postCollections}`);
+      },
+    })).rejects.toBe(failure);
   });
 });

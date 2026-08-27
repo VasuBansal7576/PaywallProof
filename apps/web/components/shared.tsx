@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { Mode, Run } from '../lib/contracts';
+import type { Mode, Run, Scenario } from '../lib/contracts';
 
 export function Badge({ children, tone = 'neutral' }: { children: ReactNode; tone?: string }) {
   return <span className={`badge badge-${tone}`}><span className="badge-dot" />{children}</span>;
@@ -8,8 +8,12 @@ export function ModeBadge({ mode }: { mode: Mode }) {
   return <Badge tone={mode === 'local_replay' ? 'amber' : 'blue'}>{mode === 'local_replay' ? 'Local replay' : 'Stripe sandbox'}</Badge>;
 }
 export function RunBadge({ run }: { run: Run }) {
-  const label = run.outcome ?? ({ awaiting_plan_approval: 'Needs approval', running: 'Running', canceled: 'Canceled', completed: 'Untested' })[run.status];
-  return <Badge tone={run.outcome === 'passed' ? 'green' : run.outcome === 'failed' ? 'red' : run.status === 'running' ? 'blue' : 'neutral'}>{label}</Badge>;
+  const label = run.status === 'stopping' ? 'Stopping' : run.outcome ?? ({ awaiting_plan_approval: 'Needs approval', running: 'Running', stopping: 'Stopping', canceled: 'Canceled', completed: 'Untested' })[run.status];
+  return <Badge tone={run.status === 'stopping' ? 'amber' : run.outcome === 'passed' ? 'green' : run.outcome === 'failed' ? 'red' : run.status === 'running' ? 'blue' : 'neutral'}>{label}</Badge>;
+}
+export function AssertionBadge({ assertion }: { assertion?: Scenario['api'] }) {
+  if (!assertion) return <Badge>Untested</Badge>;
+  return <span title={assertion.code}><Badge tone={assertion.verdict === 'pass' ? 'green' : assertion.verdict === 'fail' ? 'red' : assertion.verdict === 'inconclusive' ? 'amber' : 'neutral'}>{assertion.verdict}</Badge></span>;
 }
 export function ErrorNotice({ error }: { error: { code: string; message: string } | null }) {
   return error ? <div className="error-notice" role="alert"><strong>{error.code.replaceAll('_', ' ')}</strong><p>{error.message}</p></div> : null;

@@ -16,7 +16,7 @@ Implementation is in progress. No completed scan, repair, or provider integratio
 
 [Implementation PR #1](https://github.com/VasuBansal7576/PaywallProof/pull/1) has received Qodo review. No substantive implementation PR has been merged yet.
 
-The [review of f808526](https://github.com/VasuBansal7576/PaywallProof/pull/1#issuecomment-5441252429) found runtime startup recovery failures, existing-secret permission gaps, optional invoice handling, a missing UI stopping state, and a specification inconsistency about the sandbox provider. Follow-up changes address those findings and require another review before merge. Earlier missing-entrypoint findings were resolved by adding the actual commands, not by removing them.
+The [Qodo review thread](https://github.com/VasuBansal7576/PaywallProof/pull/1#issuecomment-5441252429) identified runtime cancellation races, unsafe path collisions, and stale timestamps after cold browser startup. Follow-up changes address those findings and require another review before merge. Earlier missing-entrypoint, secret-permission and invoice-handling findings were resolved in the implementation.
 
 Current executed checks and remaining acceptance gaps are recorded in [verification status](docs/verification-status.md). Unit test counts and installation probes do not establish a completed product run.
 

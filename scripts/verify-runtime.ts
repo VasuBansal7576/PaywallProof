@@ -8,7 +8,7 @@ import { TrueForgeAdapter, type RuntimeTurn } from "../packages/adapters/src/tru
 
 const resultSchema = z.object({ success: z.literal(true), response: z.object({ exitCode: z.literal(0), result: z.string() }) });
 const baseUrl = process.env.TRUEFORGE_BASE_URL ?? "http://127.0.0.1:8790";
-const model = process.env.TRUEFORGE_MODEL ?? "paywallproof-local/qwen3-4b-nothink";
+const model = process.env.TRUEFORGE_MODEL ?? "paywallproof-local/qwen3-4b-instruct";
 let adapter: TrueForgeAdapter | undefined;
 const startedAt = new Date().toISOString();
 const evidence: {
