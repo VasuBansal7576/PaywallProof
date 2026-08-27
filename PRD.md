@@ -1,0 +1,924 @@
+# PaywallProof
+
+## Product requirements and implementation specification
+
+Version: 1.1  
+Prepared: August 27, 2026  
+Owner: Vasu  
+Status: Ready for implementation planning. No product has been implemented or tested by this document.  
+Working name: PaywallProof. Name availability has not been checked.
+
+> Check whether your SaaS gives the right people access to paid features. Reproduce failures, show the evidence, and propose a tested repair.
+
+### How to read this document
+
+For the product, read sections 1 through 4 and the demo in section 16. For implementation, read the whole document, then follow section 15 in order. A coding agent must not treat a proposed interface as an existing SDK feature.
+
+This document is the source of truth for the hackathon MVP. **MUST** means required for that MVP. **SHOULD** means preferred unless a documented constraint prevents it. **LATER** means outside the MVP. A blocked requirement stays visible. It does not become complete because a demo uses a substitute.
+
+### Contents
+
+1. [Product and customer](#1-product-and-customer)
+2. [Scope and decisions](#2-scope-and-decisions)
+3. [User journey and interface](#3-user-journey-and-interface)
+4. [Product requirements](#4-product-requirements)
+5. [Access policy and result rules](#5-access-policy-and-result-rules)
+6. [Scenario catalogue](#6-scenario-catalogue)
+7. [Architecture and ownership](#7-architecture-and-ownership)
+8. [Domain model and persistence](#8-domain-model-and-persistence)
+9. [Integration contracts](#9-integration-contracts)
+10. [TrueForge and Qodo integration](#10-trueforge-and-qodo-integration)
+11. [Safety and permissions](#11-safety-and-permissions)
+12. [Recovery, limits, and cleanup](#12-recovery-limits-and-cleanup)
+13. [Repair workflow](#13-repair-workflow)
+14. [Verification and acceptance](#14-verification-and-acceptance)
+15. [Implementation sequence](#15-implementation-sequence)
+16. [Demo and submission](#16-demo-and-submission)
+17. [Commercial assumptions and unresolved risks](#17-commercial-assumptions-and-unresolved-risks)
+18. [Sources](#18-sources)
+19. [Owner constraints and independent verification](#19-owner-constraints-and-independent-verification)
+
+## 1. Product and customer
+
+### 1.1 The problem
+
+A successful payment does not prove that the customer can use the product. A canceled subscription does not prove that the application removed access. Stripe, the application's stored billing state, and its authorization code can disagree.
+
+The founder often tests the happy path by buying a plan and seeing a success page. Failures can remain in the webhook handler, user mapping, cached session, or server-side access check.
+
+One concrete example is an August 20, 2026, production reconciliation in Kortix/Suna. The team's merged PR reports canceled Stripe subscriptions still recorded as active locally. A forthcoming access change would have made those stale records dangerous. This is evidence of a failure class, not proof of revenue lost or a market-size estimate. [Source](https://github.com/kortix-ai/suna/pull/6669)
+
+### 1.2 The customer
+
+The first customer is an independent SaaS founder or a small engineering team that owns a TypeScript application and uses Stripe subscriptions. They can supply a staging environment, test credentials, and the rules for a paid feature.
+
+Their immediate question is: "Can a free user get this feature, and will a paying user actually receive it?"
+
+The initial trigger is a launch or a change to billing, authentication, or feature access. Repeated checks on pull requests are a later distribution option.
+
+### 1.3 The product promise
+
+Given an authorized staging application, a Stripe sandbox, and an approved access policy, PaywallProof:
+
+1. Creates isolated test users and subscription states.
+2. Exercises a real protected feature through its API and user interface.
+3. Compares observed behavior with the approved policy.
+4. Produces reproducible findings with evidence.
+5. Proposes a repair in a disposable checkout, tests it, and requests permission to publish a PR.
+
+The report describes the scenarios actually tested. It MUST NOT say that an application is fully secure, that billing is certified, or that every subscription edge case is covered.
+
+### 1.4 Why an agent belongs here
+
+The agent reads the application's relevant code, identifies integration points, explains disagreements, and drafts a repair that fits the repository. It can adapt a bounded test setup when a route or selector differs.
+
+Deterministic code owns resource permissions, scenario execution, expected access, evidence validation, and verdicts. The model cannot decide that a failed check passed or authorize its own actions.
+
+Existing tools already automate checkout tests. PaywallProof's proposed focus is the agreement between a founder's access policy and the real protected feature. This positioning still needs customer validation. [Existing checkout-testing example](https://getautonoma.com/blog/how-to-test-stripe-checkout)
+
+## 2. Scope and decisions
+
+### 2.1 Fixed MVP decisions
+
+| Decision | MVP choice | Reason |
+| --- | --- | --- |
+| Billing provider | Stripe sandbox only | Supports real test objects and subscription simulations without moving funds |
+| Account model | One Stripe account, classic Customer and Subscription resources | Avoid Connect, organization accounts, and multiple billing models |
+| Application | Next.js and TypeScript reference integration | Keeps code inspection and repair bounded |
+| Plans | Free and one monthly Pro plan | Sufficient to expose incorrect grants and incorrect denials |
+| Protected feature | One real API-backed feature | Gives the checker an observable outcome |
+| Authentication | Ordinary test-user sessions through a staging adapter | Admin credentials must not influence access probes |
+| Test control | One run at a time per project | Avoid conflicting fixtures, patches, and clock changes |
+| Agent runtime | TrueForge, with the official TypeScript SDK | Required by the hackathon |
+| Generated-code execution | TrueForge's configured Daytona sandbox | The current documented provider; verify access before coding |
+| Development review | Qodo on every substantive GitHub PR | Required by the hackathon |
+| Product deployment | Single operator, local/private control interface | Public multi-tenant operation is outside the MVP |
+| Finding publication | Local report first, GitHub PR only with approval | A scan must remain useful without write permission |
+
+Stripe's test infrastructure does not move funds. TrueForge currently documents Daytona as its sandbox provider. These are verified product constraints, not capabilities implemented by this project. [Stripe](https://docs.stripe.com/testing) · [TrueForge](https://trueforge.dev/sandbox)
+
+### 2.2 What the MVP includes
+
+The MVP MUST include connection checks, policy approval, the core scenario suite, actual API and browser evidence, human-readable findings, reconnectable runs, a bounded repair attempt, and an approved PR publication path.
+
+The target application MUST expose the small staging adapter defined in section 9. Implement the reference adapter for the bundled demo application. A second owned application SHOULD be connected before claiming useful portability.
+
+"Connect any GitHub repository and it works" is not an MVP promise. Unsupported applications receive an explicit adapter requirement, not a fabricated scan.
+
+### 2.3 Explicit exclusions
+
+The MVP does not support production scans, real charges, refunds, tax calculations, discounts, metered billing, credits, multiple subscriptions per user, team-level entitlements, multiple currencies, disputes, or Stripe Connect.
+
+The MVP does not automate Stripe's hosted card-entry UI. Subscription creation through the Stripe API tests billing state and feature access, not the checkout form. The report MUST state this coverage limit.
+
+The MVP does not include a universal vulnerability scanner, a generic test-generation platform, automatic merging, automatic production deployment, or repairing production account data.
+
+Trials, failed-payment grace periods, upgrades, downgrades, event reordering, duplicate delivery, and CI scheduling are LATER. They appear in the extension catalogue so agents do not accidentally implement them before the core works.
+
+## 3. User journey and interface
+
+### 3.1 Connect a project
+
+The owner selects a repository and commit, enters the staging origin, and selects server-configured Stripe and adapter connections. Secrets never go into chat. The owner identifies one paid feature and confirms ownership of the target.
+
+Before source inspection, show which model provider will receive the selected code and sanitized observations. Obtain consent for that data processing. Repository read permission alone is not permission to send unrelated private files to a model.
+
+The server verifies connectivity, account identity, adapter capabilities, repository access, and the absence of live Stripe mode. A missing prerequisite produces a specific action such as "Configure a reachable webhook endpoint".
+
+The owner can first open a clearly labeled bundled demo. Demo data and a real connected application must never look interchangeable.
+
+### 3.2 Confirm what customers should receive
+
+The agent proposes a policy from the relevant code and configuration. The interface asks the owner to confirm:
+
+- Which Stripe price grants Pro access.
+- Which protected feature represents that access.
+- Whether scheduled cancellation preserves access until the paid period ends.
+- How long the app is allowed to take to reflect a billing change.
+
+The MVP preset preserves access until period end. If the owner requires a different rule, mark that policy unsupported instead of silently applying the preset.
+
+Show the test plan and its permitted side effects before execution. Approval authorizes a bounded set of new test objects and changes to those objects. It does not authorize changes to existing customers.
+
+### 3.3 Watch the run
+
+The run screen shows a short task timeline, not a wall of model reasoning:
+
+| Stage | Example visible message |
+| --- | --- |
+| Preparing | "Creating a test user and a Stripe test clock" |
+| Waiting | "Stripe has canceled the subscription. Waiting for the app to update" |
+| Checking | "Calling the protected export endpoint as the canceled user" |
+| Finding | "The export succeeded, but the approved policy requires denial" |
+| Needs approval | "Publish this tested patch to a new branch?" |
+| Blocked | "The webhook endpoint is unreachable. Access could not be evaluated" |
+
+The user can stop the run. Reloading the page reconnects to the same run. It MUST NOT create another subscription or start another agent turn just to restore the display.
+
+### 3.4 Read a finding
+
+Each finding answers five questions: what should have happened, what happened, how it was observed, how to reproduce it, and what remains uncertain.
+
+Example, illustrative only:
+
+> A canceled test user can still export Pro data.
+>
+> Expected: the export endpoint denies access after the confirmed cancellation reaches the application deadline.
+>
+> Observed: Stripe reports canceled, the application's billing snapshot still reports active, and the export endpoint returns the run's protected fixture data.
+>
+> Evidence: subscription snapshot, application snapshot, request and response, and browser screenshot.
+>
+> Suspected cause: the webhook handler does not process subscription deletion. This diagnosis requires code inspection; the observed access mismatch is already proven.
+
+Do not present a suspected code location as a verified root cause until a repair removes the failure under the same test.
+
+### 3.5 Review and publish a repair
+
+The owner selects **Prepare repair**. The agent edits an isolated checkout and runs the original failing test plus regression checks. The interface shows the diff, changed files, test evidence, and limitations.
+
+The owner separately approves **Publish PR**. Publishing does not merge the PR or deploy the change. The original staging run stays failed until a new run verifies the changed staging deployment.
+
+### 3.6 Screen inventory
+
+| Screen | Required content |
+| --- | --- |
+| Project setup | Connections, target identity, capability checks, ownership confirmation |
+| Policy and plan | Plain-language rules, feature mapping, permitted side effects, approve or cancel |
+| Run | Scenario rows, progress, clocks, elapsed time, stop, reconnect status, pending approvals |
+| Finding and repair | Expected and actual behavior, evidence, reproduction, diff, checks, publication state |
+
+Use text and icons as well as color. Keep controls keyboard accessible. Collapse raw traces by default. Show "Untested", "Inconclusive", and "Blocked" as distinct labels.
+
+## 4. Product requirements
+
+| ID | Requirement | Completion evidence |
+| --- | --- | --- |
+| R01 | Verify target ownership, connection identity, adapter capability, and Stripe sandbox before mutations | Preflight report with explicit failures and no writes on failure |
+| R02 | Save an immutable, owner-approved policy and plan | Policy hash and approval attached to every run |
+| R03 | Create only isolated test fixtures with recorded ownership | Resource inventory maps every created object to a run |
+| R04 | Execute the core lifecycle scenarios against real Stripe test objects | Stripe receipts and application observations for SC01 through SC04 |
+| R05 | Probe the protected API as a normal user and verify browser behavior | User-scoped API evidence and screenshots, with no admin bypass |
+| R06 | Compute verdicts from deterministic predicates | Unit tests reject missing, stale, or contradictory evidence |
+| R07 | Keep the runtime and run display recoverable | Reconnect test does not duplicate external actions |
+| R08 | Respect approvals, cancellation, and execution limits | Denied and expired approvals cause no new write |
+| R09 | Produce a useful report without requiring repository write access | Downloadable Markdown and JSON report |
+| R10 | Prepare a bounded patch and retest it in isolation | Diff hash, before and after evidence, and regression results |
+| R11 | Publish a PR only after approval of the exact patch and destination | PR URL verified by a subsequent provider read |
+| R12 | Clean up only run-owned fixtures and disclose leftovers | Cleanup receipts or a precise unresolved-resource list |
+| R13 | Use TrueForge for real tool orchestration, sandbox work, approvals, and session continuation | Runtime trace and integration tests |
+| R14 | Carry a meaningful Qodo development review trail | Public merged PR, decisions, and review against final code |
+| R15 | Disclose coverage, execution mode, versions, and limitations | Report distinguishes live sandbox, local replay, and untested cases |
+| R16 | Remain usable on a passing application and when infrastructure fails | Known-good, known-bad, and unavailable-target acceptance tests |
+
+## 5. Access policy and result rules
+
+### 5.1 Three separate sources
+
+PaywallProof compares three things without treating them as interchangeable:
+
+1. **Expected access:** a pure function of the approved policy and a fresh, independently retrieved Stripe snapshot.
+2. **Stored application state:** the application's billing projection, read through the staging adapter. This helps diagnose drift.
+3. **Observed access:** a request to the real protected endpoint and an interaction through the ordinary application UI.
+
+The model's explanation, the application's plan label, and a webhook's HTTP 200 response cannot substitute for observed access.
+
+The evaluator accepts observation IDs from the authoritative store, never model-supplied replacement payloads. Validate that every observation belongs to the same run, scenario, user, policy, and target build. Collect the final Stripe and application snapshots within the same final probe cycle, normally within ten real seconds. If that interval is exceeded, collect fresh observations or return inconclusive.
+
+### 5.2 MVP policy
+
+The owner approves these rules for one Pro price and one feature:
+
+| Condition | Expected protected access |
+| --- | --- |
+| Authenticated user has no subscription | Deny |
+| Subscription for the configured price is active and the initial invoice is paid | Allow |
+| That subscription is active with cancellation scheduled for period end, before the boundary | Allow |
+| That subscription has reached its cancellation boundary and Stripe confirms canceled | Deny |
+| Subscription status, payment state, identity mapping, or time basis cannot be resolved | Unknown, not deny and not allow |
+
+Unknown cases produce `inconclusive` or `unsupported`, as defined below. The checker must not copy the target application's entitlement function as its oracle.
+
+The configured price, feature predicate, cancellation rule, and synchronization deadline are part of the policy hash. Changing any of them requires a new policy approval and a new run.
+
+Compute the policy hash from canonical normalized JSON, excluding the hash field itself and approval metadata. Freeze predicate versions and referenced feature configuration in that input. A policy cannot change indirectly through a mutable configuration reference.
+
+Check the target's build identity before each scenario and before the final probes. If the deployed build changes during a run, stop the affected comparison with `TARGET_CHANGED` and start a new run after approval. Do not compare evidence across two deployments as though it came from one version.
+
+### 5.3 Timing
+
+Record two timestamps: real observation time and Stripe test-clock time. Stripe test clocks advance billing resources; they do not advance your application's wall clock. [Documentation](https://docs.stripe.com/billing/testing/test-clocks/api-advanced-usage)
+
+For the core scenario, use Stripe's confirmed subscription status and normal webhook processing. If the app's access calculation also depends on local time, it must provide a run-scoped test clock through the staging adapter. Never alter the host clock or another user's clock.
+
+If equivalent application time cannot be established, mark the affected time-based assertion `unsupported`. A browser session must use real authentication time even when billing time is simulated.
+
+The default synchronization window is 60 real seconds after Stripe confirms the required state. It is a proposed MVP default, not a Stripe guarantee. The owner can approve a value from 5 to 300 seconds before the run. Poll with bounded backoff and record intermediate observations.
+
+After the window, repeat the final probe once to rule out a single transient response. A confirmed, stable contradiction is a failure. An unreachable endpoint, missing identity, or unavailable Stripe snapshot is inconclusive.
+
+### 5.4 Verdicts
+
+Assertions use exactly these verdicts:
+
+| Verdict | Meaning |
+| --- | --- |
+| `pass` | Required evidence is fresh, complete, correctly scoped, and satisfies the predicate |
+| `fail` | A supported expectation and trustworthy observations contradict each other |
+| `inconclusive` | The scenario ran, but evidence cannot establish an outcome |
+| `unsupported` | A required capability or policy is outside the implemented contract |
+| `skipped` | The scenario was not attempted, with a recorded reason |
+
+Run outcome is `failed` if any assertion fails, `inconclusive` if any required assertion lacks a pass and none fails, and `passed` only if every required assertion passes. Always show counts and coverage beside the outcome.
+
+An application-state mismatch and an access mismatch are separate assertions. A stale local status with correct API access is state drift, not a proven access leak. Incorrect UI visibility is a UI mismatch, not proof that the backend allows the operation.
+
+Severity is based on the observed behavior. Incorrect protected access is high. Incorrect denial to a verified paying user is high. A display mismatch or non-exploited state drift is medium. Do not invent financial loss estimates.
+
+## 6. Scenario catalogue
+
+### 6.1 Required core suite
+
+The first implementation uses an API-backed Pro export. The allowed response contains a run-specific fixture marker. A denial must follow the target adapter's approved response contract and must not contain protected data. HTTP 200 alone never proves success.
+
+| ID | Setup and action | Expected result | Required observations |
+| --- | --- | --- | --- |
+| SC01 | Create an authenticated free test user with no subscription; request the Pro feature | API denies; UI offers upgrade or denies the action | Identity receipt, no-subscription baseline, API response, UI evidence |
+| SC02 | Create a clock-bound test customer; link it to a fresh app user; create one monthly subscription with a supported test payment method | After confirmed active status and paid invoice, API allows; UI can use the feature | Stripe customer/subscription/invoice, application snapshot, API marker, UI evidence |
+| SC03 | Set `cancel_at_period_end` on SC02's subscription; check access before the period boundary | Access remains available while the paid period continues | Fresh subscription and clock time, application snapshot, API and UI evidence |
+| SC04 | Advance that test clock beyond the observed period boundary; wait for the clock to be ready and Stripe to confirm cancellation | After the synchronization window, API denies and UI reflects loss of access | Clock readiness, canceled subscription, application snapshot, API and UI evidence |
+
+SC02 through SC04 are an ordered lifecycle on one customer. If an earlier state cannot be established, mark later scenarios skipped with the blocking dependency. Do not reuse these mutated fixtures for a rerun. Create a new lifecycle.
+
+Scheduling cancellation and reaching cancellation are different states. Stripe emits a subscription update for scheduling and a subscription deletion event when cancellation takes effect. [Documentation](https://docs.stripe.com/billing/subscriptions/cancel)
+
+### 6.2 Stripe execution details
+
+Create the test clock first. Associate the new customer with that clock at creation, then create the subscription for that customer. Resolve the billing-period boundary from the normalized subscription item for the pinned API version. Do not assume an old top-level field still exists.
+
+The adapter must preserve one price and one subscription item in the MVP. Unknown shapes return a typed adapter error.
+
+Use Stripe's supported test PaymentMethod, such as the documented `pm_card_visa`, rather than real card details. Confirm the invoice payment and resulting subscription state from retrieved Stripe objects. [Testing documentation](https://docs.stripe.com/testing)
+
+Test-clock advancement is asynchronous. Wait for `ready`, then separately verify the expected billing objects and application behavior. A ready clock does not prove webhook processing is complete. Respect Stripe's documented advancement limits. [Clock API guide](https://docs.stripe.com/billing/testing/test-clocks/api-advanced-usage)
+
+The target's normal webhook handler must receive the real sandbox events. A local demo can use the authenticated Stripe CLI listener with its own signing secret. A remote target needs a registered, reachable HTTPS destination. Do not silently point a sandbox account at a production endpoint.
+
+### 6.3 Extension scenarios, not MVP requirements
+
+| ID | Later scenario | Additional capability required |
+| --- | --- | --- |
+| EX01 | Duplicate delivery does not repeat a grant or notification | Delivery control and a meaningful side-effect counter |
+| EX02 | An old event cannot restore access after cancellation | Ordered capture and replay, plus current-state reconciliation |
+| EX03 | Trial expiry changes access correctly | An approved trial policy and equivalent billing time in the app |
+| EX04 | Failed renewal follows the owner's grace-period rule | Invoice failure simulation, recovery settings, and grace policy |
+| EX05 | Upgrade and downgrade change individual features | Multiple price mappings and proration policy |
+
+Stripe does not guarantee event delivery order, and duplicate deliveries can occur. Do not implement simplistic deduplication by subscription ID plus event type, which would discard legitimate later updates. [Webhook behavior](https://docs.stripe.com/webhooks)
+
+If extensions use synthetic replay, label the evidence `local_replay`. It does not prove Stripe delivered the replayed event. Preserve signature verification on real webhook paths.
+
+## 7. Architecture and ownership
+
+### 7.1 System structure
+
+```mermaid
+flowchart TD
+	Owner[Owner and project UI] --> Controller[PaywallProof API and run controller]
+	Controller --> Store[Durable run and evidence store]
+	Controller --> TF[TrueForge session]
+	TF --> Tools[Restricted PaywallProof MCP tools]
+	TF --> Sandbox[Daytona sandbox for code inspection and patch tests]
+	Tools --> Stripe[Stripe sandbox adapter]
+	Tools --> Target[Staging app adapter and browser runner]
+	Tools --> GitHub[Approved GitHub publication]
+	Tools --> Judge[Deterministic assertions]
+	Judge --> Store
+	Sandbox --> Tools
+```
+
+### 7.2 Technology choices
+
+Use a pnpm TypeScript workspace. Use Next.js for the product UI and API, a separate Node process for the MCP server and durable run worker, Zod for boundary validation, Vitest for unit and integration tests, and Playwright for browser checks.
+
+Use SQLite for PaywallProof's single-operator control data. The reference target uses its own separate database. Its storage engine is hidden behind the staging adapter; it must not share control tables or secrets with PaywallProof.
+
+A minimal Next.js demo with SQLite is sufficient for the reference target. PostgreSQL support is an adapter extension, not a reason to build a database abstraction framework.
+
+Use the official Stripe SDK and `@truefoundry/trueforge-sdk`. Resolve compatible package versions during the initial integration spike and commit the lockfile. Record the Stripe API version, event-destination version, SDK versions, and target commit in each run. Do not guess a current Stripe version string from this document.
+
+### 7.3 Proposed repository layout
+
+These are files and modules to create, not files that already exist.
+
+```text
+apps/
+  web/                       Project setup, policy UI, run UI, report API
+  worker/                    Durable run controller and MCP transport
+  demo-saas/                 Free/Pro reference app and staging adapter
+packages/
+  contracts/                 Zod schemas and derived TypeScript types
+  core/                      Policies, state transitions, verdicts, limits
+  adapters/                  Stripe, target, browser, GitHub, TrueForge
+  evidence/                  Redaction, hashing, artifact manifests, reports
+tests/
+  acceptance/                Cross-module scenarios and known controls
+  fixtures/                  Sanitized SDK payloads and target variants
+docs/
+  integration.md             Supported adapter setup and constraints
+  demo.md                    Recorded demo steps and setup
+  decisions.md               Version choices and documented scope changes
+```
+
+### 7.4 Module responsibilities
+
+The run controller owns durable state, approval validation, operation identity, deadlines, and single-run locking. It does not implement a second LLM agent loop. TrueForge owns model turns, tool orchestration, runtime approval pauses, and the sandbox.
+
+The restricted MCP service owns credentials and validates every tool call. It exposes typed operations, not arbitrary SQL, arbitrary HTTP requests, or a shell with billing credentials.
+
+The core package is pure. It receives typed snapshots and returns verdicts. It never calls a model, Stripe, GitHub, or a browser.
+
+The target adapter reads normalized app state and provisions isolated users. The trusted MCP service runs fixed Playwright probe code in an isolated browser context per test user. The model can propose approved selectors and routes, but cannot execute arbitrary generated code inside the credential-bearing worker. Generated scripts and patch tests run only in the Daytona sandbox.
+
+The repair sandbox reads a sanitized checkout and tests changes in a disposable target instance. The required repair path uses local replay with synthetic fixtures and no provider keys. A real Stripe rerun against a patched preview is an additional verification path, described in section 13.
+
+The evidence store owns reports. Neither a repository file nor a model tool response can overwrite an existing authoritative receipt.
+
+## 8. Domain model and persistence
+
+### 8.1 Domain terms
+
+| Entity | Meaning and required fields |
+| --- | --- |
+| Project | Owner, repository identity, default ref, staging origin, adapter ID, connection references |
+| Policy | Immutable version, approved access rules, feature predicate, price ID, sync window, hash |
+| Run | Project, policy hash, target commit/build, execution mode, status, outcome, limits, timestamps |
+| Scenario | Catalogue ID, run ID, dependency IDs, stage, assertion IDs |
+| Operation | Stable logical ID, run ID, kind, arguments hash, state, provider receipt, retry data |
+| Resource | Provider ID, parent IDs, run ownership, mode, creation operation, cleanup state |
+| Observation | Source, subject, real time, billing time, content hash, redacted payload reference |
+| Assertion | Expected predicate, observation IDs, verdict, reason code |
+| Finding | Failing assertion IDs, severity, observed impact, reproduction, diagnosis status |
+| Approval | Actor, action scope, arguments hash, target/base commit, expiry, decision, consumed operation |
+| PatchAttempt | Base commit, diff hash, allowed paths, checks, before/after evidence, publication state |
+
+### 8.2 Core TypeScript contracts
+
+Implement these project contracts with runtime schemas. Use ISO 8601 for real timestamps and Unix seconds for Stripe billing time. Database identifiers are opaque strings.
+
+```ts
+type Verdict = 'pass' | 'fail' | 'inconclusive' | 'unsupported' | 'skipped';
+type RunOutcome = 'passed' | 'failed' | 'inconclusive';
+type RunStatus =
+	| 'draft' | 'preflight' | 'awaiting_plan_approval' | 'running'
+	| 'awaiting_action_approval' | 'stopping' | 'completed'
+	| 'blocked' | 'canceled' | 'error';
+
+interface AccessPolicy {
+	readonly schemaVersion: 1;
+	readonly priceId: string;
+	readonly featureId: string;
+	readonly cancellation: 'allow_until_period_end';
+	readonly requireInitialInvoicePaid: true;
+	readonly syncWindowSeconds: number;
+	readonly predicateVersion: string;
+	readonly hash: string;
+}
+
+interface ObservationRef {
+	readonly id: string;
+	readonly runId: string;
+	readonly scenarioId: string;
+	readonly subjectId: string;
+	readonly source: 'stripe' | 'application' | 'api_probe' | 'browser';
+	readonly observedAt: string;
+	readonly billingTime: number | null;
+	readonly sha256: string;
+	readonly artifactId: string;
+}
+
+type AssertionResult =
+	| { verdict: 'pass'; observationIds: readonly string[] }
+	| { verdict: 'fail'; code: string; observationIds: readonly string[] }
+	| { verdict: 'inconclusive' | 'unsupported' | 'skipped'; code: string; reason: string };
+
+interface RunRecord {
+	readonly id: string;
+	readonly projectId: string;
+	readonly policyHash: string;
+	readonly targetCommit: string;
+	readonly mode: 'stripe_sandbox' | 'local_replay';
+	readonly status: RunStatus;
+	readonly outcome: RunOutcome | null;
+	readonly trueforgeSessionId: string | null;
+	readonly trueforgeTurnId: string | null;
+	readonly lastSequenceNumber: number | null;
+}
+```
+
+These are minimum shapes, not permission to omit fields listed in the entity table. Derive types from schemas so the runtime and compiler use the same contract. Validate ranges, enums, ownership, and state transitions on the server.
+
+### 8.3 Run transitions
+
+The normal path is `draft -> preflight -> awaiting_plan_approval -> running -> completed`.
+
+`preflight` can become `blocked`. A denied plan approval becomes `canceled`. A running tool can pause at `awaiting_action_approval`; approval resumes that pending action, while denial records no execution and allows the run to finish with the applicable limitation. Any active run can become `stopping`, then `canceled` after in-flight work is accounted for. Unexpected internal faults become `error`.
+
+`completed` describes execution, not success. A completed run can have a failed outcome. Terminal runs are immutable apart from cleanup receipts and linked repair artifacts. A rerun creates a new run with `parentRunId`.
+
+### 8.4 Persistence rules
+
+Store operations before external execution. Add unique constraints for operation identity, approval consumption, provider event identity where recorded, and artifact identity. Keep an append-only run event log.
+
+Use a transaction to claim an operation and a lease to prevent concurrent workers from owning it. An expired lease with an uncertain provider result enters reconciliation; it is not automatically safe to execute again.
+
+The outcome is derived from persisted assertions. Do not accept a model-authored `outcome` field. Persist the relevant evidence before the operation becomes complete.
+
+## 9. Integration contracts
+
+### 9.1 Common tool envelope
+
+All names in this section are PaywallProof APIs to implement. They are not claimed to be built-in TrueForge tools.
+
+Tool requests contain `runId`, `operationId`, and validated domain arguments. Mutations also require an approved scope reference. Connection IDs resolve server-side; a model cannot supply a different account token or arbitrary destination URL.
+
+Each successful response contains `operationId`, `resourceIds`, and `observationIds`. Each failed response contains a stable `code`, `retryable`, a redacted explanation, and any known provider receipt. A timeout after dispatch must be distinguished from a request that was never sent.
+
+Use error codes including `LIVE_MODE_REJECTED`, `OWNERSHIP_MISMATCH`, `APPROVAL_REQUIRED`, `APPROVAL_STALE`, `UNSUPPORTED_ADAPTER`, `IDENTITY_UNRESOLVED`, `CLOCK_NOT_READY`, `SYNC_TIMEOUT`, `TARGET_CHANGED`, `EVIDENCE_MISSING`, `PROVIDER_UNAVAILABLE`, and `OPERATION_OUTCOME_UNKNOWN`.
+
+### 9.2 Restricted tool catalogue
+
+| Tool | Allowed work | Write authorization |
+| --- | --- | --- |
+| `inspect_project` | Read allowlisted source and validated target metadata | None beyond project read consent |
+| `check_connections` | Read sandbox resource, adapter capability, and provider identity | No provider mutation |
+| `prepare_fixture` | Create a run-owned user, clock, and customer; link identity | Approved test plan |
+| `change_test_subscription` | Create one subscription or schedule period-end cancellation on run-owned resources | Approved test plan |
+| `advance_test_clock` | Advance the run-owned clock within the approved bound | Approved test plan |
+| `observe_billing` | Read run-owned Stripe objects and normalized application state | Read scope |
+| `probe_feature` | Execute the approved API/browser probe as the test user | Approved test plan and feature scope |
+| `evaluate_assertions` | Execute pure predicates on authoritative observations | No external mutation |
+| `prepare_repair` | Generate a patch in a disposable checkout and run checks | Owner's explicit repair request |
+| `publish_repair_pr` | Push the approved diff to a new branch and create or recover its PR | Fresh approval of exact destination and diff |
+| `cleanup_run` | Remove or cancel only inventoried test resources | Cleanup permission in approved test plan |
+
+Expose no tool that sets a test user's paid plan directly during the core scenarios. That would bypass the behavior being tested.
+
+### 9.3 Target adapter
+
+The target adapter MUST provide these capabilities:
+
+| Capability | Contract |
+| --- | --- |
+| `describeTarget` | Build/commit identity, adapter version, environment marker, feature IDs, supported billing-time model |
+| `createTestUser` | Create a new run-owned ordinary user and fixture data; return an opaque principal reference |
+| `linkStripeCustomer` | Bind the new user to the run-owned customer before subscription events arrive; never set entitlement |
+| `getUserSession` | Create a short-lived ordinary-user session; return it only to the trusted browser/API runner |
+| `readBillingSnapshot` | Read user/customer mapping and stored billing state; make no repair or synchronization writes |
+| `describeFeatureProbe` | Approved method, route, input, allow predicate, denial predicate, and browser steps |
+| `cleanupTestUser` | Remove only this run's users and data according to the approved scope |
+
+Only the reference adapter's fixed implementation is supported automatically. User-supplied executable adapters require operator review; the model cannot install one from an untrusted repository.
+
+Staging hooks require a dedicated credential, strict run scoping, and a test-environment flag. They MUST fail closed in production builds. Ordinary protected routes must not recognize the adapter credential as an access override.
+
+A successful API probe checks an approved body predicate, such as a run-specific export marker. A denial checks an approved status/body contract and the absence of protected data. Unexpected responses are inconclusive, not conveniently reinterpreted.
+
+The UI probe uses a normal session and a fresh page. It records action results and network evidence. Read-only inspection sessions and feature-probe sessions must remain separate.
+
+### 9.4 Stripe adapter
+
+Keep test credentials inside the trusted adapter service. Select an explicitly configured sandbox account, verify a known sandbox Price with `livemode: false`, and verify that the price matches the project. Reject live key prefixes before any provider call. Restricted keys with unknown mode must pass the independent read check before writes.
+
+For every retrieved object with a mode field, require `livemode: false`. For resources without that field, verify their parent/customer/account binding and the previously verified connection. Never treat a key prefix as the only safety check.
+
+The adapter normalizes version-specific Stripe payloads into a stable snapshot containing customer ID, subscription ID, item price ID, status, cancellation fields, period end, invoice payment state, test clock ID, and clock status.
+
+Record run ownership in metadata where the resource supports it. Otherwise record a verified parent-child relationship in the local resource inventory. The adapter accepts no caller-supplied existing customer ID unless that ID was created and recorded by the current run.
+
+### 9.5 Product HTTP API
+
+| Method and route | Purpose |
+| --- | --- |
+| `POST /api/projects` | Save validated project and connection references |
+| `POST /api/projects/:id/preflight` | Run read-only capability and safety checks |
+| `POST /api/projects/:id/policies` | Save a proposed immutable policy version |
+| `POST /api/runs` | Create a run for a policy and target commit |
+| `GET /api/runs/:id` | Return persisted status, assertions, and pending approvals |
+| `GET /api/runs/:id/events` | Stream product events with a resumable cursor |
+| `POST /api/runs/:id/approvals/:approvalId` | Approve or deny the exact pending action |
+| `POST /api/runs/:id/cancel` | Request stop and bounded cleanup |
+| `POST /api/runs/:id/repairs` | Request a new isolated repair attempt |
+| `GET /api/runs/:id/report` | Download Markdown or JSON with evidence references |
+
+Mutation endpoints require an authenticated operator, CSRF protection for browser sessions, and a client request ID for duplicate submission handling. Return `409` for a conflicting active run or stale approval. Return typed validation errors for invalid policy and adapter inputs.
+
+### 9.6 Report contract
+
+Reports MUST include run ID, parent run, target identity, source commit, policy, scenario coverage, execution mode, version manifest, timestamps, verdicts, findings, evidence references, limits hit, repair state, and cleanup state.
+
+Each evidence file has a SHA-256 hash, content type, collection source, and collection time. Hashes detect changed artifacts; they are not third-party attestation. Escape untrusted text in rendered reports and sanitize exported filenames.
+
+## 10. TrueForge and Qodo integration
+
+### 10.1 TrueForge responsibilities
+
+Use one TrueForge session per run. Register the restricted MCP server and enable the configured sandbox. The model reads approved project context, calls the restricted tools, investigates findings, and writes the repair.
+
+The default agent instructions MUST require evidence-backed claims, respect unsupported capabilities, forbid self-approval, and forbid changes to the policy or test oracle during a repair. These instructions supplement server enforcement; they are not the security boundary.
+
+Use a single agent for the MVP. Additional subagents are optional only after the complete workflow works. Do not add concurrency to manufacture a more complicated demo.
+
+### 10.2 SDK mapping and recovery
+
+The current SDK documents `sessions.create`, `createTurnStream`, `getTurn`, `subscribeToTurn`, `listTurnEvents`, and `sessions.cancel`. Hide these behind a small `TrueForgeAdapter`, and confirm their signatures against the installed SDK. [SDK recipes](https://trueforge.dev/api/use-agent)
+
+Persist session ID, turn ID, and stream sequence number. Reconnect to a running turn with `subscribeToTurn` and its saved sequence. If the turn has ended, rebuild the display from stored events. Do not create a new turn to recover a dropped display connection.
+
+TrueForge approval pauses arrive through required actions. Resume the paused call with the SDK's matching `user.tool_approval`, including the original tool call and thread reference. A turn with a pending approval is not a completed product run.
+
+The product backend also checks its own approved scope before executing a tool. A runtime approval alone cannot expand target scope, alter a diff, or bypass a stale approval check.
+
+Configure the initial `prepare_fixture` call and `publish_repair_pr` as runtime-gated tools. The first call's approval UI displays the whole immutable test plan and records its bounded fixture scope. Later lifecycle calls use that recorded scope rather than repeatedly asking permission for the same approved scenario. If the scope changes or expires, pause for a new approval. The initial plan screen and this runtime pause are one decision, not two separate confirmation dialogs.
+
+TrueForge documents that starting another turn can cancel the existing active turn, and that cancellation waits for running MCP calls. Serialize turn creation and do not promise instant reversal of in-flight external effects. [SDK lifecycle](https://trueforge.dev/api/use-agent)
+
+### 10.3 Sandbox boundaries
+
+TrueForge's sandbox runs generated code and repository checks. Stripe, GitHub, and model-provider credentials remain outside that sandbox. Use restricted MCP calls or a broker for authorized external operations. [Sandbox design](https://trueforge.dev/sandbox)
+
+Repository code is untrusted. Review package scripts before execution, disable unneeded install scripts, bound process time and output, and use a disposable filesystem. Do not mount the user's home directory, SSH keys, Docker socket, or production data.
+
+Browser sessions contain only disposable test-user credentials. The default patch-test application uses synthetic fixtures and signed local replay, with no external billing access. If the optional real patched-preview path is added, use a broker restricted to that child run's test objects. Do not give the sandbox broad Stripe or GitHub keys.
+
+A Daytona sandbox cannot access a developer's host through its own `localhost`. The initial spike must establish an explicit reachable test endpoint and network path. Do not proceed with a diagram that assumes this connectivity exists.
+
+### 10.4 Qodo responsibilities
+
+Install Qodo on the development repository before the first substantive implementation merge. Every meaningful change goes through a GitHub PR and a completed review.
+
+Fix valid high-severity findings or explicitly dismiss them in the Qodo thread with a reason. Record what changed, request review against the final code, and then merge deliberately. Qodo can review automatically or through `/agentic_review`; do not invent a synchronous public review API. [Qodo documentation](https://docs.qodo.ai/code-review/use-qodo-in-prs)
+
+The README MUST contain `## Qodo Code Review Evidence`, a representative merged PR link, the findings and decisions, and evidence of follow-up review. This is mandatory even if the product never publishes a repair PR. [Hackathon rules](https://www.wemakedevs.org/hackathons/trueforge/rules)
+
+If a generated repair PR also receives Qodo review, show that as extra evidence. A generated PR does not replace the review history of PaywallProof itself.
+
+## 11. Safety and permissions
+
+### 11.1 Non-negotiable controls
+
+| ID | Control |
+| --- | --- |
+| S01 | Reject live billing mode before mutations and on every relevant resource read |
+| S02 | Act only on configured targets owned or explicitly authorized by the operator |
+| S03 | Mutate only run-owned Stripe resources and run-owned target users |
+| S04 | Separate ordinary-user access probes from privileged inspection and fixture provisioning |
+| S05 | Keep provider secrets out of prompts, evidence, generated code, source control, and public demos |
+| S06 | Require server-validated, scope-bound approval for the test plan and each PR publication |
+| S07 | Reject approval after its policy, target, base commit, diff, or arguments change |
+| S08 | Never merge or deploy a repair automatically |
+| S09 | Execute repository code in a disposable sandbox with restricted filesystem and network access |
+| S10 | Enforce deadlines, operation limits, and cancellation outside the model |
+| S11 | Treat repository text, tool output, and web content as untrusted data, never authorization |
+| S12 | Preserve signature verification on real Stripe webhook paths and use the raw request body |
+
+Stripe requires the raw request body for signature verification and documents duplicate and unordered delivery. A generated repair must not "fix" webhook failures by removing verification. [Webhook documentation](https://docs.stripe.com/webhooks)
+
+### 11.2 Approval records
+
+An approval displays the account/environment, action, object limits, affected resources or files, expiry, and expected side effects. Default approval expiry is 15 real minutes.
+
+Plan approval binds the policy hash, project configuration hash, target build, scenario list, maximum objects, allowed feature probe, and cleanup scope. PR approval additionally binds repository, base commit, branch, diff hash, and publication arguments.
+
+Approval decisions come from the authenticated owner and are persisted before the matching runtime continuation. A double-click returns the original decision. Denial is recorded and cannot be changed by a model-generated tool call.
+
+### 11.3 Network and secret handling
+
+Connection configuration is an operator action. Model tools cannot override a target host, follow arbitrary redirects, or access cloud metadata endpoints. Resolve and validate destinations, block private/link-local networks by default, and allow a specific local-development destination only through explicit operator configuration.
+
+Apply the same constraints to browser navigation, HTTP requests, repository downloads, and broker calls. Revalidate redirects and connections to reduce DNS-rebinding risk. Prove the deployed sandbox or proxy enforces the policy before claiming network isolation.
+
+Bind an unauthenticated local control server to loopback only. A remotely reachable control interface requires authentication and TLS. Do not expose TrueForge's no-auth local default to the internet.
+
+Use environment or provider secret storage for the MVP. The database stores connection references, not plaintext API keys. Reports redact cookies, authorization headers, passwords, webhook secrets, and personal data. Use synthetic test identities.
+
+Default artifact retention is seven days, configurable by the operator. Deleting a run removes its local artifacts after any necessary cleanup metadata is retained. Public sharing is opt-in and requires a redacted preview.
+
+## 12. Recovery, limits, and cleanup
+
+### 12.1 External operation lifecycle
+
+Each logical external operation moves through `planned -> dispatched -> confirmed`, or ends in `failed` or `unknown`.
+
+Write the operation ID, stable arguments hash, authorization reference, and intended resource ownership before dispatch. After a timeout, reconcile provider state before retrying. A lost response does not prove that nothing happened.
+
+For Stripe POST requests, persist and reuse one idempotency key for the same logical operation and identical arguments. Stripe can return the same stored error on retry, including a 500 response; a fresh key must not be used merely to force progress. GET and DELETE semantics differ. [Idempotency documentation](https://docs.stripe.com/api/idempotent_requests)
+
+Stripe may prune keys after at least 24 hours. After that boundary, an uncertain write requires reconciliation or owner intervention rather than blind reuse. Parent-scoped retrieval must account for test-clock customers; do not assume an unfiltered customer list contains them. [Clock guide](https://docs.stripe.com/billing/testing/test-clocks/api-advanced-usage)
+
+For GitHub publication, use a deterministic run/attempt marker and branch identity. Read the branch and PR before retrying an uncertain creation. Recover the existing PR if it matches. Never open duplicates because a response was lost.
+
+### 12.2 Proposed execution defaults
+
+These are initial product limits, not measured performance claims:
+
+| Limit | Default |
+| --- | --- |
+| Concurrent active runs per project | 1 |
+| Core lifecycle customers per run | 1 Stripe customer, plus ordinary app test users |
+| Ordinary app test users per core run | 2, one free user and one subscription user |
+| Test clocks and subscriptions per core run | 1 each |
+| Active execution deadline | 15 minutes, excluding owner approval waits |
+| Provider request deadline | 30 seconds |
+| Retryable read attempts | 3 with bounded backoff |
+| Application synchronization window | 60 seconds, owner-configurable before approval |
+| Repair attempts | 2 maximum |
+| Model calls per run | 30 maximum |
+| Tool operations per run | 100 maximum, excluding bounded internal polling |
+| Approval expiry | 15 minutes |
+| Cleanup deadline | 2 minutes, followed by visible leftovers |
+
+The worker enforces wall time and operation limits regardless of model cooperation. Bound internal polling separately so it cannot bypass the tool-operation limit. Track token usage and estimated provider cost when available. Missing usage is "unknown", not zero.
+
+If the runtime cannot expose model-call counts, enforce a conservative turn/token limit and a watchdog during the initial spike. Record that limitation rather than displaying an unenforced cost ceiling.
+
+### 12.3 Cancellation and cleanup
+
+On stop, refuse new external mutations, request TrueForge cancellation, and reconcile in-flight operations. Run only cleanup already covered by the approved scope. Explain that stopping does not undo actions already completed.
+
+Take final observations before deleting the test clock or customer. Stripe simulation cleanup can delete associated objects. Record those relationships before cleanup. [Simulation documentation](https://docs.stripe.com/billing/testing/test-clocks/simulate-subscriptions)
+
+Cleanup checks the inventory, provider identity, parent relationships, and run ownership. An uncertain ownership match is never deleted. Mark it for manual review.
+
+A failed cleanup does not erase a valid test finding. Report the cleanup failure separately with resource IDs and an owner-safe cleanup procedure. Keep test resources isolated from real users even when cleanup fails.
+
+## 13. Repair workflow
+
+### 13.1 Required behavior
+
+The owner requests a repair for a specific finding. The agent receives the failing reproduction, policy, observations, relevant code, and an allowlist of editable paths.
+
+Create a disposable checkout at the exact scanned commit. Record its base hash. If the working copy or remote base has changed, do not overwrite it or silently rebase an approved patch.
+
+The agent proposes the smallest change that corrects the observed behavior. Examples include handling a missing cancellation event, fixing customer-to-user mapping, or applying an existing server-side guard to the protected route.
+
+The agent MUST NOT remove authentication, weaken webhook verification, change the approved policy, hardcode the test identity, or modify the authoritative test predicate to make the result pass.
+
+### 13.2 Retesting
+
+Run the original reproduction against the unmodified checkout and verify that it fails for the expected reason. Apply the patch, then run that same test and the known-good scenarios. Keep the evaluator and policy outside writable target source paths.
+
+A patched target needs a fresh isolated environment and fresh users. The required local repair path replays a sanitized billing lifecycle through the application's real handler with a local-only signing secret. The external oracle and feature probes remain unchanged, and both the unpatched and patched versions receive the same replay inputs.
+
+For an optional real Stripe verification, the owner supplies or approves a reachable patched staging preview with its own webhook route. Verify its commit and environment identity before use. Create a child run with a fresh approved billing lifecycle; do not reuse a canceled subscription or a clock that can only move forward. This child run links to the original finding and owns its own fixtures. Provisioning a universal preview deployment service is outside the MVP.
+
+Local tests using sanitized recorded events are useful but must be labeled `local_replay`. Only a real Stripe sandbox rerun can claim that the corresponding live integration scenario passed.
+
+### 13.3 Publication states
+
+Use explicit states: `proposed`, `testing`, `verified_local`, `verified_stripe_sandbox`, `awaiting_publication`, `published`, and `abandoned`.
+
+Publication requires a passing original reproduction, required regression checks, and owner approval of the exact diff. A local-only verification may be published as a draft PR with a conspicuous integration-verification limitation. It must not be labeled fully verified.
+
+The PR includes the observed failure, reproduction, policy, changed behavior, test results, verification mode, risk, and report link. Verify the resulting branch and PR through a provider read before displaying "Published".
+
+If access is unavailable or publication is denied, provide the reviewed diff and reproduction locally. If both repair attempts fail, preserve the finding and explain why the patch was not accepted.
+
+## 14. Verification and acceptance
+
+### 14.1 Test layers
+
+Unit tests cover policy evaluation, verdict aggregation, schema validation, approval binding, operation identity, redaction, ownership checks, and transitions.
+
+Adapter tests use sanitized pinned-version fixtures for Stripe shapes and a real local reference target for user-session behavior. Browser tests exercise the actual protected feature.
+
+Integration tests connect TrueForge, the restricted tools, the evidence store, and the target. A separate credentialed suite executes real Stripe sandbox scenarios. CI without credentials must mark that suite skipped and cannot claim it ran.
+
+### 14.2 Required acceptance tests
+
+| ID | Requirements | Given and expected result |
+| --- | --- | --- |
+| AT01 | R01, S01 | A live key or live Price is supplied; preflight rejects it and no mutation is called |
+| AT02 | R02, S06 | The owner has not approved the policy and plan; no test user or Stripe object is created |
+| AT03 | R03, S03 | A tool receives another run's customer ID; it rejects the request before dispatch |
+| AT04 | R04, R05 | Known-good reference app runs SC01 through SC04; every required assertion passes |
+| AT05 | R05, R06 | Broken API guard allows a free user to obtain protected fixture data; SC01 fails even if the UI hides the feature |
+| AT06 | R04, R06 | Broken cancellation handling leaves a canceled user authorized; SC04 fails with evidence from both provider and feature |
+| AT07 | R04, R06 | Broken activation handling denies a confirmed paying user; SC02 fails as incorrect denial |
+| AT08 | R04, R06 | Correct scheduled cancellation preserves access before period end; SC03 passes |
+| AT09 | R06, R16 | Target or provider is unreachable; result is inconclusive, not a pass or invented billing failure |
+| AT10 | R06 | An endpoint returns 200 with an error page or missing fixture marker; the assertion does not pass |
+| AT11 | R07 | Browser reload and worker reconnect restore the same run without another customer, subscription, or active turn |
+| AT12 | R07, S03 | Stripe creates an object but the response is lost; reconciliation and stable idempotency recover one object |
+| AT13 | R08, S07 | A diff, destination, policy, or base commit changes after approval; execution requires new approval |
+| AT14 | R08 | Owner denies publication; no branch or PR is created and the local report remains available |
+| AT15 | R08, S10 | Owner stops during an in-flight request; no subsequent scenario starts and the uncertain effect is reconciled |
+| AT16 | R09, S05 | Seeded synthetic secrets occur in logs and errors; exported reports and model-visible outputs redact them |
+| AT17 | R10 | Repair makes the original failure pass without changing the policy or oracle and preserves passing controls |
+| AT18 | R11 | PR creation response is lost; retry recovers the same matching PR rather than creating another |
+| AT19 | R12 | Cleanup meets an unowned or uncertain resource; it leaves it untouched and reports it |
+| AT20 | R13 | A real TrueForge tool, approval pause, sandbox execution, and continuation appear in the same workflow |
+| AT21 | R14 | Every substantive implementation merge has Qodo review and the README links a representative final review trail |
+| AT22 | R15 | Local replay and missing credentialed tests remain visibly different from a real Stripe sandbox run |
+| AT23 | S04, S12 | Probe session has no admin privilege; malformed webhook signatures are rejected by the target |
+| AT24 | S09, S11 | Repository prompt injection or a proposed arbitrary host cannot expand tool scope or read a synthetic secret canary |
+| AT25 | R04, R06 | Stripe time advances but a required app-time capability is missing; the affected assertion is unsupported |
+| AT26 | R06 | App billing state is stale but protected access is correct; report state drift without claiming a proven access leak |
+| AT27 | R02, R06 | Target build changes or observations come from another user, scenario, or policy; reject the comparison and do not pass it |
+| AT28 | R01, S02, S08 | An unapproved target or repository is requested; reject it, and prove that no available tool can merge a PR or deploy production |
+
+### 14.3 Controls that make results credible
+
+Maintain a known-good target and separate known-bad variants: missing API guard, missing activation handling, and missing cancellation handling. Enable variants only in test builds. The production bundle must not contain a publicly accessible "make billing broken" switch.
+
+A benchmark run includes both passing and failing variants. Count a missed seeded failure as a false negative and an incorrect failure on the good target as a false positive. Do not claim a reliability percentage from this tiny suite.
+
+At least one known-bad case must be discovered from executed behavior, not from a filename that announces the bug. Do not give the repair agent a prewritten fix.
+
+### 14.4 Proposed quality targets
+
+The MVP passes all required automated tests and the manual Qodo review check. A real credentialed run produces reproducible evidence for the core suite. A reconnect or uncertain write creates no duplicate logical resources. A denied action creates no corresponding external write.
+
+Target a normal core run of under ten minutes after connections are ready. Measure cold sandbox startup separately. These are goals to measure, not promises for the landing page.
+
+## 15. Implementation sequence
+
+### 15.1 Instructions for the coding agent
+
+Read this PRD before creating code. Preserve the priority boundaries. Implement a working path before adding extra providers, scenarios, or dashboards.
+
+At each step, report changed files, the checks actually run, their results, and unresolved blockers. Never describe skipped credentialed tests as passing. Never silently replace a real provider operation with a mock.
+
+Create decisions in `docs/decisions.md` when a verified SDK or environment constraint requires a change. Explain the impact and obtain owner approval before removing a required capability or weakening safety.
+
+### 15.2 Ordered work packages
+
+| Package | Work | Exit condition |
+| --- | --- | --- |
+| IP00 | Set up repository, Qodo, supported runtime versions, and an integration spike | TrueForge executes one restricted MCP read, a sandbox command, an approval denial, and a reconnect; Stripe sandbox read succeeds |
+| IP01 | Implement contracts, policies, durable run state, operations, and approvals | Pure unit tests pass; duplicate approvals and invalid transitions fail safely |
+| IP02 | Build reference Free/Pro target and staging adapter | An ordinary free user is denied and a seeded authorized user is allowed in target tests; seeded setup is not used as scan evidence |
+| IP03 | Implement owned fixture creation, Stripe lifecycle, and webhook connectivity | Real SC02 through SC04 provider states are observed with resource inventory and cleanup |
+| IP04 | Add protected API/browser probes, deterministic assertions, and reports | Known-good suite passes; three known-bad variants are detected with actual observations |
+| IP05 | Connect TrueForge investigation and repair to the working runner | Agent explains an observed failure, generates a bounded patch, and retests it without altering the oracle |
+| IP06 | Add project/policy/run/finding UI, reconnect, cancellation, and approved PR publication | Owner completes the full workflow; deny and reconnect paths pass |
+| IP07 | Run acceptance suite, review Qodo feedback, document setup, and record the demo | Required evidence exists, limitations are explicit, and a stranger can reproduce the supported path |
+
+Each substantive package uses PRs reviewed by Qodo before merge. Small PRs are preferred, but don't split a change into fragments that cannot be tested.
+
+IP00 is a feasibility gate. Missing Daytona access, unreachable target networking, or unsupported approval semantics must be resolved or surfaced immediately. Do not spend the first day polishing a dashboard while these remain unknown.
+
+### 15.3 Scope cuts under deadline pressure
+
+Cut optional subagents, extra billing scenarios, public onboarding, scheduled runs, PDF export, and polished charts first. Keep the core lifecycle, actual protected-feature evidence, approval enforcement, reconnect safety, Qodo trail, and an honest report.
+
+If the live repair rerun cannot be finished, retain a locally tested draft patch with its limitation. Do not fabricate an integration success. If the real core Stripe run itself cannot be completed, the stated MVP is incomplete.
+
+### 15.4 Commands the implementation must supply
+
+Provide documented scripts for `lint`, `typecheck`, `test`, `test:acceptance`, `test:stripe`, `dev`, and `demo:reset`. These are required future scripts, not commands that exist at specification time.
+
+`test:stripe` must fail or clearly report skipped when credentials are absent. `demo:reset` must affect only the reference demo and inventoried test resources. It must never reset an arbitrary database selected by an unchecked environment variable.
+
+## 16. Demo and submission
+
+### 16.1 Three-minute demo plan
+
+| Time | What the judge sees |
+| --- | --- |
+| 0:00 to 0:20 | The question: a canceled user still gets a paid feature |
+| 0:20 to 0:45 | Connected sandbox, approved policy, and bounded test-plan approval |
+| 0:45 to 1:20 | Real billing state and the protected feature disagree; evidence opens |
+| 1:20 to 1:40 | Refresh/reconnect preserves the run; deny a publication request and show no write |
+| 1:40 to 2:20 | Agent's isolated repair, exact diff, and passing reproduction with its verification mode |
+| 2:20 to 2:45 | Approve publication; open the resulting PR and show Qodo development review evidence |
+| 2:45 to 3:00 | Coverage, known-good control, and limitations |
+
+A three-minute video may use an honestly labeled time cut or a completed run's saved trace. Do not label a replay as live execution or imply that Qodo completed a review instantly. Keep a reproducible live path available.
+
+### 16.2 Submission checklist
+
+The current deadline is August 30, 2026, at 20:00 London time, which is August 31 at 00:30 IST. Confirm the organizer page before submission. [Rules](https://www.wemakedevs.org/hackathons/trueforge/rules)
+
+The submission MUST contain a public repository, reproducible README, about three minutes of demo video, a short explanation of TrueForge's role, and the required Qodo Code Review Evidence section. Disclose AI coding assistance and be able to explain the implementation.
+
+The README includes supported scope, credentials required, exact setup, version manifest, real versus replay test commands, safety boundaries, adapter instructions, known limitations, and a sanitized sample report. No private application code, live keys, customer records, or login-protected data belong in the public demo.
+
+## 17. Commercial assumptions and unresolved risks
+
+### 17.1 Commercial hypothesis
+
+The first offer is a pre-launch or pre-release check for a specific paid feature. A recurring PR check may follow if customers use it repeatedly.
+
+Do not implement PaywallProof's own paid plans during the hackathon. Pricing, willingness to pay, and acquisition cost are unvalidated. Candidate customers are founders with an existing staging setup, not people who need the agent to build their entire billing integration.
+
+Before claiming demand, ask a prospective user to supply an owned staging app, its access policy, and time to run a check. Track whether the result found a real issue, whether the evidence was useful, and whether the user wants another run. A paid pilot is stronger evidence than enthusiasm about the idea.
+
+### 17.2 Risks and decisions
+
+| Risk | Mitigation or decision |
+| --- | --- |
+| Integration setup takes longer than the scan saves | Ship one documented adapter and measure setup time on a second app |
+| Expectations are guessed from the same buggy code | Owner-approved policy and a separate deterministic oracle |
+| Checker appears useful only on its own demo | Test a second owned app before claiming broad utility |
+| Billing state is correct but a cached session is stale | Probe both the current session and a fresh session when diagnosing; keep the required assertion's session behavior fixed |
+| Subscription API passes but checkout is broken | Explicitly exclude hosted checkout UI coverage in every report |
+| Automated repair removes protection | Immutable oracle, restricted edit paths, negative controls, and human review |
+| Sandbox or provider access blocks the build | Resolve in IP00 and disclose the blocker; no simulated replacement presented as real |
+| Account data or credentials leak through evidence | Synthetic users, structured redaction, secret canaries, and review before sharing |
+| Existing QA products add the same feature | Compete on low setup cost, trustworthy findings, and a narrow useful workflow; no assumed technical moat |
+
+### 17.3 Inputs needed before implementation
+
+The builder needs an owned GitHub repository, Qodo installation, a TrueForge runtime, a model API connection, Daytona access, a Stripe sandbox, and a reachable staging target or the bundled reference app.
+
+The first integration spike must settle the exact SDK versions, sandbox network route, webhook delivery setup, and supported target session mechanism. Browser probes run in the trusted MCP service with isolated user contexts, while generated code runs in Daytona. These are explicit environment-dependent setup choices, not permission to defer the core architecture.
+
+## 18. Sources
+
+Primary documentation was inspected on August 27, 2026. Product APIs and hackathon rules can change. Pin installed versions and recheck the relevant source during IP00.
+
+| Source | Used for |
+| --- | --- |
+| [Hackathon rules](https://www.wemakedevs.org/hackathons/trueforge/rules) | Required tools, Qodo evidence, public submission, deadline, authorized data |
+| [TrueForge SDK recipes](https://trueforge.dev/api/use-agent) | Sessions, turn streaming, approvals, cancellation, reconnect |
+| [TrueForge sandbox](https://trueforge.dev/sandbox) | Daytona support, sandbox lifecycle, credential separation |
+| [TrueForge MCP setup](https://trueforge.dev/mcp-servers) | Connector configuration and authentication |
+| [Qodo PR reviews](https://docs.qodo.ai/code-review/use-qodo-in-prs) | Automatic reviews and manual review command |
+| [Stripe testing](https://docs.stripe.com/testing) | Sandbox transactions and test PaymentMethods |
+| [Stripe test clocks](https://docs.stripe.com/billing/testing/test-clocks/api-advanced-usage) | Clock creation, customer association, advancement, readiness, retrieval limits |
+| [Stripe subscription simulation](https://docs.stripe.com/billing/testing/test-clocks/simulate-subscriptions) | Simulation behavior and cleanup |
+| [Stripe cancellation](https://docs.stripe.com/billing/subscriptions/cancel) | Scheduled versus effective cancellation and events |
+| [Stripe subscription webhooks](https://docs.stripe.com/billing/subscriptions/webhooks) | Subscription state transitions and asynchronous processing |
+| [Stripe webhooks](https://docs.stripe.com/webhooks) | Raw-body verification, retries, duplicates, ordering, endpoint requirements |
+| [Stripe idempotency](https://docs.stripe.com/api/idempotent_requests) | Stable retry keys, stored responses, retention boundary |
+| [Kortix/Suna reconciliation PR](https://github.com/kortix-ai/suna/pull/6669) | Concrete example of Stripe/application state drift |
+| [Autonoma checkout testing](https://getautonoma.com/blog/how-to-test-stripe-checkout) | Competitor positioning only, not authority for Stripe implementation details |
+
+## 19. Owner constraints and independent verification
+
+Added August 27, 2026, following the owner's implementation authorization. Every existing MUST requirement remains in scope. Development effort and elapsed development time are not grounds for removing capabilities.
+
+### 19.1 No monetary charges
+
+The authorized external spending limit is zero. Do not buy a plan, enter a payment method, enable automatic recharge, accept paid overages, or invoke an unverified metered service. Promotional credits alone do not prove that an account cannot incur charges. Verify the account's billing behavior and a provider-enforced stop before consuming credits. If that cannot be established, keep the integration blocked while implementing and testing the remaining work.
+
+Use local execution where supported. Stripe integration evidence must come from real Stripe sandbox resources, never live charges. Qodo review must use verified free access. TrueForge may use a local model through its documented provider interface. Its generated-code sandbox requirement remains mandatory; a local process or invented runtime trace does not satisfy it.
+
+Track each external integration's access, billing verification, and execution evidence separately. A installed SDK does not mean the integration was exercised. An offer email does not prove credits have been claimed or remain available. Keep private redemption links and account details out of public artifacts.
+
+### 19.2 Independent tests
+
+Independent test authors receive the PRD and frozen public interface contracts only. They must not read product implementation, proposed repairs, or implementation-agent conversations. Use fresh agents without inherited history. Keep their inputs, authored tests, and revision history identifiable. Shared filesystem access is not technical isolation; enforce read boundaries in task instructions and record what was supplied.
+
+Test public behavior through the product HTTP API, restricted MCP tools, policy evaluator, and browser workflows. Extend the existing acceptance catalogue with boundary, malformed-input, concurrency, crash-recovery, retry, stale-evidence, injection, and permission-denial cases. Test large or adversarial workloads locally. Do not load-test Stripe or other third-party services without their explicit authorization.
+
+Run independent tests against the implementation. Fix implementation defects, then rerun the original cases. Add regression cases for newly discovered failures. Change a test expectation only to correct a demonstrated conflict with the approved specification, and record that reason. Never delete, skip, soften, or rewrite a failing assertion merely to obtain a passing result.
+
+Synthetic fixtures and injected faults are allowed as clearly labeled test inputs. They are not observed customer data, real provider receipts, or evidence of a live integration. Credentialed checks that cannot execute remain blocked or skipped, and do not count as passed. Record the command, environment, exit result, verification mode, and required cases not exercised.
+
+### 19.3 Early integration proof
+
+Before expanding the implementation, complete an early path through one actual access failure, TrueForge investigation, generated repair in its configured sandbox, unchanged reproduction, and a publication approval decision. This adds an integration checkpoint and removes no existing work package or acceptance criterion.
+
+In the recorded workflow, generate and test the patch before requesting publication. After denial, a later publication attempt needs a fresh approval request. Show the resulting action or absence of action using provider evidence.
