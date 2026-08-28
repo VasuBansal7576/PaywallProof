@@ -3,6 +3,7 @@ import { open, lstat, mkdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { z } from 'zod';
 import { FREE_RUNTIME_MODEL } from '../packages/adapters/src/free-model.ts';
+import { CODEX_RUNTIME_MODEL } from '../packages/adapters/src/codex-subscription.ts';
 
 export const freeModelPaths = {
   key: resolve('.local/openrouter-api-key'),
@@ -33,7 +34,7 @@ export async function readModelSecret(path: string) {
 export async function runtimeModel() {
   if (process.env.TRUEFORGE_MODEL) return process.env.TRUEFORGE_MODEL;
   try {
-    const selection = z.strictObject({ model: z.literal(FREE_RUNTIME_MODEL) }).parse(JSON.parse(await readFile(freeModelPaths.selection, 'utf8')));
+    const selection = z.strictObject({ model: z.enum([FREE_RUNTIME_MODEL, CODEX_RUNTIME_MODEL]) }).parse(JSON.parse(await readFile(freeModelPaths.selection, 'utf8')));
     return selection.model;
   } catch (error) {
     if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;

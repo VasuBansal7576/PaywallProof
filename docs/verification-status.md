@@ -2,6 +2,20 @@
 
 This is a record of observed progress, not an acceptance certificate.
 
+## August 29: Codex subscription selected
+
+The owner selected `gpt-5.6-luna` through the existing ChatGPT subscription. Official CLI `0.147.0` reports managed ChatGPT sign-in, Pro, available included quota, and zero extra credits. The bridge pins Luna, disables provider fallback and rejects paid/API-key modes, extra-credit balances and unknown quota state. It makes no purchase or account-billing changes. OpenRouter remains an explicit alternative; its idle gateway was stopped. No Ollama process or weights are used.
+
+The real runtime check at `.local/runtime-verification-2026-08-28T18-52-42-236Z.json` passed actual sandbox execution returning 42, reconnection, one approved call, zero denied calls and stale-approval rejection. This establishes the subscription runtime path, not full repair acceptance.
+
+The first Luna repair attempt under `.local/full-repair-b1044ff3-3227-485a-888a-30f4b99fa213/acceptance.json` reproduced the intended baseline fault. It then guessed the wrong staging command and retried; the unchanged runner rejected it as `EXACT_EXEC_REQUIRED`. No candidate was accepted. The bridge now separates the active instruction from history and encodes exact-command constraints before execution. A live regression exposed malformed nested JSON-string arguments; structured arguments fixed that format. The subsequent `.local/codex-exact-exec-regression.json` passed one actual exec call returning 42 with no repeat. Failures remain recorded separately.
+
+Qodo's completed `c883e9b` review correctly identified manifest-only preflight and stale README status. Preflight now authenticates to the live gateway and checks its metadata; offline, unauthorized and wrong-model cases fail. Actual testing also accounted for TrueForge's deliberately masked credential listings by using the separate local capability. The README now distinguishes runtime success from pending repair and provider acceptance. Repeated historical findings remain addressed by the prior evidence below.
+
+The current full suite passes **1,799 tests, zero failures/skips**, recorded in `.local/full-suite-codex-command-guard.json`. TypeScript, ESLint and the operator production build pass. The initial restricted suite could not bind localhost; the authorized run passed. A synthetic subprocess mock initially looped on repeated exit events and exhausted its worker heap; its event model was corrected, cleanup was made idempotent and bounded, and the full suite passed afterward. No test assertions or oracle checks were weakened.
+
+The second permitted repair attempt reuses the same baseline, session, frozen oracle and attempt history. Its result is recorded separately as `luna-command-guard-retry.json`; until it passes, generated-repair acceptance remains unverified. Codex protocol fixtures are implementation-aware and are not presented as live product evidence.
+
 ## Latest UI and repair checks
 
 The rebuilt operator workspace passes nine actual browser check groups, including exact report/clipboard bindings, keyboard tabs and history, 320/390/768-pixel layouts, connection recovery and isolated hostile presentation fixtures. The latest run also verifies `PROJECT_CONFIG_CHANGED` after restarting on a newer commit. A separate intercepted test first establishes a ready preflight, refreshes configuration and then reverts it: old approval state never becomes actionable. The UI offers a new connection without rewriting earlier project, run or approval bindings. No UI verification project, run or provider object was created. The receipt is `apps/web/.local/verification.json`.

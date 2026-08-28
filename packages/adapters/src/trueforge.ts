@@ -1,5 +1,10 @@
 import { TrueForge, type TrueForgeApi } from "@truefoundry/trueforge-sdk";
-import { FREE_GATEWAY_ORIGIN, FREE_MODEL_ID, FREE_RUNTIME_MODEL } from './free-model.ts';
+import { z } from 'zod';
+import { constants } from 'node:fs';
+import { open, lstat } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { boundedJson, FREE_GATEWAY_ORIGIN, FREE_MODEL_ID, FREE_RUNTIME_MODEL } from './free-model.ts';
+import { CODEX_GATEWAY_ORIGIN, CODEX_MODEL_ID, CODEX_RUNTIME_MODEL } from './codex-subscription.ts';
 
 export type RuntimeTurn = TrueForgeApi.Turn;
 export type RuntimeEvent = TrueForgeApi.TurnStreamingEvent;
@@ -25,9 +30,11 @@ function localUrl(value: string): string {
 export class TrueForgeAdapter {
   private readonly client: TrueForge;
   private readonly model: string;
+  private readonly gatewayToken: string | undefined;
 
-  constructor(options: { baseUrl?: string; model?: string; timeoutSeconds?: number } = {}) {
+  constructor(options: { baseUrl?: string; model?: string; timeoutSeconds?: number; gatewayToken?: string } = {}) {
     this.model = options.model ?? "paywallproof-local/qwen3-4b-instruct";
+    this.gatewayToken = options.gatewayToken;
     this.client = new TrueForge({
       baseUrl: localUrl(options.baseUrl ?? "http://127.0.0.1:8790"),
       timeoutInSeconds: options.timeoutSeconds ?? 180,
@@ -35,6 +42,21 @@ export class TrueForgeAdapter {
       maxRetries: 0,
       stream: { reconnectionEnabled: true, maxReconnectionAttempts: 2 },
     });
+  }
+
+  private async capability(codex: boolean) {
+    const schema = z.string().regex(/^[A-Za-z0-9_-]{32,256}$/);
+    if (this.gatewayToken !== undefined) return schema.parse(this.gatewayToken);
+    // TrueForge intentionally masks provider credentials in list responses.
+    // Read only our separate local capability, never a provider/API credential.
+    const directory = await lstat(resolve('.local'));
+    if (!directory.isDirectory() || (directory.mode & 0o077) !== 0) throw new Error('Private model state required');
+    const file = await open(resolve('.local', codex ? 'codex-model-gateway-token' : 'free-model-gateway-token'), constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      const stat = await file.stat();
+      if (!stat.isFile() || stat.size > 4096 || (stat.mode & 0o077) !== 0 || stat.uid !== process.getuid?.()) throw new Error('Private model capability required');
+      return schema.parse((await file.readFile('utf8')).trim());
+    } finally { await file.close(); }
   }
 
   async registerMcpServer(options: { name: string; url: string; description: string; headers?: Record<string, string> }) {
@@ -56,16 +78,35 @@ export class TrueForgeAdapter {
         if (this.model === FREE_RUNTIME_MODEL && (provider.manifest.baseUrl !== `${FREE_GATEWAY_ORIGIN}/v1` || model.modelId !== FREE_MODEL_ID)) {
           throw new Error('The free hosted model requires the fixed zero-price policy gateway.');
         }
+        if (this.model === CODEX_RUNTIME_MODEL && (provider.manifest.baseUrl !== `${CODEX_GATEWAY_ORIGIN}/v1` || model.modelId !== CODEX_MODEL_ID)) {
+          throw new Error('Codex subscription inference requires the fixed local Luna bridge.');
+        }
         if (/cloud/i.test(model.modelId)) throw new Error("Cloud model IDs are disabled in the no-charge runtime.");
+        if (this.model === FREE_RUNTIME_MODEL || this.model === CODEX_RUNTIME_MODEL) {
+          try {
+            const codex = this.model === CODEX_RUNTIME_MODEL;
+            const token = await this.capability(codex);
+            const signal = AbortSignal.timeout(30000);
+            const response = await fetch(`${codex ? CODEX_GATEWAY_ORIGIN : FREE_GATEWAY_ORIGIN}/health`, {
+              method: 'GET', redirect: 'error', signal, headers: { authorization: `Bearer ${token}` },
+            });
+            if (!response.ok || !response.headers.get('content-type')?.startsWith('application/json')) {
+              await response.body?.cancel(); throw new Error('Gateway health rejected');
+            }
+            const health = await boundedJson(response.body, 65536, signal);
+            if (codex) z.object({ model: z.literal(CODEX_MODEL_ID), inference: z.literal('codex_subscription'), extraCredits: z.literal(0) }).parse(health);
+            else z.object({ model: z.literal(FREE_MODEL_ID), inference: z.literal('free_hosted'), maxSpendUsd: z.literal(0) }).parse(health);
+          } catch { throw new Error('The configured no-charge model gateway is unavailable or rejects its current account policy.'); }
+        }
         return model;
       }
     }
     throw new Error("The configured runtime model must belong to a local custom provider.");
   }
 
-  async checkConnection(): Promise<{ model: string; local: true; inference?: 'free_hosted' }> {
+  async checkConnection(): Promise<{ model: string; local: true; inference?: 'free_hosted' | 'codex_subscription' }> {
     await this.localModel();
-    return { model: this.model, local: true, ...(this.model === FREE_RUNTIME_MODEL ? { inference: 'free_hosted' as const } : {}) };
+    return { model: this.model, local: true, ...(this.model === FREE_RUNTIME_MODEL ? { inference: 'free_hosted' as const } : this.model === CODEX_RUNTIME_MODEL ? { inference: 'codex_subscription' as const } : {}) };
   }
 
   async createSession(options: {

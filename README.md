@@ -34,7 +34,7 @@ The owner uses Codex for implementation, independent test authoring, and verific
 
 ## Run locally
 
-`pnpm dev` starts the operator UI on port 3000, reference target on 3001 and worker on 8787. The operator token is in `.local/operator-token`. TrueForge must already be running on loopback port 8790. Ollama is not required: the [free hosted model connection](docs/free-model.md) moves inference off the Mac without loading local weights. Activation requires a dedicated $0-capped OpenRouter key; live inference on this new path remains unverified. There is no automatic fallback to a paid or local model.
+`pnpm dev` starts the operator UI on port 3000, reference target on 3001 and worker on 8787. The operator token is in `.local/operator-token`. TrueForge must already be running on loopback port 8790. Ollama is not required. The selected [Codex subscription connection](docs/codex-subscription.md) uses Luna with included allowance and rejects extra-credit balances. The [free hosted alternative](docs/free-model.md) requires a dedicated $0-capped OpenRouter key. Both have passed actual inference, sandbox and approval-transport checks; these are not full repair or provider-lifecycle acceptance. There is no automatic fallback to a paid or local model.
 
 Local replay needs no provider account. It exercises the actual application and browser using explicitly synthetic billing events. New schema-v2 runs use `control-v2.sqlite` and `reference-v2.sqlite`; old databases and evidence are preserved without relabeling.
 
@@ -52,10 +52,12 @@ For Polar runs, configure `POLAR_ACCESS_TOKEN`, `POLAR_REFERENCE_TOKEN`, `POLAR_
 | `pnpm test:runtime` | TrueForge installation and approval behavior |
 | `pnpm model:configure` | Verify a zero-spend key and register the free hosted connection; no inference |
 | `pnpm dev:model` | Start the authenticated zero-price gateway; no local model weights |
+| `pnpm model:codex` | Check subscription allowance and register Luna; no inference or billing change |
+| `pnpm dev:codex-model` | Start the local bridge to the signed-in Codex CLI |
 | `pnpm test:repair` | Isolated fault injection, model-generated repair and unchanged before/after oracle |
 | `pnpm exec tsx scripts/verify-local-workflow.ts` | Full local-replay product run through TrueForge |
 | `pnpm demo:reset` | Stop inventoried runs and clean only their owned fixtures |
 
 Provider audit records are retained honestly. An active or unexpired checkout that cannot be safely removed remains a reported leftover. A retained report never becomes a fresh verification merely because it is still accessible.
 
-`pnpm test:repair` requires the real `.local/local-workflow-report.json` produced by the local workflow verifier and at least 4 GiB free. It copies committed source into an isolated repository, injects a scheduled-cancellation fault, reproduces it through the real application, then asks the selected no-charge model to repair it. Only the explicit application-source allowlist reaches the model, never this script or the host evaluator. Results remain under `.local/full-repair-*/`; failures are preserved. It makes no billing-provider, publication or paid model call and does not modify the working application. The free hosted connection sends model prompts and sanitized tool results to OpenRouter; billing replay stays local.
+`pnpm test:repair` requires the real `.local/local-workflow-report.json` produced by the local workflow verifier and at least 4 GiB free. It copies committed source into an isolated repository, injects a scheduled-cancellation fault, reproduces it through the real application, then asks the selected no-charge model to repair it. Only the explicit application-source allowlist reaches the model, never this script or the host evaluator. Results remain under `.local/full-repair-*/`; failures are preserved. It makes no billing-provider or publication call and does not modify the working application. The selected connection sends model prompts and sanitized results to OpenAI through Codex, or to OpenRouter when explicitly configured; billing replay stays local.

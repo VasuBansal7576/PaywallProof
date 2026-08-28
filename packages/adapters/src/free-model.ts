@@ -30,8 +30,9 @@ const message = z.strictObject({
   name: z.string().optional(), tool_call_id: z.string().optional(),
   tool_calls: z.array(z.strictObject({ id: z.string(), type: z.literal('function'), function: functionCall })).optional(),
 }).refine(value => value.reasoning_content === undefined || value.role === 'assistant');
-const completionSchema = z.strictObject({
-  model: z.literal(FREE_MODEL_ID), messages: z.array(message).min(1).max(512),
+/** Shared text-only wire contract for the explicitly selected model bridge. */
+export function textCompletionSchema(modelId: string) { return z.strictObject({
+  model: z.literal(modelId), messages: z.array(message).min(1).max(512),
   stream: z.boolean().optional(),
   stream_options: z.strictObject({ include_usage: z.boolean() }).optional(),
   max_tokens: z.number().int().min(1).max(8192).optional(),
@@ -43,9 +44,10 @@ const completionSchema = z.strictObject({
   }) })).max(128).optional(),
   tool_choice: z.union([z.enum(['auto', 'none', 'required']), z.strictObject({ type: z.literal('function'), function: z.strictObject({ name: z.string() }) })]).optional(),
   parallel_tool_calls: z.boolean().optional(),
-}).refine(request => !(request.max_tokens !== undefined && request.max_completion_tokens !== undefined));
+}).refine(request => !(request.max_tokens !== undefined && request.max_completion_tokens !== undefined)); }
+const completionSchema = textCompletionSchema(FREE_MODEL_ID);
 
-async function boundedJson(body: ReadableStream<Uint8Array> | null, maximum: number, signal?: AbortSignal): Promise<unknown> {
+export async function boundedJson(body: ReadableStream<Uint8Array> | null, maximum: number, signal?: AbortSignal): Promise<unknown> {
   if (!body) throw new FreeModelError('FREE_MODEL_INVALID_BODY');
   const reader = body.getReader();
   const chunks: Uint8Array[] = [];

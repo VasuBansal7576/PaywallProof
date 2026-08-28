@@ -253,14 +253,14 @@ describe('free hosted model gateway, implementation-aware', () => {
     { baseUrl: `${FREE_GATEWAY_ORIGIN}/v1`, modelId: 'paid/model', allowed: false },
     { baseUrl: `${FREE_GATEWAY_ORIGIN}/v1`, modelId: FREE_MODEL_ID, allowed: true },
   ])('binds the TrueForge selection to the exact guarded connection: $baseUrl $modelId', async ({ baseUrl, modelId, allowed }) => {
-    const fetcher = vi.fn(async () => json({ data: [{ name: 'paywallproof-free', manifest: {
-      type: 'custom', name: 'paywallproof-free', baseUrl,
+    const fetcher = vi.fn(async (url: unknown) => String(url).endsWith('/health') ? json({ model: FREE_MODEL_ID, inference: 'free_hosted', maxSpendUsd: 0 }) : json({ data: [{ name: 'paywallproof-free', manifest: {
+      type: 'custom', name: 'paywallproof-free', baseUrl, auth: { apiKey: gatewayToken },
       models: [{ name: 'north-mini-code', modelId, properties: { contextLength: 262144, maxOutputTokens: 8192 } }],
     } }] }));
     vi.stubGlobal('fetch', fetcher);
-    const adapter = new TrueForgeAdapter({ model: FREE_RUNTIME_MODEL });
+    const adapter = new TrueForgeAdapter({ model: FREE_RUNTIME_MODEL, gatewayToken });
     if (allowed) await expect(adapter.checkConnection()).resolves.toEqual({ model: FREE_RUNTIME_MODEL, local: true, inference: 'free_hosted' });
     else await expect(adapter.checkConnection()).rejects.toThrow();
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledTimes(allowed ? 2 : 1);
   });
 });
