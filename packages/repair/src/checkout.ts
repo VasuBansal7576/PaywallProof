@@ -13,7 +13,8 @@ export const REFERENCE_REPAIR_PATHS=[
   'apps/demo-saas/app/layout.tsx','apps/demo-saas/app/page.tsx','apps/demo-saas/app/styles.css',
   'apps/demo-saas/app/dashboard/page.tsx','apps/demo-saas/app/api/[...path]/route.ts','apps/demo-saas/app/staging/[...path]/route.ts',
 ];
-export type CheckoutFile={path:string;bytes:Uint8Array;role:'source'|'dependency'|'launcher'};
+export const REFERENCE_SUPPORT_PATHS=['packages/reference/src/replay-signature.ts','packages/adapters/src/polar.ts'];
+export type CheckoutFile={path:string;bytes:Uint8Array;role:'source'|'support'|'dependency'|'launcher'};
 const packageName=z.string().regex(/^(?:@[a-z0-9._-]+\/)?[a-z0-9._-]+$/);
 const packageSchema=z.object({name:packageName,version:z.string(),dependencies:z.record(z.string(),z.string()).optional(),optionalDependencies:z.record(z.string(),z.string()).optional()});
 const metadataSchema=z.object({baseCommit:gitSha,repository:repositorySchema,paths:z.array(pathSchema).min(1).max(100)});
@@ -22,7 +23,7 @@ function beneath(root:string,path:string){const rel=relative(root,path);return r
 
 /** Reads raw Git blobs only. Never checks out or executes repository files on the host. */
 export async function readRepairSource(options:{repositoryRoot:string;baseCommit:string;repository:string;paths?:readonly string[]}) {
-  const request=metadataSchema.parse({...options,paths:options.paths??REFERENCE_REPAIR_PATHS});
+  const request=metadataSchema.parse({...options,paths:options.paths??[...REFERENCE_REPAIR_PATHS,...REFERENCE_SUPPORT_PATHS]});
   const foldedPaths=request.paths.map(path=>path.toLowerCase());
   if(new Set(foldedPaths).size!==request.paths.length||foldedPaths.some(path=>foldedPaths.some(other=>other!==path&&other.startsWith(`${path}/`))))throw new RepairError('REPAIR_SCOPE_REJECTED');
   const root=await realpath(options.repositoryRoot);
@@ -40,13 +41,13 @@ export async function readRepairSource(options:{repositoryRoot:string;baseCommit
     if(bytes.length>1024*1024)throw new RepairError('REPAIR_SOURCE_LIMIT');
     // Candidate publication is UTF-8. Reject source whose decoding changes bytes.
     if(bytes.includes(0)||!Buffer.from(bytes.toString('utf8')).equals(bytes))throw new RepairError('REPAIR_SOURCE_ENCODING');
-    files.push({path,bytes,role:'source'});
+    files.push({path,bytes,role:REFERENCE_SUPPORT_PATHS.includes(path)?'support':'source'});
   }
   return {baseCommit:request.baseCommit,repository:request.repository,files,bindings:files.map(file=>({path:file.path,sha256:sha256(file.bytes),size:file.bytes.length}))};
 }
 
 /** Packages only installed runtime dependencies. No package scripts or downloads. */
-export async function collectRepairDependencies(repositoryRoot:string,names:readonly string[]=['next','react','react-dom','hono','zod','stripe','better-sqlite3','typescript','@types/react','@types/node']) {
+export async function collectRepairDependencies(repositoryRoot:string,names:readonly string[]=['next','react','react-dom','hono','zod','standardwebhooks','better-sqlite3','typescript','@types/react','@types/node']) {
   const root=await realpath(resolve(repositoryRoot,'node_modules'));
   const files:CheckoutFile[]=[],versions:{name:string;version:string;destination:string}[]=[];
   let total=0;

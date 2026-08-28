@@ -14,7 +14,7 @@ const config=z.object({repository:z.string(),defaultRef:z.string(),priceId:z.str
 const project=z.object({id:z.string()}).parse(await call('/api/projects',{name:`Local workflow verification ${new Date().toISOString()}`,repository:config.repository,ref:config.defaultRef,targetId:'reference',ownershipConfirmed:true,modelConsent:true}));
 const preflight=z.object({ready:z.boolean(),featureConfigHash:z.string().optional(),checks:z.array(z.unknown())}).parse(await call(`/api/projects/${project.id}/preflight`,{mode:'local_replay'}));
 if(!preflight.ready||!preflight.featureConfigHash)throw new Error(`Preflight blocked: ${JSON.stringify(preflight.checks)}`);
-const policy=z.object({hash:z.string()}).parse(await call(`/api/projects/${project.id}/policies`,{schemaVersion:1,priceId:config.priceId,featureId:'pro_export',featureConfigHash:preflight.featureConfigHash,cancellation:'allow_until_period_end',requireInitialInvoicePaid:true,syncWindowSeconds:5,predicateVersion:'reference-export-v1'}));
+const policy=z.object({hash:z.string()}).parse(await call(`/api/projects/${project.id}/policies`,{schemaVersion:2,priceId:config.priceId,featureId:'pro_export',featureConfigHash:preflight.featureConfigHash,cancellation:'allow_until_period_end',requireInitialPaymentConfirmed:true,syncWindowSeconds:5,predicateVersion:'reference-export-v1'}));
 const run=z.object({id:z.string(),mode:z.literal('local_replay'),approval:z.object({id:z.string(),bindingHash:z.string()})}).parse(await call('/api/runs',{projectId:project.id,policyHash:policy.hash,mode:'local_replay'}));
 process.stdout.write(JSON.stringify({runId:run.id,mode:run.mode,url:`http://127.0.0.1:3000/runs/${run.id}`})+'\n');
 const deadline=Date.now()+20*60*1000;
@@ -32,7 +32,7 @@ while(Date.now()<deadline) {
   if(detail.run.status==='completed') {
     const report=await call(`/api/runs/${run.id}/report?format=json`);await writeFile('.local/local-workflow-report.json',JSON.stringify(report,null,2));
     if(detail.run.outcome!=='passed'||detail.scenarios.length!==4)throw new Error('The local workflow did not pass all four scenarios.');
-    process.stdout.write(JSON.stringify({status:'passed',mode:'local_replay',runId:run.id,credentialedStripeExecuted:false})+'\n');process.exit(0);
+    process.stdout.write(JSON.stringify({status:'passed',mode:'local_replay',runId:run.id,credentialedPolarExecuted:false})+'\n');process.exit(0);
   }
   if(detail.runtime?.status==='done'&&approved&&detail.run.status==='running')throw new Error('The agent ended before completing the required workflow.');
   await new Promise(resolve=>setTimeout(resolve,2000));

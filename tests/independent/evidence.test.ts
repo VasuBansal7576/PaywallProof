@@ -9,11 +9,11 @@ import { observeScenario } from '../../packages/evidence/src/probe.ts';
 // Independent public-boundary tests. Every payload and secret is synthetic.
 // Stored browser payloads here are test inputs, not proof of browser execution.
 
-type Source = 'stripe' | 'application' | 'api_probe' | 'browser';
-type EvidenceIds = { stripeId: string; applicationId: string; apiId: string; browserId: string };
+type Source = 'billing_provider' | 'application' | 'api_probe' | 'browser';
+type EvidenceIds = { providerId: string; applicationId: string; apiId: string; browserId: string };
 type Evaluation = Awaited<ReturnType<typeof evaluateEvidence>>;
 const sourceSlots: [Source, keyof EvidenceIds][] = [
-  ['stripe', 'stripeId'], ['application', 'applicationId'], ['api_probe', 'apiId'], ['browser', 'browserId'],
+  ['billing_provider', 'providerId'], ['application', 'applicationId'], ['api_probe', 'apiId'], ['browser', 'browserId'],
 ];
 const observedNow = 1_800_000_000_000;
 const fixtureMarker = 'fixture_for_owned_run_42';
@@ -34,8 +34,8 @@ function credentialCanary(prefixParts: string[], suffixLength: number) {
 
 function approvedPolicy(syncWindowSeconds = 60) {
   return createPolicy({
-    schemaVersion: 1, priceId: 'price_pro', featureId: 'export', featureConfigHash: 'a'.repeat(64),
-    cancellation: 'allow_until_period_end', requireInitialInvoicePaid: true,
+    schemaVersion: 2, priceId: 'price_pro', featureId: 'export', featureConfigHash: 'a'.repeat(64),
+    cancellation: 'allow_until_period_end', requireInitialPaymentConfirmed: true,
     syncWindowSeconds, predicateVersion: 'export-v1',
   });
 }
@@ -56,7 +56,7 @@ function stripePayload(overrides: Record<string, unknown> = {}) {
     livemode: false, identityResolved: true, noSubscriptionConfirmed: false, customerId: 'cus_owned',
     subscription: {
       id: 'sub_owned', customerId: 'cus_owned', priceId: 'price_pro', status: 'active',
-      initialInvoicePaid: true, cancelAtPeriodEnd: false, periodEnd: 2_000, billingTime: 1_000,
+      initialPaymentConfirmed: true, cancelAtPeriodEnd: false, periodEnd: 2_000, billingTime: 1_000,
     },
     ...overrides,
   };
@@ -72,7 +72,7 @@ function probePayload(overrides: Record<string, unknown> = {}) {
 
 function observationInput(overrides: Record<string, unknown> = {}) {
   return {
-    runId: 'run_owned', scenarioId: 'SC02', subjectId: 'user_owned', source: 'stripe',
+    runId: 'run_owned', scenarioId: 'SC02', subjectId: 'user_owned', source: 'billing_provider',
     policyHash: approvedPolicy().hash, targetBuild: 'build_owned', observedAt: observedNow,
     billingTime: 1_000, mode: 'local_replay', payload: stripePayload(), ...overrides,
   };
@@ -84,9 +84,9 @@ async function collect(
   metadata: Record<string, unknown> = {},
 ) {
   const defaults: Record<Source, unknown> = {
-    stripe: stripePayload(), application: applicationPayload(), api_probe: probePayload(), browser: probePayload(),
+    billing_provider: stripePayload(), application: applicationPayload(), api_probe: probePayload(), browser: probePayload(),
   };
-  const ids: EvidenceIds = { stripeId: '', applicationId: '', apiId: '', browserId: '' };
+  const ids: EvidenceIds = { providerId: '', applicationId: '', apiId: '', browserId: '' };
   for (const [source, slot] of sourceSlots) {
     const record = await store.record(observationInput({ source, payload: defaults[source], ...metadata, ...changes[source] }));
     ids[slot] = record.id;
@@ -265,7 +265,7 @@ describe('independent evidence: authoritative storage', () => {
 });
 
 describe('independent evidence: evaluation and state drift', () => {
-  it.each(['local_replay', 'stripe_sandbox'])('passes a coherent synthetic %s evidence set', async (mode) => {
+  it.each(['local_replay', 'polar_sandbox'])('passes a coherent synthetic %s evidence set', async (mode) => {
     const store = open();
     const ids = await collect(store, {}, { mode });
     const result = await evaluateEvidence(store, evaluationInput(ids, { mode }));
@@ -279,7 +279,7 @@ describe('independent evidence: evaluation and state drift', () => {
     canceled.subscription.status = 'canceled';
     const denial = probePayload({ status: 403, body: { error: 'ACCESS_DENIED' } });
     const ids = await collect(store, {
-      stripe: { payload: canceled }, application: { payload: applicationPayload({ status: 'active' }) },
+      billing_provider: { payload: canceled }, application: { payload: applicationPayload({ status: 'active' }) },
       api_probe: { payload: denial }, browser: { payload: denial },
     });
     const result = await evaluateEvidence(store, evaluationInput(ids));
@@ -293,7 +293,7 @@ describe('independent evidence: evaluation and state drift', () => {
     const canceled = stripePayload();
     canceled.subscription.status = 'canceled';
     const ids = await collect(store, {
-      stripe: { payload: canceled }, application: { payload: applicationPayload({ status: 'canceled' }) },
+      billing_provider: { payload: canceled }, application: { payload: applicationPayload({ status: 'canceled' }) },
     });
     expect(await evaluateEvidence(store, evaluationInput(ids))).toMatchObject({
       api: { verdict: 'fail' }, browser: { verdict: 'fail' }, state: { verdict: 'pass' },
@@ -312,7 +312,7 @@ describe('independent evidence: evaluation and state drift', () => {
     const store = open();
     const denial = probePayload({ status: 403, body: { error: 'ACCESS_DENIED' } });
     const ids = await collect(store, {
-      stripe: { payload: stripePayload({ noSubscriptionConfirmed: true, customerId: null, subscription: null }) },
+      billing_provider: { payload: stripePayload({ noSubscriptionConfirmed: true, customerId: null, subscription: null }) },
       application: { payload: applicationPayload({ customerId: null, status: 'none' }) },
       api_probe: { payload: denial }, browser: { payload: denial },
     }, { scenarioId: 'SC01' });
@@ -337,7 +337,7 @@ describe('independent evidence: evaluation and state drift', () => {
 
   it.each([{ livemode: true }, { identityResolved: false }, { noSubscriptionConfirmed: true }])('cannot evaluate access from an unknown billing expectation', async (change) => {
     const store = open();
-    const ids = await collect(store, { stripe: { payload: stripePayload(change) } });
+    const ids = await collect(store, { billing_provider: { payload: stripePayload(change) } });
     expectAllInconclusive(await evaluateEvidence(store, evaluationInput(ids)));
   });
 
@@ -345,7 +345,7 @@ describe('independent evidence: evaluation and state drift', () => {
     const store = open();
     const stripe = stripePayload();
     stripe.subscription.status = 'trialing';
-    const ids = await collect(store, { stripe: { payload: stripe }, application: { payload: applicationPayload({ status: 'trialing' }) } });
+    const ids = await collect(store, { billing_provider: { payload: stripe }, application: { payload: applicationPayload({ status: 'trialing' }) } });
     expectAllInconclusive(await evaluateEvidence(store, evaluationInput(ids)));
   });
 });
@@ -360,7 +360,7 @@ describe('independent evidence: provenance and freshness', () => {
 
     it.each<[string, unknown]>([
       ['runId', 'foreign_run'], ['scenarioId', 'SC03'], ['subjectId', 'foreign_user'],
-      ['policyHash', 'b'.repeat(64)], ['targetBuild', 'foreign_build'], ['mode', 'stripe_sandbox'],
+      ['policyHash', 'b'.repeat(64)], ['targetBuild', 'foreign_build'], ['mode', 'polar_sandbox'],
     ])(`rejects ${source} evidence with the wrong %s`, async (field, value) => {
       const store = open();
       const ids = await collect(store, { [source]: { [field]: value } });
@@ -369,7 +369,7 @@ describe('independent evidence: provenance and freshness', () => {
 
     it(`rejects a wrong source recorded for ${source}`, async () => {
       const store = open();
-      const ids = await collect(store, { [source]: { source: source === 'stripe' ? 'application' : 'stripe' } });
+      const ids = await collect(store, { [source]: { source: source === 'billing_provider' ? 'application' : 'billing_provider' } });
       expectAllInconclusive(await evaluateEvidence(store, evaluationInput(ids)));
     });
 
@@ -403,13 +403,13 @@ describe('independent evidence: provenance and freshness', () => {
   it('does not promote local replay observations into a sandbox run', async () => {
     const store = open();
     const ids = await collect(store);
-    expectAllInconclusive(await evaluateEvidence(store, evaluationInput(ids, { mode: 'stripe_sandbox' })));
+    expectAllInconclusive(await evaluateEvidence(store, evaluationInput(ids, { mode: 'polar_sandbox' })));
   });
 
   it('rejects replacement payloads or model-authored outcomes at the evaluator boundary', async () => {
     const store = open();
     const ids = await collect(store);
-    await expectInvalid(() => evaluateEvidence(store, { ...evaluationInput(ids), stripe: stripePayload() }));
+    await expectInvalid(() => evaluateEvidence(store, { ...evaluationInput(ids), billing_provider: stripePayload() }));
     await expectInvalid(() => evaluateEvidence(store, { ...evaluationInput(ids), outcome: 'passed' }));
   });
 
@@ -455,7 +455,7 @@ function scenarioBilling(scenarioId: ProbeScenario): ProbeBilling {
     livemode: false, identityResolved: true, noSubscriptionConfirmed: false, customerId: 'cus_synthetic_probe',
     subscription: {
       id: 'sub_synthetic_probe', customerId: 'cus_synthetic_probe', priceId: 'price_pro',
-      status: scenarioId === 'SC04' ? 'canceled' : 'active', initialInvoicePaid: true,
+      status: scenarioId === 'SC04' ? 'canceled' : 'active', initialPaymentConfirmed: true,
       cancelAtPeriodEnd: scenarioId === 'SC03', periodEnd: 2_000,
       billingTime: scenarioId === 'SC04' ? 2_000 : 1_000,
     },
@@ -529,11 +529,11 @@ describe('independent shared probe: provider establishment and bounds', () => {
   it.each<[ProbeScenario, string, ProbeBilling]>([
     ['SC01', 'unconfirmed free state', { ...scenarioBilling('SC01'), noSubscriptionConfirmed: false }],
     ['SC01', 'existing subscription', scenarioBilling('SC02')],
-    ['SC02', 'unpaid initial invoice', subscriptionChange('SC02', { initialInvoicePaid: false })],
+    ['SC02', 'unpaid initial invoice', subscriptionChange('SC02', { initialPaymentConfirmed: false })],
     ['SC02', 'scheduled cancellation', subscriptionChange('SC02', { cancelAtPeriodEnd: true })],
     ['SC02', 'nonactive status', subscriptionChange('SC02', { status: 'past_due' })],
     ['SC03', 'unscheduled cancellation', subscriptionChange('SC03', { cancelAtPeriodEnd: false })],
-    ['SC03', 'unpaid initial invoice', subscriptionChange('SC03', { initialInvoicePaid: false })],
+    ['SC03', 'unpaid initial invoice', subscriptionChange('SC03', { initialPaymentConfirmed: false })],
     ['SC03', 'period boundary already reached', subscriptionChange('SC03', { billingTime: 2_000 })],
     ['SC04', 'cancellation not confirmed', subscriptionChange('SC04', { status: 'active' })],
     ['SC04', 'billing time before boundary', subscriptionChange('SC04', { billingTime: 1_999 })],
@@ -571,7 +571,7 @@ describe('independent shared probe: provider establishment and bounds', () => {
       billing: async () => {
         reads.push(clock.now());
         if (kind === 'unavailable') throw new Error('Synthetic unavailable provider');
-        return subscriptionChange('SC02', { initialInvoicePaid: false });
+        return subscriptionChange('SC02', { initialPaymentConfirmed: false });
       },
       collect: async () => { collected += 1; return syntheticEvaluation('must_not_collect'); },
     })).rejects.toMatchObject({ code: kind === 'unavailable' ? 'PROVIDER_UNAVAILABLE' : 'SYNC_TIMEOUT' });
@@ -584,7 +584,7 @@ describe('independent shared probe: provider establishment and bounds', () => {
     const clock = probeClock();
     await observeScenario({
       scenarioId: 'SC02', policy: approvedPolicy(), now: clock.now, wait: clock.wait,
-      billing: async () => clock.now() < observedNow + 90_000 ? subscriptionChange('SC02', { initialInvoicePaid: false }) : scenarioBilling('SC02'),
+      billing: async () => clock.now() < observedNow + 90_000 ? subscriptionChange('SC02', { initialPaymentConfirmed: false }) : scenarioBilling('SC02'),
       collect: async (notBefore) => { expect(notBefore).toBe(observedNow + 90_000); return syntheticEvaluation('at_provider_bound'); },
     });
     expect(clock.now()).toBe(observedNow + 90_000);
@@ -613,7 +613,7 @@ describe('independent shared probe: full window and independent confirmation', (
     let postCount = 0;
     await observeScenario({
       scenarioId: 'SC02', policy, now: clock.now, wait: clock.wait,
-      billing: async () => clock.now() < confirmedAt ? subscriptionChange('SC02', { initialInvoicePaid: false }) : scenarioBilling('SC02'),
+      billing: async () => clock.now() < confirmedAt ? subscriptionChange('SC02', { initialPaymentConfirmed: false }) : scenarioBilling('SC02'),
       collect: async (notBefore) => {
         expect(clock.now()).toBeGreaterThanOrEqual(confirmedAt);
         if (clock.now() < boundary) {

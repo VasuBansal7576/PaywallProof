@@ -2,20 +2,22 @@ import { timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { bodyLimit } from 'hono/body-limit';
-import Stripe from 'stripe';
+import { Webhook } from 'standardwebhooks';
 import { z } from 'zod';
-import { createStripeReader, eventSchema, eventSubscription, providerBilling, replayBilling, verifyCustomer } from './billing';
+import { createPolarReader, eventSchema, eventSubscription, polarEventSchema, polarEventSubscription, providerBilling, replayBilling, verifyCustomer } from './billing';
+import { verifyReplay } from './replay-signature';
 import { ReferenceStore, TargetError, type User } from './store';
 
 const identifier = z.string().min(1).max(255).refine(value => value.trim() === value);
 const optionsSchema = z.object({
   databasePath: z.string().min(1), stagingEnabled: z.boolean(), adapterToken: z.string().min(1),
   webhookSecret: z.string().min(1), replaySecret: z.string().min(1), priceId: identifier, buildId: identifier,
-  stripeKey: z.string().optional(), faultMode: z.enum(['none', 'missing_guard', 'missing_activation', 'missing_cancellation']).default('none'),
+  polarToken: z.string().optional(), polarOrganizationId: z.string().optional(), polarProductId: z.string().optional(),
+  faultMode: z.enum(['none', 'missing_guard', 'missing_activation', 'missing_cancellation']).default('none'),
 });
 export type ReferenceOptions = z.input<typeof optionsSchema>;
 const userRequest = z.strictObject({ runId: identifier, operationId: identifier, fixtureMarker: z.string().min(1).max(2048) });
-const linkRequest = z.strictObject({ runId: identifier, customerId: z.string().regex(/^cus_[A-Za-z0-9_]+$/).max(255) });
+const linkRequest = z.strictObject({ runId: identifier, customerId: z.union([z.uuid(), z.string().regex(/^cus_[A-Za-z0-9_]+$/).max(255)]) });
 const runRequest = z.strictObject({ runId: identifier });
 
 function sameSecret(actual: string | undefined, expected: string) {
@@ -26,7 +28,7 @@ function sameSecret(actual: string | undefined, expected: string) {
 }
 
 function entitled(user: User, priceId: string) {
-  return user.status === 'active' && user.price_id === priceId && user.initial_invoice_paid === 1;
+  return user.status === 'active' && user.price_id === priceId && user.initial_payment_confirmed === 1;
 }
 
 /** Independent target process. No controller database, credentials, or policy code is imported. */
@@ -34,7 +36,7 @@ export function createReferenceApp(input: ReferenceOptions) {
   const options = optionsSchema.parse(input);
   if (sameSecret(options.webhookSecret, options.replaySecret)) throw new Error('WEBHOOK_AND_REPLAY_SECRETS_MUST_DIFFER');
   if (options.faultMode !== 'none' && (!options.stagingEnabled || process.env.NODE_ENV === 'production')) throw new Error('FAULT_MODE_REQUIRES_TEST_ENVIRONMENT');
-  const stripe = createStripeReader(options.stripeKey);
+  const provider = createPolarReader({token: options.polarToken, organizationId: options.polarOrganizationId, productId: options.polarProductId, priceId: options.priceId});
   const store = new ReferenceStore(options.databasePath);
   const app = new Hono();
   const customerQueues = new Map<string, Promise<void>>();
@@ -66,7 +68,7 @@ export function createReferenceApp(input: ReferenceOptions) {
   app.post('/staging/users/:id/customer', async c => {
     const request = linkRequest.parse(await c.req.json());
     store.ownedUser(c.req.param('id'), request.runId);
-    if (stripe) await verifyCustomer(stripe, request.customerId, request.runId);
+    if (provider && !request.customerId.startsWith('cus_replay_')) await verifyCustomer(provider, request.customerId, request.runId);
     store.linkCustomer(c.req.param('id'), request.runId, request.customerId);
     return c.json({ principalId: c.req.param('id'), runId: request.runId, customerId: request.customerId });
   });
@@ -81,7 +83,7 @@ export function createReferenceApp(input: ReferenceOptions) {
     const user = store.ownedUser(c.req.param('id'), runId);
     return c.json({
       principalId: user.id, runId: user.run_id, customerId: user.customer_id, status: user.status,
-      subscriptionId: user.subscription_id, priceId: user.price_id, initialInvoicePaid: user.initial_invoice_paid === 1,
+      subscriptionId: user.subscription_id, priceId: user.price_id, initialPaymentConfirmed: user.initial_payment_confirmed === 1,
       cancelAtPeriodEnd: user.cancel_at_period_end === 1, periodEnd: user.period_end, buildId: options.buildId,
     });
   });
@@ -102,36 +104,44 @@ export function createReferenceApp(input: ReferenceOptions) {
     return c.json({ fixtureMarker: user.fixture_marker });
   });
 
-  for (const mode of ['stripe_sandbox', 'local_replay'] satisfies Array<'stripe_sandbox' | 'local_replay'>) {
-    app.post(mode === 'stripe_sandbox' ? '/api/stripe/webhook' : '/staging/replay', async c => {
+  for (const mode of ['polar_sandbox', 'local_replay'] satisfies Array<'polar_sandbox' | 'local_replay'>) {
+    app.post(mode === 'polar_sandbox' ? '/api/polar/webhook' : '/staging/replay', async c => {
       const rawBody = await c.req.text();
-      const signature = c.req.header('stripe-signature');
-      if (!signature) throw new TargetError('INVALID_WEBHOOK_SIGNATURE', 400);
       let rawEvent: unknown;
       try {
-        rawEvent = Stripe.webhooks.constructEvent(rawBody, signature, mode === 'stripe_sandbox' ? options.webhookSecret : options.replaySecret);
+        if (mode === 'local_replay') {
+          rawEvent = verifyReplay(rawBody, c.req.header('paywallproof-replay-signature') ?? '', options.replaySecret);
+        } else {
+          rawEvent = new Webhook(Buffer.from(options.webhookSecret, 'utf8').toString('base64')).verify(rawBody, {
+            'webhook-id': c.req.header('webhook-id') ?? '', 'webhook-timestamp': c.req.header('webhook-timestamp') ?? '',
+            'webhook-signature': c.req.header('webhook-signature') ?? '',
+          });
+        }
       } catch {
         throw new TargetError('INVALID_WEBHOOK_SIGNATURE', 400);
       }
-      const event = eventSchema.parse(rawEvent);
-      if (mode === 'stripe_sandbox' && !stripe) return c.json({ error: 'STRIPE_WEBHOOK_UNAVAILABLE', processed: false }, 503);
-      const reference = eventSubscription(event);
+      const replay = mode === 'local_replay' ? eventSchema.parse(rawEvent) : null;
+      const polar = mode === 'polar_sandbox' ? polarEventSchema.parse(rawEvent) : null;
+      if (polar && !provider) return c.json({ error: 'POLAR_WEBHOOK_UNAVAILABLE', processed: false }, 503);
+      const eventId = replay ? replay.id : identifier.parse(c.req.header('webhook-id'));
+      const created = replay ? replay.created : Math.floor(Date.parse(polar!.timestamp) / 1000);
+      const reference = replay ? eventSubscription(replay) : polarEventSubscription(polar!);
       if (!reference) return c.json({ received: true, processed: false, ignored: true, mode });
       const outcome = await serializeCustomer(reference.customerId, async () => {
-        if (store.eventAlreadyProcessed(event.id, rawBody, mode)) return 'duplicate';
+        if (store.eventAlreadyProcessed(eventId, rawBody, mode)) return 'duplicate';
         const user = store.customerUser(reference.customerId);
-        const billing = mode === 'local_replay'
-          ? replayBilling(event, user, options.priceId)
-          : await providerBilling(requireStripe(), reference.subscriptionId, user, options.priceId);
+        const billing = replay
+          ? replayBilling(replay, user, options.priceId)
+          : await providerBilling(requireProvider(), reference.subscriptionId, user, options.priceId);
         const skipProjection = (faultMode() === 'missing_activation' && billing.status === 'active') || (faultMode() === 'missing_cancellation' && billing.status === 'canceled');
-        return store.applyEvent({ eventId: event.id, rawBody, created: event.created, mode, user, billing, skipProjection });
+        return store.applyEvent({ eventId, rawBody, created, mode, user, billing, skipProjection });
       });
       return c.json({ received: true, processed: outcome === 'processed', duplicate: outcome === 'duplicate', stale: outcome === 'stale', mode });
     });
   }
-  function requireStripe() {
-    if (!stripe) throw new TargetError('STRIPE_WEBHOOK_UNAVAILABLE', 503);
-    return stripe;
+  function requireProvider() {
+    if (!provider) throw new TargetError('POLAR_WEBHOOK_UNAVAILABLE', 503);
+    return provider;
   }
   app.notFound(c => c.json({ error: 'NOT_FOUND' }, 404));
   app.onError((error, c) => {

@@ -30,12 +30,12 @@ function runInput(overrides: Record<string, unknown> = {}) {
   return {
     projectId: 'project_owned',
     policy: createPolicy({
-      schemaVersion: 1,
+      schemaVersion: 2,
       priceId: 'price_pro',
       featureId: 'export',
       featureConfigHash: 'a'.repeat(64),
       cancellation: 'allow_until_period_end',
-      requireInitialInvoicePaid: true,
+      requireInitialPaymentConfirmed: true,
       syncWindowSeconds: 60,
       predicateVersion: 'export-v1',
     }),
@@ -109,7 +109,7 @@ afterEach(async () => {
 });
 
 describe('independent durable control: creation and restart', () => {
-  it.each(['local_replay', 'stripe_sandbox'])('persists %s configuration in a real SQLite file', async (mode) => {
+  it.each(['local_replay', 'polar_sandbox'])('persists %s configuration in a real SQLite file', async (mode) => {
     const store = await connect();
     const input = runInput({ mode });
     const run = await store.createRun(input);
@@ -354,7 +354,7 @@ describe('independent durable control: operation ownership and recovery', () => 
       await store.confirmOperation({ runId: run.id, operationId: request.operationId, receipt: { ok: true } });
     }
     await rejectsCode(() => store.claimOperation({ ...request, args: { user: 'different_user' } }), 'OPERATION_CONFLICT');
-    await rejectsCode(() => store.claimOperation({ ...request, kind: 'advance_test_clock' }), 'OPERATION_CONFLICT');
+    await rejectsCode(() => store.claimOperation({ ...request, kind: 'await_period_end' }), 'OPERATION_CONFLICT');
   });
 
   it('does not expose or mutate another run operation through a known operation ID', async () => {
@@ -441,7 +441,7 @@ describe('independent durable control: bounds and terminal states', () => {
     await rejectsCode(() => reopened.claimOperation(claimInput(run)));
   });
 
-  it.each(['prepare_fixture', 'change_test_subscription', 'advance_test_clock', 'probe_feature', 'cleanup_run'])('rejects a new %s operation after cancellation', async (kind) => {
+  it.each(['prepare_fixture', 'change_test_subscription', 'await_period_end', 'probe_feature', 'cleanup_run'])('rejects a new %s operation after cancellation', async (kind) => {
     const store = await connect();
     const run = await running(store);
     await store.cancelRun(run.id);

@@ -34,6 +34,10 @@ export class TargetTransport {
     const url = new URL(path, this.origin);
     if (url.origin !== this.origin.origin || url.username || url.password || url.hash) throw new Error('TARGET_SCOPE_REJECTED');
     const destination = await this.destination();
+    // Next development bundles exceed 1 MiB. Only static JS/CSS gets the larger
+    // bound; evidence bodies and all mutation responses keep the original cap.
+    const staticBundle=(options.method??'GET')==='GET'&&/^\/_next\/static\/[A-Za-z0-9_./%~-]+\.(js|css)$/.test(url.pathname);
+    const maximumBytes=staticBundle?4*1024*1024:1_048_576;
     options.beforeDispatch?.();
     return new Promise<{status:number;body:unknown;rawBody:Buffer;headers: http.IncomingHttpHeaders}>((resolve, reject) => {
       const client = url.protocol === 'https:' ? https : http;
@@ -49,7 +53,7 @@ export class TargetTransport {
         const chunks: Buffer[] = [];
         response.on('data', (chunk: Buffer) => {
           bytes += chunk.length;
-          if (bytes > 1_048_576) { response.destroy(new Error('RESPONSE_LIMIT')); return; }
+          if (bytes > maximumBytes) { response.destroy(new Error('RESPONSE_LIMIT')); return; }
           chunks.push(chunk);
         });
         response.on('error', reject);

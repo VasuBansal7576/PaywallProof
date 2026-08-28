@@ -1,5 +1,5 @@
-import Stripe from 'stripe';
 import { z } from 'zod';
+import { PolarSandboxReader } from '../../adapters/src/polar.ts';
 import { TargetError, type BillingUpdate, type User } from './store';
 
 const id = z.string().min(1).max(255);
@@ -51,7 +51,7 @@ function normalizeSubscription(input: unknown, user: User, priceId: string): Bil
   if (item.price.id !== priceId) throw new TargetError('PRICE_MISMATCH', 422);
   return {
     customerId: resourceId(subscription.customer), subscriptionId: subscription.id,
-    priceId: item.price.id, status: subscription.status, initialInvoicePaid: false,
+    priceId: item.price.id, status: subscription.status, initialPaymentConfirmed: false,
     cancelAtPeriodEnd: subscription.cancel_at_period_end, periodEnd: item.current_period_end,
   };
 }
@@ -67,39 +67,38 @@ export function replayBilling(event: VerifiedEvent, user: User, priceId: string)
   }
   // A first paid creation invoice establishes this fact; renewals cannot erase it.
   const paidCreation = invoice?.status === 'paid' && (!invoice.billing_reason || invoice.billing_reason === 'subscription_create');
-  billing.initialInvoicePaid = paidCreation || (user.subscription_id === billing.subscriptionId && user.initial_invoice_paid === 1);
+  billing.initialPaymentConfirmed = paidCreation || (user.subscription_id === billing.subscriptionId && user.initial_payment_confirmed === 1);
   if (event.type === 'customer.subscription.deleted' && billing.status !== 'canceled') throw new TargetError('EVENT_STATUS_MISMATCH', 422);
   return billing;
 }
 
-export function createStripeReader(key: string | undefined): Stripe | undefined {
-  if (!key) return undefined;
-  if (!/^(sk|rk)_test_/.test(key)) throw new TargetError('TEST_STRIPE_KEY_REQUIRED', 400);
-  return new Stripe(key, { apiVersion: '2026-08-26.dahlia', maxNetworkRetries: 1, timeout: 10_000 });
+export function createPolarReader(config: { token?: string; organizationId?: string; productId?: string; priceId: string }): PolarSandboxReader | undefined {
+  if (config.token === undefined && config.organizationId === undefined && config.productId === undefined) return undefined;
+  return new PolarSandboxReader(config);
 }
 
-export async function verifyCustomer(stripe: Stripe, customerId: string, runId: string): Promise<void> {
-  const customer = await stripe.customers.retrieve(customerId);
-  if (customer.deleted || customer.livemode !== false || customer.metadata.runId !== runId) throw new TargetError('CUSTOMER_NOT_OWNED', 403);
+export async function verifyCustomer(provider: PolarSandboxReader, customerId: string, runId: string): Promise<void> {
+  await provider.customer({ customerId, runId });
 }
 
-export async function providerBilling(stripe: Stripe, subscriptionId: string, user: User, priceId: string): Promise<BillingUpdate> {
+export async function providerBilling(provider: PolarSandboxReader, subscriptionId: string, user: User, priceId: string): Promise<BillingUpdate> {
   if (!user.customer_id) throw new TargetError('CUSTOMER_NOT_OWNED', 403);
-  await verifyCustomer(stripe, user.customer_id, user.run_id);
-  const subscription = await stripe.subscriptions.retrieve(subscriptionId, { expand: ['latest_invoice'] });
-  const billing = normalizeSubscription(subscription, user, priceId);
-  // Validate each provider resource before allowing it to contribute to entitlement.
-  const [item] = subscription.items.data;
-  if (!item || item.price.livemode !== false) throw new TargetError('LIVE_MODE_REJECTED', 403);
-  const subscriptions = await stripe.subscriptions.list({ customer: user.customer_id, status: 'all', limit: 2 });
-  if (subscriptions.has_more || subscriptions.data.length !== 1 || subscriptions.data[0]?.id !== subscriptionId) throw new TargetError('MULTIPLE_SUBSCRIPTIONS_UNSUPPORTED', 422);
-  if (subscriptions.data.some(candidate => candidate.livemode !== false)) throw new TargetError('LIVE_MODE_REJECTED', 403);
-  const invoices = await stripe.invoices.list({ customer: user.customer_id, subscription: subscriptionId, limit: 100 });
-  if (invoices.data.some(invoice => invoice.livemode !== false)) throw new TargetError('LIVE_MODE_REJECTED', 403);
-  const initialInvoices = invoices.data.filter(invoice => invoice.billing_reason === 'subscription_create');
-  if (initialInvoices.length !== 1) throw new TargetError('INITIAL_INVOICE_UNRESOLVED', 422);
-  const [initial] = initialInvoices;
-  if (!initial || !initial.customer || resourceId(initial.customer) !== user.customer_id || initial.parent?.subscription_details?.subscription !== subscriptionId) throw new TargetError('INVOICE_IDENTITY_MISMATCH', 403);
-  billing.initialInvoicePaid = initial.status === 'paid';
-  return billing;
+  const facts = await provider.observe({ runId: user.run_id, customerId: user.customer_id, subscriptionId });
+  if (facts.subscription.prices[0]?.id !== priceId) throw new TargetError('PRICE_MISMATCH', 422);
+  return { customerId: facts.customer.id, subscriptionId: facts.subscription.id, priceId,
+    status: facts.subscription.status, initialPaymentConfirmed: facts.initialPaymentConfirmed,
+    cancelAtPeriodEnd: facts.subscription.cancel_at_period_end, periodEnd: facts.periodEnd };
+}
+
+export const polarEventSchema = z.object({ type: id, timestamp: z.iso.datetime({offset:true}), data: z.unknown() });
+export function polarEventSubscription(event: z.infer<typeof polarEventSchema>) {
+  if (event.type.startsWith('subscription.')) {
+    const data = z.object({id:z.uuid(),customer_id:z.uuid()}).parse(event.data);
+    return {customerId:data.customer_id,subscriptionId:data.id};
+  }
+  if (event.type.startsWith('order.')) {
+    const data = z.object({customer_id:z.uuid(),subscription_id:z.uuid().nullable()}).parse(event.data);
+    if (data.subscription_id) return {customerId:data.customer_id,subscriptionId:data.subscription_id};
+  }
+  return undefined;
 }

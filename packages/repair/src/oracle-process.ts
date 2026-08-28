@@ -71,7 +71,7 @@ export function validateOracleReport(value: unknown, input: OracleProcessStart, 
   for (const scenario of report.scenarios) {
     if (new Set(scenario.observationIds).size !== scenario.observationIds.length) throw new Error('ORACLE_REPORT_REJECTED');
     for (const id of scenario.observationIds) if (observations.get(id)?.scenarioId !== scenario.id) throw new Error('ORACLE_REPORT_REJECTED');
-    for (const source of ['stripe', 'application', 'api_probe', 'browser']) if (!scenario.observationIds.some(id => observations.get(id)?.source === source)) throw new Error('ORACLE_REPORT_REJECTED');
+    for (const source of ['billing_provider', 'application', 'api_probe', 'browser']) if (!scenario.observationIds.some(id => observations.get(id)?.source === source)) throw new Error('ORACLE_REPORT_REJECTED');
   }
   for (const artifact of report.artifacts) if (artifact.runId !== input.plan.runId || observations.get(artifact.observationId)?.source !== 'browser') throw new Error('ORACLE_REPORT_REJECTED');
   return report;

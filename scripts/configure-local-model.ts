@@ -15,8 +15,9 @@ if(details.model_info['general.finetune']!=='Instruct')throw new Error('The mode
 const capacity=z.number().parse(details.model_info['qwen3.context_length']);
 if(capacity<32768)throw new Error('Installed model context capacity is below the required 32768 tokens.');
 const template=details.template;
-// Derives an alias from existing local weights. Never calls /api/pull or a hosted service.
-await request('/api/create',{model:alias,from:base,template,parameters:{num_ctx:32768},stream:false});
+// Inherit the model's template and renderer together. Re-submitting its Jinja template
+// as a custom template makes Ollama parse it as Go syntax. Never pull or use a cloud model.
+await request('/api/create',{model:alias,from:base,parameters:{num_ctx:32768},stream:false});
 const actual=z.object({template:z.string(),parameters:z.string()}).parse(await request('/api/show',{model:alias}));
 if(actual.template!==template||!/^num_ctx\s+32768$/m.test(actual.parameters))throw new Error('Local model configuration readback did not match.');
 await mkdir('.local',{recursive:true,mode:0o700});

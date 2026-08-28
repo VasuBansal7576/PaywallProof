@@ -17,8 +17,8 @@ export async function observeScenario(input:{
     try{
       const billing=await input.billing(),subscription=billing.subscription;
       established=input.scenarioId==='SC01'?billing.noSubscriptionConfirmed&&!subscription:
-        input.scenarioId==='SC02'?subscription?.status==='active'&&subscription.initialInvoicePaid&&!subscription.cancelAtPeriodEnd:
-        input.scenarioId==='SC03'?subscription?.status==='active'&&subscription.initialInvoicePaid&&subscription.cancelAtPeriodEnd&&subscription.billingTime<subscription.periodEnd:
+        input.scenarioId==='SC02'?subscription?.status==='active'&&subscription.initialPaymentConfirmed&&!subscription.cancelAtPeriodEnd:
+        input.scenarioId==='SC03'?subscription?.status==='active'&&subscription.initialPaymentConfirmed&&subscription.cancelAtPeriodEnd&&subscription.billingTime<subscription.periodEnd:
         subscription?.status==='canceled'&&subscription.billingTime>=subscription.periodEnd;
     }catch{if(now()>=providerDeadline)throw new ScenarioError('PROVIDER_UNAVAILABLE');}
     if(now()>providerDeadline)throw new ScenarioError('SYNC_TIMEOUT');
@@ -44,7 +44,7 @@ export async function observeScenario(input:{
 export async function observeFeature(input:{
   store:EvidenceStore;target:ReferenceTargetAdapter;browser:BrowserRunner;
   runId:string;scenarioId:string;subjectId:string;fixtureMarker:string;
-  policy:AccessPolicy;targetBuild:string;mode:'local_replay'|'stripe_sandbox';notBefore:number;
+  policy:AccessPolicy;targetBuild:string;mode:'local_replay'|'polar_sandbox';notBefore:number;
   billing:()=>Promise<Billing>;
   onArtifact?:(artifact:NonNullable<Awaited<ReturnType<BrowserRunner['probe']>>['artifact']>&{runId:string;observationId:string})=>void;
 }) {
@@ -62,10 +62,10 @@ export async function observeFeature(input:{
   const finalTarget=await input.target.describe();
   if(finalTarget.buildId!==input.targetBuild||hashValue(finalTarget.feature)!==input.policy.featureConfigHash)throw new Error('TARGET_CHANGED');
   const common={runId:input.runId,scenarioId:input.scenarioId,subjectId:input.subjectId,policyHash:input.policy.hash,targetBuild:input.targetBuild,mode:input.mode,billingTime:billing.subscription?.billingTime??null};
-  const stripe=input.store.record({...common,observedAt:provider.observedAt,source:'stripe',payload:billing});
+  const providerObservation=input.store.record({...common,observedAt:provider.observedAt,source:'billing_provider',payload:billing});
   const app=input.store.record({...common,observedAt:application.observedAt,source:'application',payload:application.payload});
   const apiObservation=input.store.record({...common,observedAt:api.observedAt,source:'api_probe',payload:api.payload});
   const browserObservation=input.store.record({...common,observedAt:browserObservedAt,source:'browser',payload:browser.probe});
   if(browser.artifact)input.onArtifact?.({...browser.artifact,runId:input.runId,observationId:browserObservation.id});
-  return evaluateEvidence(input.store,{runId:input.runId,scenarioId:input.scenarioId,subjectId:input.subjectId,policy:input.policy,targetBuild:input.targetBuild,mode:input.mode,fixtureMarker:input.fixtureMarker,stripeId:stripe.id,applicationId:app.id,apiId:apiObservation.id,browserId:browserObservation.id,now:Date.now(),notBefore:input.notBefore});
+  return evaluateEvidence(input.store,{runId:input.runId,scenarioId:input.scenarioId,subjectId:input.subjectId,policy:input.policy,targetBuild:input.targetBuild,mode:input.mode,fixtureMarker:input.fixtureMarker,providerId:providerObservation.id,applicationId:app.id,apiId:apiObservation.id,browserId:browserObservation.id,now:Date.now(),notBefore:input.notBefore});
 }

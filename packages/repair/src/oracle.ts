@@ -1,7 +1,7 @@
 import {randomUUID,createHash} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
-import Stripe from 'stripe';
+import {signReplay} from '../../reference/src/replay-signature.ts';
 import {z} from 'zod';
 import {billingSchema,hashValue,parsePolicy,type AccessPolicy,type Billing} from '../../core/src/index.ts';
 import {EvidenceStore,type Observation} from '../../evidence/src/index.ts';
@@ -15,7 +15,7 @@ import {probeRepairSecurity,type SecurityControl} from './controls.ts';
 export const CORE_SCENARIOS=['SC01','SC02','SC03','SC04'] as const;
 type ScenarioId=typeof CORE_SCENARIOS[number];
 export const planSchema=z.strictObject({
-  schemaVersion:z.literal(1),mode:z.literal('local_replay'),runId:z.string().uuid(),policyHash:z.string(),
+  schemaVersion:z.literal(2),mode:z.literal('local_replay'),runId:z.string().uuid(),policyHash:z.string(),
   markers:z.strictObject({free:z.string().uuid(),paid:z.string().uuid()}),
   states:z.strictObject({SC01:billingSchema,SC02:billingSchema,SC03:billingSchema,SC04:billingSchema}),
 });
@@ -23,7 +23,7 @@ export type RepairReplayPlan=z.infer<typeof planSchema>;
 
 /** Bind the external evaluator, timing, browser and transport implementations together. */
 export async function oracleFingerprint(repositoryRoot:string){
-  const paths=['packages/core/src/index.ts','packages/evidence/src/index.ts','packages/evidence/src/probe.ts','packages/adapters/src/network.ts','packages/adapters/src/browser.ts','packages/repair/src/oracle.ts','packages/repair/src/controls.ts','packages/repair/src/oracle-process.ts','scripts/repair-oracle.ts'];
+  const paths=['packages/reference/src/replay-signature.ts','packages/adapters/src/polar.ts','packages/core/src/index.ts','packages/evidence/src/index.ts','packages/evidence/src/probe.ts','packages/adapters/src/network.ts','packages/adapters/src/browser.ts','packages/repair/src/oracle.ts','packages/repair/src/controls.ts','packages/repair/src/oracle-process.ts','scripts/repair-oracle.ts'];
   const files=await Promise.all(paths.map(async path=>({path,sha256:createHash('sha256').update(await readFile(resolve(repositoryRoot,path))).digest('hex')})));
   return {hash:hashValue(files),files};
 }
@@ -34,7 +34,7 @@ export function createRepairReplayPlan(input:{runId:string;targetBuild:string;po
   let originalIdentity:{customerId:string;subscriptionId:string;periodEnd:number;mode:string;subjectId:string}|undefined;
   let freeIdentity:{subjectId:string;mode:string}|undefined;
   const state=(scenarioId:ScenarioId):Billing=>{
-    const candidates=input.observations.filter(item=>item.source==='stripe'&&item.scenarioId===scenarioId&&item.policyHash===policy.hash&&item.runId===input.runId&&item.targetBuild===input.targetBuild).sort((a,b)=>b.observedAt-a.observedAt);
+    const candidates=input.observations.filter(item=>item.source==='billing_provider'&&item.scenarioId===scenarioId&&item.policyHash===policy.hash&&item.runId===input.runId&&item.targetBuild===input.targetBuild).sort((a,b)=>b.observedAt-a.observedAt);
     const record=candidates[0];
     if(!record||hashValue(record.payload)!==record.sha256)throw new RepairError('REPAIR_BILLING_EVIDENCE_REQUIRED');
     if(candidates.some(item=>item.observedAt===record.observedAt&&(item.sha256!==record.sha256||hashValue(item.payload)!==record.sha256||item.subjectId!==record.subjectId||item.mode!==record.mode)))throw new RepairError('REPAIR_BILLING_EVIDENCE_REQUIRED');
@@ -49,15 +49,15 @@ export function createRepairReplayPlan(input:{runId:string;targetBuild:string;po
     }
     if(!original.subscription||original.noSubscriptionConfirmed||original.customerId!==original.subscription.customerId)throw new RepairError('REPAIR_BILLING_EVIDENCE_REQUIRED');
     const subscription=original.subscription;
-    const established=scenarioId==='SC02'?subscription.status==='active'&&subscription.initialInvoicePaid&&!subscription.cancelAtPeriodEnd:
-      scenarioId==='SC03'?subscription.status==='active'&&subscription.initialInvoicePaid&&subscription.cancelAtPeriodEnd&&subscription.billingTime<subscription.periodEnd:
+    const established=scenarioId==='SC02'?subscription.status==='active'&&subscription.initialPaymentConfirmed&&!subscription.cancelAtPeriodEnd:
+      scenarioId==='SC03'?subscription.status==='active'&&subscription.initialPaymentConfirmed&&subscription.cancelAtPeriodEnd&&subscription.billingTime<subscription.periodEnd:
       subscription.status==='canceled'&&subscription.billingTime>=subscription.periodEnd;
     const identity={customerId:subscription.customerId,subscriptionId:subscription.id,periodEnd:subscription.periodEnd,mode:record.mode,subjectId:record.subjectId};
     if(!established||!freeIdentity||freeIdentity.subjectId===record.subjectId||freeIdentity.mode!==record.mode||originalIdentity&&hashValue(identity)!==hashValue(originalIdentity))throw new RepairError('REPAIR_BILLING_EVIDENCE_REQUIRED');
     originalIdentity??=identity;
     return {...original,customerId,subscription:{...original.subscription,id:subscriptionId,customerId}};
   };
-  return planSchema.parse({schemaVersion:1,mode:'local_replay',runId,policyHash:policy.hash,markers:{free:randomUUID(),paid:randomUUID()},states:{SC01:state('SC01'),SC02:state('SC02'),SC03:state('SC03'),SC04:state('SC04')}});
+  return planSchema.parse({schemaVersion:2,mode:'local_replay',runId,policyHash:policy.hash,markers:{free:randomUUID(),paid:randomUUID()},states:{SC01:state('SC01'),SC02:state('SC02'),SC03:state('SC03'),SC04:state('SC04')}});
 }
 
 export function replayPayload(planInput:RepairReplayPlan,scenarioId:Exclude<ScenarioId,'SC01'>){
@@ -67,7 +67,7 @@ export function replayPayload(planInput:RepairReplayPlan,scenarioId:Exclude<Scen
   return JSON.stringify({id:`evt_repair_${plan.runId}_${scenarioId}`,object:'event',type,livemode:false,created:subscription.billingTime,data:{object:{
     id:subscription.id,object:'subscription',livemode:false,customer:subscription.customerId,metadata:{runId:plan.runId},status:subscription.status,cancel_at_period_end:subscription.cancelAtPeriodEnd,
     items:{data:[{price:{id:subscription.priceId,livemode:false},current_period_end:subscription.periodEnd}],has_more:false},
-    latest_invoice:{id:`in_repair_${plan.runId}`,object:'invoice',livemode:false,status:subscription.initialInvoicePaid?'paid':'open',customer:subscription.customerId,billing_reason:'subscription_create',parent:{subscription_details:{subscription:subscription.id}}},
+    latest_invoice:{id:`in_repair_${plan.runId}`,object:'invoice',livemode:false,status:subscription.initialPaymentConfirmed?'paid':'open',customer:subscription.customerId,billing_reason:'subscription_create',parent:{subscription_details:{subscription:subscription.id}}},
   }}});
 }
 
@@ -102,8 +102,8 @@ export async function runRepairOracle(input:{
     for(const scenarioId of CORE_SCENARIOS){
       input.signal.throwIfAborted();
       if(scenarioId!=='SC01'){
-        const payload=replayPayload(plan,scenarioId),signature=Stripe.webhooks.generateTestHeaderString({payload,secret:input.target.replaySecret});
-        const response=await transport.request('/staging/replay',{method:'POST',headers:{Authorization:`Bearer ${input.target.adapterToken}`,'Content-Type':'application/json','Stripe-Signature':signature},body:payload,beforeDispatch:()=>input.signal.throwIfAborted()});
+        const payload=replayPayload(plan,scenarioId),signature=signReplay({payload,secret:input.target.replaySecret});
+        const response=await transport.request('/staging/replay',{method:'POST',headers:{Authorization:`Bearer ${input.target.adapterToken}`,'Content-Type':'application/json','PaywallProof-Replay-Signature':signature},body:payload,beforeDispatch:()=>input.signal.throwIfAborted()});
         if(response.status!==200)throw new RepairError('REPAIR_REPLAY_REJECTED');
       }
       const principal=scenarioId==='SC01'?free:paid,billing=async()=>billingSchema.parse(plan.states[scenarioId]);

@@ -27,10 +27,10 @@ beforeEach(async () => {
   directory = await mkdtemp(join(process.cwd(), '.local/oracle-process-synthetic-'));
   child = new SyntheticChild(); spawned = new Promise<void>(resolve => { ready = resolve; });
   mocks.spawn.mockImplementation(() => { queueMicrotask(() => { child.emit('spawn'); ready(); }); return child; });
-  const policy = createPolicy({ schemaVersion: 1, priceId: 'price_synthetic', featureId: 'export', featureConfigHash: 'a'.repeat(64), cancellation: 'allow_until_period_end', requireInitialInvoicePaid: true, syncWindowSeconds: 5, predicateVersion: '1' });
+  const policy = createPolicy({ schemaVersion: 2, priceId: 'price_synthetic', featureId: 'export', featureConfigHash: 'a'.repeat(64), cancellation: 'allow_until_period_end', requireInitialPaymentConfirmed: true, syncWindowSeconds: 5, predicateVersion: '1' });
   const billing = { livemode: false, identityResolved: true, noSubscriptionConfirmed: true, customerId: null, subscription: null };
   request = { target: { origin: 'http://127.0.0.1:12345', adapterToken: '1'.repeat(64), replaySecret: '2'.repeat(64), webhookSecret: '3'.repeat(64), registerRoutes: vi.fn() },
-    plan: { schemaVersion: 1, mode: 'local_replay', runId: randomUUID(), policyHash: policy.hash, markers: { free: randomUUID(), paid: randomUUID() }, states: { SC01: billing, SC02: billing, SC03: billing, SC04: billing } },
+    plan: { schemaVersion: 2, mode: 'local_replay', runId: randomUUID(), policyHash: policy.hash, markers: { free: randomUUID(), paid: randomUUID() }, states: { SC01: billing, SC02: billing, SC03: billing, SC04: billing } },
     policy, targetBuild: 'b'.repeat(40), databasePath: join(directory, 'evidence.sqlite'), artifactDirectory: join(directory, 'artifacts'), deadline: Date.now() + 5000 };
 });
 afterEach(async () => { vi.restoreAllMocks(); await rm(directory, { recursive: true, force: true }); });
@@ -42,7 +42,7 @@ async function registered() { for (const id of [1, 2]) { child.emit('message', r
 function report(verdict: Verdict = 'pass'): OracleProcessResult {
   const observations: OracleProcessResult['observations'] = [];
   const scenarios = (['SC01', 'SC02', 'SC03', 'SC04'] as const).map(id => {
-    const observationIds = (['stripe', 'application', 'api_probe', 'browser'] as const).map(source => {
+    const observationIds = (['billing_provider', 'application', 'api_probe', 'browser'] as const).map(source => {
       const observationId = randomUUID(), payload = { synthetic: true };
       observations.push({ id: observationId, runId: request.plan.runId, scenarioId: id, subjectId: 'synthetic', source, policyHash: request.policy.hash, targetBuild: request.targetBuild, observedAt: Date.now(), billingTime: null, mode: 'local_replay', payload, sha256: hashValue(payload) }); return observationId;
     });

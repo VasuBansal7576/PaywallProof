@@ -1,10 +1,10 @@
 import Database from 'better-sqlite3';
-import Stripe from 'stripe';
+import {signReplay} from '../../reference/src/replay-signature.ts';
 import { z } from 'zod';
 import { billingSchema, hashValue, type Billing } from '../../core/src/index.ts';
 import { TargetTransport } from './network.ts';
 
-/** Explicit synthetic lifecycle for local testing. This adapter never calls Stripe. */
+/** Explicit synthetic lifecycle for local testing. This adapter never calls a payment provider. */
 export class LocalReplayAdapter {
   private readonly database:Database.Database;
   constructor(readonly config:{databasePath:string;priceId:string;adapterToken:string;replaySecret:string;transport:TargetTransport;beforeMutation?:(runId:string)=>void}) {
@@ -16,7 +16,7 @@ export class LocalReplayAdapter {
     const existing=this.database.prepare('SELECT billing FROM replay_billing WHERE run_id=?').get(runId);
     const billing:Billing = existing ? billingSchema.parse(JSON.parse(z.object({billing:z.string()}).parse(existing).billing)) : {
       livemode:false,identityResolved:true,noSubscriptionConfirmed:false,customerId:this.createCustomer(runId).customerId,
-      subscription:{id:`sub_replay_${hashValue({runId})}`,customerId:this.createCustomer(runId).customerId,priceId:this.config.priceId,status:'active',initialInvoicePaid:true,cancelAtPeriodEnd:false,periodEnd:Math.floor(Date.now()/1000)+30*86400,billingTime:Math.floor(Date.now()/1000)},
+      subscription:{id:`sub_replay_${hashValue({runId})}`,customerId:this.createCustomer(runId).customerId,priceId:this.config.priceId,status:'active',initialPaymentConfirmed:true,cancelAtPeriodEnd:false,periodEnd:Math.floor(Date.now()/1000)+30*86400,billingTime:Math.floor(Date.now()/1000)},
     };
     this.save(runId,billing);
     await this.deliver(runId,operationId,'customer.subscription.created',billing);
@@ -35,7 +35,7 @@ export class LocalReplayAdapter {
     await this.deliver(runId,operationId,'customer.subscription.updated',billing);
     return {subscriptionId:billing.subscription.id,mode:'local_replay'};
   }
-  async advanceClock(runId:string,operationId:string) {
+  async awaitPeriodEnd(runId:string,operationId:string) {
     const billing=this.observe(runId);
     if(!billing.subscription||!billing.subscription.cancelAtPeriodEnd) throw new Error('REPLAY_SCHEDULE_REQUIRED');
     billing.subscription.billingTime=billing.subscription.periodEnd+1;billing.subscription.status='canceled';this.save(runId,billing);
@@ -51,8 +51,8 @@ export class LocalReplayAdapter {
       latest_invoice:{id:`in_replay_${runId}`,object:'invoice',livemode:false,status:'paid',customer:subscription.customerId,billing_reason:'subscription_create',parent:{subscription_details:{subscription:subscription.id}}},
     }}};
     const payload=JSON.stringify(event);
-    const signature=Stripe.webhooks.generateTestHeaderString({payload,secret:this.config.replaySecret});
-    const response=await this.config.transport.request('/staging/replay',{method:'POST',body:payload,headers:{Authorization:`Bearer ${this.config.adapterToken}`,'Content-Type':'application/json','Stripe-Signature':signature},beforeDispatch:()=>this.config.beforeMutation?.(runId)});
+    const signature=signReplay({payload,secret:this.config.replaySecret});
+    const response=await this.config.transport.request('/staging/replay',{method:'POST',body:payload,headers:{Authorization:`Bearer ${this.config.adapterToken}`,'Content-Type':'application/json','PaywallProof-Replay-Signature':signature},beforeDispatch:()=>this.config.beforeMutation?.(runId)});
     if(response.status!==200) throw new Error(`REPLAY_DELIVERY_${response.status}`);
   }
   close(){this.database.close();}

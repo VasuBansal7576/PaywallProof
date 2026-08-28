@@ -106,7 +106,7 @@ async function replay(target: Target, payload: unknown, extraHeaders: Record<str
     method: 'POST', body: raw,
     headers: {
       'content-type': 'application/json', authorization: `Bearer ${adapterToken}`,
-      'stripe-signature': signature(raw), ...extraHeaders,
+      'paywallproof-replay-signature': signature(raw), ...extraHeaders,
     },
   });
 }
@@ -253,7 +253,7 @@ describe('independent reference: fixture ownership, retries, and cleanup', () =>
     const first = await link(target, user);
     expect(await link(target, user)).toEqual(first);
     const response = await request(target, `/staging/users/${user.principalId}/billing?runId=${runId}`);
-    expect(await json(response)).toMatchObject({ principalId: user.principalId, runId, customerId, status: 'none', initialInvoicePaid: false });
+    expect(await json(response)).toMatchObject({ principalId: user.principalId, runId, customerId, status: 'none', initialPaymentConfirmed: false });
     await expectExport(target, (await session(target, user)).cookie, 403);
   });
 
@@ -315,7 +315,7 @@ describe('independent reference: signed synthetic lifecycle', () => {
     await replayAccepted(target, event({ id: 'evt_local_scheduled', type: 'customer.subscription.updated', created: 1_800_000_100 }, { cancel_at_period_end: true }));
     await expectExport(target, current.cookie, 200);
     const scheduled = await json(await request(target, `/staging/users/${user.principalId}/billing?runId=${runId}`));
-    expect(scheduled).toMatchObject({ status: 'active', cancelAtPeriodEnd: true, periodEnd: 1_802_678_400, initialInvoicePaid: true, buildId });
+    expect(scheduled).toMatchObject({ status: 'active', cancelAtPeriodEnd: true, periodEnd: 1_802_678_400, initialPaymentConfirmed: true, buildId });
     await replayAccepted(target, event({ id: 'evt_local_canceled', type: 'customer.subscription.deleted', created: 1_800_000_200 }, { status: 'canceled', cancel_at_period_end: true }));
     await expectExport(target, current.cookie, 403);
     expect(await json(await ordinary(target, '/api/me', current.cookie))).toMatchObject({ plan: 'Free', canExport: false, subscriptionStatus: 'canceled', executionMode: 'local_replay' });
@@ -372,13 +372,13 @@ describe('independent reference: signed synthetic lifecycle', () => {
       latest_invoice, cancel_at_period_end: true,
     }));
     expect(await json(await request(target, `/staging/users/${user.principalId}/billing?runId=${runId}`)))
-      .toMatchObject({ subscriptionId: 'sub_local_owned', status: 'active', cancelAtPeriodEnd: true, initialInvoicePaid: true });
+      .toMatchObject({ subscriptionId: 'sub_local_owned', status: 'active', cancelAtPeriodEnd: true, initialPaymentConfirmed: true });
     await expectExport(target, current.cookie, 200);
     await replayAccepted(target, event({ id: 'evt_delete_without_invoice', type: 'customer.subscription.deleted', created: 1_800_000_200 }, {
       latest_invoice, status: 'canceled', cancel_at_period_end: true,
     }));
     expect(await json(await request(target, `/staging/users/${user.principalId}/billing?runId=${runId}`)))
-      .toMatchObject({ subscriptionId: 'sub_local_owned', status: 'canceled', initialInvoicePaid: true });
+      .toMatchObject({ subscriptionId: 'sub_local_owned', status: 'canceled', initialPaymentConfirmed: true });
     await expectExport(target, current.cookie, 403);
   });
 
@@ -388,7 +388,7 @@ describe('independent reference: signed synthetic lifecycle', () => {
     await link(target, user);
     await replayAccepted(target, event({}, { latest_invoice: absence === 'omitted' ? undefined : null }));
     expect(await json(await request(target, `/staging/users/${user.principalId}/billing?runId=${runId}`)))
-      .toMatchObject({ subscriptionId: 'sub_local_owned', status: 'active', initialInvoicePaid: false });
+      .toMatchObject({ subscriptionId: 'sub_local_owned', status: 'active', initialPaymentConfirmed: false });
     await expectExport(target, (await session(target, user)).cookie, 403);
   });
 
@@ -441,7 +441,7 @@ describe('independent reference: signed synthetic lifecycle', () => {
       id: 'evt_later_malformed_invoice', type: 'customer.subscription.updated', created: 1_800_000_100,
     }, { latest_invoice })), 400);
     expect(await json(await request(target, `/staging/users/${user.principalId}/billing?runId=${runId}`)))
-      .toMatchObject({ subscriptionId: 'sub_local_owned', status: 'active', initialInvoicePaid: true });
+      .toMatchObject({ subscriptionId: 'sub_local_owned', status: 'active', initialPaymentConfirmed: true });
     await expectExport(target, current.cookie, 200);
   });
 
@@ -461,7 +461,7 @@ describe('independent reference: signed synthetic lifecycle', () => {
       id: 'in_synthetic_foreign_identity', livemode: false, status: 'paid', billing_reason: 'subscription_create', ...foreignIdentity,
     } })));
     expect(await json(await request(target, `/staging/users/${user.principalId}/billing?runId=${runId}`)))
-      .toMatchObject({ subscriptionId: 'sub_local_owned', status: 'active', initialInvoicePaid: true });
+      .toMatchObject({ subscriptionId: 'sub_local_owned', status: 'active', initialPaymentConfirmed: true });
     await expectExport(target, current.cookie, 200);
   });
 
@@ -505,8 +505,8 @@ describe('independent reference: signed synthetic lifecycle', () => {
     const user = await createUser(target);
     await link(target, user);
     await expectSafeError(await replay(target, event(), { authorization: '' }), 401);
-    await expectSafeError(await replay(target, event(), { 'stripe-signature': '' }), 400);
-    await expectSafeError(await replay(target, event(), { 'stripe-signature': signature(JSON.stringify(event()), webhookSecret) }), 400);
+    await expectSafeError(await replay(target, event(), { 'paywallproof-replay-signature': '' }), 400);
+    await expectSafeError(await replay(target, event(), { 'paywallproof-replay-signature': signature(JSON.stringify(event()), webhookSecret) }), 400);
     await expectExport(target, (await session(target, user)).cookie, 403);
   });
 
@@ -517,25 +517,28 @@ describe('independent reference: signed synthetic lifecycle', () => {
     const raw = JSON.stringify(event());
     const modified = await target.app.request('/staging/replay', {
       method: 'POST', body: `${raw} `,
-      headers: { authorization: `Bearer ${adapterToken}`, 'content-type': 'application/json', 'stripe-signature': signature(raw) },
+      headers: { authorization: `Bearer ${adapterToken}`, 'content-type': 'application/json', 'paywallproof-replay-signature': signature(raw) },
     });
     await expectSafeError(modified, 400);
-    await expectSafeError(await replay(target, event(), { 'stripe-signature': signature(raw, replaySecret, Math.floor(Date.now() / 1_000) - 3_600) }), 400);
+    await expectSafeError(await replay(target, event(), { 'paywallproof-replay-signature': signature(raw, replaySecret, Math.floor(Date.now() / 1_000) - 3_600) }), 400);
     await expectExport(target, (await session(target, user)).cookie, 403);
   });
 
-  it('keeps the real webhook unavailable without Stripe credentials and rejects replay signatures there', async () => {
+  it('keeps the real webhook unavailable without Polar credentials and rejects replay signatures there', async () => {
     const target = open();
     const user = await createUser(target);
     await link(target, user);
-    const raw = JSON.stringify(event());
-    const response = await target.app.request('/api/stripe/webhook', {
-      method: 'POST', body: raw, headers: { 'content-type': 'application/json', 'stripe-signature': signature(raw, webhookSecret) },
+    const raw = JSON.stringify({type:'subscription.updated',timestamp:new Date().toISOString(),data:{}});
+    const timestamp = String(Math.floor(Date.now()/1000));
+    const deliveryId = 'independent_delivery';
+    const signed = createHmac('sha256', webhookSecret).update(`${deliveryId}.${timestamp}.${raw}`).digest('base64');
+    const response = await target.app.request('/api/polar/webhook', {
+      method: 'POST', body: raw, headers: { 'content-type': 'application/json', 'webhook-id':deliveryId, 'webhook-timestamp':timestamp, 'webhook-signature':`v1,${signed}` },
     });
     expect(response.status).toBe(503);
-    expect(await json(response)).toEqual({ error: 'STRIPE_WEBHOOK_UNAVAILABLE', processed: false });
-    const wrongRoute = await target.app.request('/api/stripe/webhook', {
-      method: 'POST', body: raw, headers: { 'content-type': 'application/json', 'stripe-signature': signature(raw, replaySecret) },
+    expect(await json(response)).toEqual({ error: 'POLAR_WEBHOOK_UNAVAILABLE', processed: false });
+    const wrongRoute = await target.app.request('/api/polar/webhook', {
+      method: 'POST', body: raw, headers: { 'content-type': 'application/json', 'paywallproof-replay-signature': signature(raw, replaySecret) },
     });
     await expectSafeError(wrongRoute, 400, 'INVALID_WEBHOOK_SIGNATURE');
     await expectExport(target, (await session(target, user)).cookie, 403);
@@ -598,7 +601,7 @@ describe('independent reference: malformed boundaries and fault controls', () =>
   });
 
   it('rejects a live Stripe key before any provider call', () => {
-    expect(() => open({ stripeKey: 'sk_live_SYNTHETIC_REJECT_BEFORE_NETWORK' })).toThrow();
+    expect(() => open({ polarToken: 'sk_live_SYNTHETIC_REJECT_BEFORE_NETWORK' })).toThrow();
   });
 
   it.each(['missing_guard', 'missing_activation', 'missing_cancellation'])('rejects fault mode %s outside staging', (faultMode) => {

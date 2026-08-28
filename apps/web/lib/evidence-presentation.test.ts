@@ -12,10 +12,10 @@ const scenario: Scenario = {
 function fixture(): RunDetail {
   const base = { runId: 'run_test', scenarioId: 'SC02', subjectId: 'user_test', policyHash: 'a'.repeat(64), targetBuild: 'build_test', observedAt: 1800000000000, billingTime: 1800000000, mode: 'local_replay', sha256: 'b'.repeat(64) };
   return detailSchema.parse({
-    run: { id: 'run_test', projectId: 'project_test', policy: { schemaVersion: 1, priceId: 'price_test', featureId: 'pro_export', featureConfigHash: 'c'.repeat(64), cancellation: 'allow_until_period_end', requireInitialInvoicePaid: true, syncWindowSeconds: 60, predicateVersion: 'reference-export-v1', hash: 'a'.repeat(64) }, targetBuild: 'build_test', featureConfigHash: 'c'.repeat(64), mode: 'local_replay', status: 'completed', outcome: 'inconclusive', createdAt: 1800000000000, startedAt: 1800000000000, verdicts: ['inconclusive'], approval: { id: 'approval_test', bindingHash: 'd'.repeat(64), expiresAt: 1800000010000, decision: 'allow' } },
+    run: { id: 'run_test', projectId: 'project_test', policy: { schemaVersion: 2, priceId: 'price_test', featureId: 'pro_export', featureConfigHash: 'c'.repeat(64), cancellation: 'allow_until_period_end', requireInitialPaymentConfirmed: true, syncWindowSeconds: 60, predicateVersion: 'reference-export-v1', hash: 'a'.repeat(64) }, targetBuild: 'build_test', featureConfigHash: 'c'.repeat(64), mode: 'local_replay', status: 'completed', outcome: 'inconclusive', createdAt: 1800000000000, startedAt: 1800000000000, verdicts: ['inconclusive'], approval: { id: 'approval_test', bindingHash: 'd'.repeat(64), expiresAt: 1800000010000, decision: 'allow' } },
     runtime: null, scenarios: [scenario], cleanup: [], repairs: [], coverageLimits: ['Synthetic local replay only.'],
     observations: [
-      { ...base, id: 'provider', source: 'stripe', payload: { livemode: false, identityResolved: true, noSubscriptionConfirmed: false, customerId: 'cus_test', subscription: { id: 'sub_test', customerId: 'cus_test', priceId: 'price_test', status: 'active', initialInvoicePaid: true, cancelAtPeriodEnd: false, periodEnd: 1801000000, billingTime: 1800000000 } } },
+      { ...base, id: 'provider', source: 'billing_provider', payload: { livemode: false, identityResolved: true, noSubscriptionConfirmed: false, customerId: 'cus_test', subscription: { id: 'sub_test', customerId: 'cus_test', priceId: 'price_test', status: 'active', initialPaymentConfirmed: true, cancelAtPeriodEnd: false, periodEnd: 1801000000, billingTime: 1800000000 } } },
       { ...base, id: 'application', source: 'application', payload: { principalId: 'user_test', runId: 'run_test', customerId: 'cus_test', status: 'active', buildId: 'build_test' } },
       { ...base, id: 'api', source: 'api_probe', payload: { status: 200, body: { error: 'unexpected response' }, transportError: false, denialStatuses: [403] } },
       { ...base, id: 'browser', source: 'browser', payload: { status: 200, body: { uiStatus: 'unavailable', visibleText: '<script>untrusted()</script>' }, transportError: false, denialStatuses: [403] } },
@@ -32,14 +32,14 @@ describe('recorded evidence presentation', () => {
     if (evidence.kind !== 'recorded') throw new Error('Expected recorded evidence');
     expect(evidence.facts).toContainEqual({ label: 'HTTP response', value: '200' });
     expect(detail.scenarios[0]?.api.verdict).toBe('inconclusive');
-    expect(scenarioEvidence(detail, scenario, 'stripe')).toMatchObject({ kind: 'recorded', facts: expect.arrayContaining([{ label: 'Billing source', value: 'Synthetic local replay' }]) });
+    expect(scenarioEvidence(detail, scenario, 'billing_provider')).toMatchObject({ kind: 'recorded', facts: expect.arrayContaining([{ label: 'Billing source', value: 'Synthetic local replay' }]) });
   });
 
   it.each(['runId', 'scenarioId', 'policyHash', 'targetBuild', 'mode', 'subjectId'])('does not summarize an observation with the wrong %s', field => {
     const detail = fixture();
     detail.observations = detail.observations.map(value => {
       const observation = observationSchema.parse(value);
-      return observation.id === 'api' ? { ...observation, [field]: field === 'policyHash' ? 'f'.repeat(64) : field === 'mode' ? 'stripe_sandbox' : 'foreign' } : observation;
+      return observation.id === 'api' ? { ...observation, [field]: field === 'policyHash' ? 'f'.repeat(64) : field === 'mode' ? 'polar_sandbox' : 'foreign' } : observation;
     });
     expect(scenarioEvidence(detail, scenario, 'api_probe').kind).toBe('unavailable');
   });

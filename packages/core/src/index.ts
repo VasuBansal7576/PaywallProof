@@ -5,12 +5,12 @@ export const identifier = z.string().min(1).refine(value => value.trim() === val
 export const digest = z.string().regex(/^[a-f0-9]{64}$/);
 const safeTime = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 export const policyInputSchema = z.strictObject({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
   priceId: identifier,
   featureId: identifier,
   featureConfigHash: digest,
   cancellation: z.literal('allow_until_period_end'),
-  requireInitialInvoicePaid: z.literal(true),
+  requireInitialPaymentConfirmed: z.literal(true),
   syncWindowSeconds: z.number().int().min(5).max(300),
   predicateVersion: identifier,
 });
@@ -87,7 +87,7 @@ export function parsePolicy(input: unknown): AccessPolicy {
 
 export const subscriptionSchema = z.strictObject({
   id: identifier, customerId: identifier, priceId: identifier, status: identifier,
-  initialInvoicePaid: z.boolean(), cancelAtPeriodEnd: z.boolean(),
+  initialPaymentConfirmed: z.boolean(), cancelAtPeriodEnd: z.boolean(),
   periodEnd: safeTime, billingTime: safeTime,
 });
 export const billingSchema = z.strictObject({
@@ -117,7 +117,7 @@ export function expectedAccess(input: unknown): ExpectedAccess {
   if (subscription.priceId !== policy.priceId) return unknown('PRICE_MISMATCH');
   if (subscription.status === 'canceled') return { kind: 'deny' };
   if (subscription.status !== 'active') return unknown('UNSUPPORTED_STATUS');
-  if (!subscription.initialInvoicePaid) return unknown('INITIAL_INVOICE_UNPAID');
+  if (!subscription.initialPaymentConfirmed) return unknown('INITIAL_INVOICE_UNPAID');
   if (subscription.cancelAtPeriodEnd && subscription.billingTime >= subscription.periodEnd) return unknown('CANCELLATION_UNCONFIRMED');
   return { kind: 'allow' };
 }

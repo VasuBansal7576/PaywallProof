@@ -11,7 +11,7 @@ const proposalSchema = z.object({
   baseCommit: commit, baseBranch: z.string(), repository: z.string(), branch: z.string(),
   policyHash: hash, oracleHash: hash, allowedPaths: z.array(z.string()),
   changes: z.array(z.object({ path: z.string(), content: z.string().nullable() })).min(1),
-  diffHash: hash, verificationMode: z.enum(['local_replay', 'stripe_sandbox']),
+  diffHash: hash, verificationMode: z.enum(['local_replay', 'polar_sandbox']),
   failureCode: z.string(), summary: z.string(), reportUrl: z.string(),
 });
 const verificationReceiptSchema = z.object({
@@ -30,7 +30,7 @@ const publicationReceiptSchema = z.object({
 });
 const repairRecordSchema = z.object({
   id: z.string(), createdAt: timestamp, proposal: proposalSchema,
-  state: z.enum(['proposed', 'verified_local', 'verified_stripe_sandbox', 'awaiting_publication', 'published', 'abandoned']),
+  state: z.enum(['proposed', 'verified_local', 'verified_polar_sandbox', 'awaiting_publication', 'published', 'abandoned']),
   manifest: manifestSchema.nullable(), manifestHash: hash.nullable(),
   approval: z.object({
     id: z.string(), bindingHash: hash, expiresAt: timestamp, decision: z.enum(['pending', 'allow', 'deny']),

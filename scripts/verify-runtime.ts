@@ -29,7 +29,7 @@ async function verifyApprovalTransport(runtime: TrueForgeAdapter) {
       const mcp = new McpServer({ name: "paywallproof-runtime-installation-probe", version: "1.0.0" });
       for (const name of ["prepare_fixture", "publish_repair_pr"] satisfies (keyof typeof calls)[]) {
         mcp.registerTool(name, {
-          description: "Harmless runtime installation probe. Increments an in-memory counter only. No Stripe, files, or pull requests.",
+          description: "Harmless runtime installation probe. Increments an in-memory counter only. No Polar, files, or pull requests.",
           inputSchema: {}, annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
         }, async () => {
           calls[name] += 1;

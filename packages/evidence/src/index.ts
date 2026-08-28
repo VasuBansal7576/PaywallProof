@@ -3,10 +3,11 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { billingSchema, evaluateProbe, expectedAccess, hashValue, identifier, parseJson, parsePolicy, probeSchema, type Json, type ProbeResult } from '../../core/src/index.ts';
 
-const sensitiveKey = /^(authorization|cookie|set-cookie|password|secret|token|api.?key|webhook.?secret|email|access.?token|refresh.?token)$/i;
+const sensitiveKey = /^(authorization|cookie|set-cookie|password|secret|token|api.?key|webhook.?secret|email|access.?token|refresh.?token|client.?secret|worker.?token|reference.?token|owner.?email|checkout.?url)$/i;
 export function redact(value: unknown, secrets: readonly string[] = []): Json {
   function cleanText(text: string) {
-    let result = text.replace(/\b(?:sk|rk)_(?:test|live)_[A-Za-z0-9_]+\b|\bwhsec_[A-Za-z0-9_]+\b|\bgh[pousr]_[A-Za-z0-9]+\b|\bgithub_pat_[A-Za-z0-9_]+\b/g, '[REDACTED]');
+    let result = text.replace(/\bpolar_(?:oat|pat|cst)_[A-Za-z0-9_-]+\b|\b(?:sk|rk)_(?:test|live)_[A-Za-z0-9_]+\b|\bwhsec_[A-Za-z0-9_]+\b|\bgh[pousr]_[A-Za-z0-9]+\b|\bgithub_pat_[A-Za-z0-9_]+\b/g, '[REDACTED]');
+    result = result.replace(/https:\/\/sandbox\.polar\.sh\/checkout\/[^\s"<>]+/g, '[REDACTED_CHECKOUT]');
     result = result.replace(/(?:Bearer|Basic)\s+[A-Za-z0-9+/_=.-]+/gi, '[REDACTED_AUTH]').replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g, '[REDACTED_EMAIL]');
     for (const secret of secrets) if (secret.length > 0) result = result.split(secret).join('[REDACTED]');
     return result;
@@ -22,9 +23,9 @@ export function redact(value: unknown, secrets: readonly string[] = []): Json {
 
 export const observationInputSchema = z.strictObject({
   runId:identifier, scenarioId:z.enum(['SC01','SC02','SC03','SC04']), subjectId:identifier,
-  source:z.enum(['stripe','application','api_probe','browser']), policyHash:z.string().regex(/^[a-f0-9]{64}$/),
+  source:z.enum(['billing_provider','application','api_probe','browser']), policyHash:z.string().regex(/^[a-f0-9]{64}$/),
   targetBuild:identifier, observedAt:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-  billingTime:z.number().int().nonnegative().nullable(), mode:z.enum(['stripe_sandbox','local_replay']),payload:z.unknown(),
+  billingTime:z.number().int().nonnegative().nullable(), mode:z.enum(['polar_sandbox','local_replay']),payload:z.unknown(),
 });
 const observationSchema = observationInputSchema.extend({id:identifier,sha256:identifier});
 export type Observation = z.infer<typeof observationSchema>;
@@ -56,27 +57,27 @@ export class EvidenceStore {
 
 export const evaluationInputSchema = z.strictObject({
   runId:identifier, scenarioId:z.enum(['SC01','SC02','SC03','SC04']),subjectId:identifier,
-  policy:z.unknown(),targetBuild:identifier,mode:z.enum(['stripe_sandbox','local_replay']),fixtureMarker:identifier,
-  stripeId:identifier,applicationId:identifier,apiId:identifier,browserId:identifier,
+  policy:z.unknown(),targetBuild:identifier,mode:z.enum(['polar_sandbox','local_replay']),fixtureMarker:identifier,
+  providerId:identifier,applicationId:identifier,apiId:identifier,browserId:identifier,
   now:z.number().int().nonnegative(), notBefore:z.number().int().nonnegative(),
 });
 export type EvidenceEvaluation = {api:ProbeResult;browser:ProbeResult;state:ProbeResult;observationIds:string[]};
 export function evaluateEvidence(store:EvidenceStore,input:unknown):EvidenceEvaluation {
   const request = evaluationInputSchema.parse(parseJson(input));
   const policy = parsePolicy(request.policy);
-  const ids = [request.stripeId,request.applicationId,request.apiId,request.browserId];
+  const ids = [request.providerId,request.applicationId,request.apiId,request.browserId];
   const inconclusive = (code:string):EvidenceEvaluation => ({api:{verdict:'inconclusive',code},browser:{verdict:'inconclusive',code},state:{verdict:'inconclusive',code},observationIds:ids});
   let records:Observation[];
   try { records = ids.map(id=>store.get(id)); } catch { return inconclusive('EVIDENCE_MISSING'); }
-  const [stripe,application,api,browser] = records;
-  if (!stripe || !application || !api || !browser || new Set(ids).size !== 4) return inconclusive('EVIDENCE_MISSING');
-  if (stripe.source !== 'stripe' || application.source !== 'application' || api.source !== 'api_probe' || browser.source !== 'browser') return inconclusive('EVIDENCE_SOURCE_MISMATCH');
+  const [provider,application,api,browser] = records;
+  if (!provider || !application || !api || !browser || new Set(ids).size !== 4) return inconclusive('EVIDENCE_MISSING');
+  if (provider.source !== 'billing_provider' || application.source !== 'application' || api.source !== 'api_probe' || browser.source !== 'browser') return inconclusive('EVIDENCE_SOURCE_MISMATCH');
   for (const record of records) {
     if(record.runId!==request.runId||record.scenarioId!==request.scenarioId||record.subjectId!==request.subjectId||record.policyHash!==policy.hash||record.mode!==request.mode) return inconclusive('EVIDENCE_SCOPE_MISMATCH');
     if(record.targetBuild!==request.targetBuild) return inconclusive('TARGET_CHANGED');
     if(record.observedAt>request.now||record.observedAt<request.notBefore||request.now-record.observedAt>10_000) return inconclusive('EVIDENCE_STALE');
   }
-  const billing = billingSchema.safeParse(stripe.payload);
+  const billing = billingSchema.safeParse(provider.payload);
   if (!billing.success) return inconclusive('INVALID_PROVIDER_EVIDENCE');
   const expected = expectedAccess({policy,billing:billing.data});
   const apiProbe = probeSchema.safeParse(api.payload), browserProbe = probeSchema.safeParse(browser.payload);

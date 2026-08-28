@@ -157,27 +157,27 @@ describe('vertical synthetic replay adapter to actual reference handlers', () =>
     const active = await adapter.observe(runId);
     expect(active).toMatchObject({
       livemode: false, identityResolved: true, noSubscriptionConfirmed: false, customerId: customer.customerId,
-      subscription: { customerId: customer.customerId, priceId, status: 'active', initialInvoicePaid: true, cancelAtPeriodEnd: false },
+      subscription: { customerId: customer.customerId, priceId, status: 'active', initialPaymentConfirmed: true, cancelAtPeriodEnd: false },
     });
     await checkAccess(target, user.cookie, 200, user.fixtureMarker);
 
     const scheduled = await adapter.scheduleCancellation(runId, `schedule_${runId}`);
     expect(scheduled).toMatchObject({ mode: 'local_replay' });
     const pending = await adapter.observe(runId);
-    expect(pending).toMatchObject({ customerId: customer.customerId, subscription: { status: 'active', initialInvoicePaid: true, cancelAtPeriodEnd: true } });
+    expect(pending).toMatchObject({ customerId: customer.customerId, subscription: { status: 'active', initialPaymentConfirmed: true, cancelAtPeriodEnd: true } });
     await checkAccess(target, user.cookie, 200, user.fixtureMarker);
     await closeAdapter(adapter);
     const reopened = openAdapter();
     expect(await reopened.createCustomer(runId)).toEqual(customer);
     expect(await reopened.observe(runId)).toEqual(pending);
 
-    const canceled = await reopened.advanceClock(runId, `advance_${runId}`);
+    const canceled = await reopened.awaitPeriodEnd(runId, `advance_${runId}`);
     expect(canceled).toMatchObject({ mode: 'local_replay' });
     const finalBilling = await reopened.observe(runId);
-    expect(finalBilling).toMatchObject({ customerId: customer.customerId, subscription: { status: 'canceled', initialInvoicePaid: true } });
+    expect(finalBilling).toMatchObject({ customerId: customer.customerId, subscription: { status: 'canceled', initialPaymentConfirmed: true } });
     await checkAccess(target, user.cookie, 403, user.fixtureMarker);
     const snapshot = await staging(target, `/staging/users/${user.principalId}/billing?runId=${encodeURIComponent(runId)}`);
-    expect(await snapshot.json()).toMatchObject({ customerId: customer.customerId, status: 'canceled', initialInvoicePaid: true, buildId });
+    expect(await snapshot.json()).toMatchObject({ customerId: customer.customerId, status: 'canceled', initialPaymentConfirmed: true, buildId });
     expect(dispatched).toEqual([
       { method: 'POST', path: '/staging/replay' }, { method: 'POST', path: '/staging/replay' }, { method: 'POST', path: '/staging/replay' },
     ]);
@@ -209,7 +209,7 @@ describe('vertical synthetic replay adapter to actual reference handlers', () =>
     const user = await createAndLink(target, runId, customer.customerId);
     await adapter.createSubscription(runId, 'create_before_invalid_advance');
     const before = [...dispatched];
-    await expectRejected(() => adapter.advanceClock(runId, 'advance_without_schedule'));
+    await expectRejected(() => adapter.awaitPeriodEnd(runId, 'advance_without_schedule'));
     expect(dispatched).toEqual(before);
     await checkAccess(target, user.cookie, 200, user.fixtureMarker);
   }, 20_000);
@@ -242,7 +242,7 @@ describe('vertical synthetic replay adapter to actual reference handlers', () =>
     await expectRejected(() => adapter.createSubscription(runId, 'rejected_delivery'));
     expect(dispatched).toEqual([{ method: 'POST', path: '/staging/replay' }]);
     const snapshot = await staging(target, `/staging/users/${user.principalId}/billing?runId=${encodeURIComponent(runId)}`);
-    expect(await snapshot.json()).toMatchObject({ customerId: customer.customerId, status: 'none', initialInvoicePaid: false });
+    expect(await snapshot.json()).toMatchObject({ customerId: customer.customerId, status: 'none', initialPaymentConfirmed: false });
     await checkAccess(target, user.cookie, 403, user.fixtureMarker);
   }, 20_000);
 });

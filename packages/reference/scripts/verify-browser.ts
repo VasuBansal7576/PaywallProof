@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { chromium, expect } from '@playwright/test';
-import Stripe from 'stripe';
+import {signReplay} from '../src/replay-signature.ts';
 import { z } from 'zod';
 
 // This script connects only to the explicitly local reference test server.
@@ -39,7 +39,7 @@ try {
         latest_invoice: { livemode: false, status: 'paid', billing_reason: 'subscription_create', customer: customerId },
       } },
     });
-    const response = await fetch(`${origin}/staging/replay`, { method: 'POST', headers: { ...headers, 'stripe-signature': Stripe.webhooks.generateTestHeaderString({ payload: body, secret: 'reference-browser-replay-secret' }) }, body });
+    const response = await fetch(`${origin}/staging/replay`, { method: 'POST', headers: { ...headers, 'paywallproof-replay-signature': signReplay({ payload: body, secret: 'reference-browser-replay-secret' }) }, body });
     if (!response.ok) throw new Error(`REPLAY_${response.status}`);
   }
   await replay('active', 100);

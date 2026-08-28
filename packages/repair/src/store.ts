@@ -46,7 +46,7 @@ export function openRepairStore(options:{path:string;repository:string;allowedPa
         if(before.outcome!=='fail'||before.exitCode===0||before.failureCode!==proposal.failureCode||before.diffHash!==null||before.checkId!==after.checkId)throw new RepairError('VERIFICATION_REJECTED');
         if([after,...regressions].some(receipt=>receipt.outcome!=='pass'||receipt.exitCode!==0||receipt.failureCode!==null||receipt.diffHash!==proposal.diffHash||receipt.observedAt<before.observedAt))throw new RepairError('VERIFICATION_REJECTED');
         if(regressions.length!==config.requiredRegressionChecks.length||new Set(regressions.map(receipt=>receipt.checkId)).size!==regressions.length||config.requiredRegressionChecks.some(id=>!regressions.some(receipt=>receipt.checkId===id)))throw new RepairError('VERIFICATION_REJECTED');
-        record.manifest={...proposal,requiredRegressionChecks:[...config.requiredRegressionChecks],verification};record.manifestHash=hashValue(record.manifest);record.state=proposal.verificationMode==='local_replay'?'verified_local':'verified_stripe_sandbox';return save(record);
+        record.manifest={...proposal,requiredRegressionChecks:[...config.requiredRegressionChecks],verification};record.manifestHash=hashValue(record.manifest);record.state=proposal.verificationMode==='local_replay'?'verified_local':'verified_polar_sandbox';return save(record);
       });
     },
     requestPublication(input:unknown) {
@@ -55,12 +55,12 @@ export function openRepairStore(options:{path:string;repository:string;allowedPa
         const record=get(request.proposalId);
         if(!record.manifest||!record.manifestHash)throw new RepairError('VERIFICATION_REQUIRED');
         const manifest=record.manifest;
-        const limitation=`Verification mode: ${manifest.verificationMode}.\n\n`+(manifest.verificationMode==='local_replay'?'Local replay only. Stripe integration was not verified. This pull request must remain a draft.':'Verified against the recorded Stripe sandbox run; no production guarantee.');
+        const limitation=`Verification mode: ${manifest.verificationMode}.\n\n`+(manifest.verificationMode==='local_replay'?'Local replay only. Polar integration was not verified. This pull request must remain a draft.':'Verified against the recorded Polar sandbox run; no production guarantee.');
         const receipts=[manifest.verification.before,manifest.verification.after,...manifest.verification.regressions];
         const evidence=JSON.stringify(receipts.map(receipt=>({id:receipt.id,check:receipt.checkId,outcome:receipt.outcome,exitCode:receipt.exitCode,artifactHash:receipt.artifactHash})),null,2).replaceAll('`','\\u0060');
         const args={repository:manifest.repository,baseBranch:manifest.baseBranch,branch:manifest.branch,draft:manifest.verificationMode==='local_replay',title:request.title,body:`${request.body}\n\n${marker(record.manifestHash)}\n\n${limitation}\n\nFinding: ${manifest.findingId} (${manifest.failureCode})\nProposed change: ${manifest.summary}\nRisk: Generated code still requires owner review. No merge or deployment is authorized.\n\nReport and reproduction: ${manifest.reportUrl}\nPolicy: ${manifest.policyHash}\nDiff: ${manifest.diffHash}\nUnchanged oracle: ${manifest.oracleHash}\n\nVerification receipts:\n\n\`\`\`json\n${evidence}\n\`\`\``};
         if(record.approval){if(hashValue(record.approval.args)!==hashValue(args))throw new RepairError('APPROVAL_STALE');return record;}
-        if(!['verified_local','verified_stripe_sandbox'].includes(record.state))throw new RepairError('INVALID_TRANSITION');
+        if(!['verified_local','verified_polar_sandbox'].includes(record.state))throw new RepairError('INVALID_TRANSITION');
         record.approval=approvalSchema.parse({id:randomUUID(),bindingHash:hashValue({manifest,args}),expiresAt:now()+900000,decision:'pending',args});record.state='awaiting_publication';return save(record);
       });
     },

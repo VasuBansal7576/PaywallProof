@@ -408,7 +408,7 @@ describe('independent repair checkout: installed dependency bytes and provenance
   });
 
   it('uses the documented default top-level package names without an install', async () => {
-    const names = ['next', 'react', 'react-dom', 'hono', 'zod', 'stripe', 'better-sqlite3', 'typescript', '@types/react', '@types/node'];
+    const names = ['next', 'react', 'react-dom', 'hono', 'zod', 'standardwebhooks', 'better-sqlite3', 'typescript', '@types/react', '@types/node'];
     for (const name of names) installFixture(name);
     const before = treeSnapshot();
     const result = await collectRepairDependencies(repositoryRoot);

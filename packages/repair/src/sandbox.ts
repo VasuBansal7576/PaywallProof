@@ -9,6 +9,7 @@ import { TrueForge, type TrueForgeApi } from '@truefoundry/trueforge-sdk';
 import { z } from 'zod';
 import { TrueForgeAdapter } from '../../adapters/src/trueforge.ts';
 import { pathSchema } from './model.ts';
+import { REFERENCE_SUPPORT_PATHS } from './checkout.ts';
 
 const CHUNK_BYTES = 8 * 1024 * 1024;
 const MAX_BYTES = 512 * 1024 * 1024;
@@ -18,7 +19,7 @@ const idSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,150}$/);
 const commandSchema = z.strictObject({ interpreter: z.enum(['node', 'python']), script: z.string(), args: z.array(z.string().max(2000).refine(s => !s.includes('\0'))).max(50).optional() });
 const routeSchema = z.strictObject({ method: z.enum(['GET', 'POST', 'DELETE']), path: z.string().min(1).max(1000).regex(/^\/[A-Za-z0-9_./-]*(?:\?runId=[A-Za-z0-9_-]{1,150})?$/).refine(s => !s.includes('..') && !s.includes('//')) });
 export type FixedSandboxCommand = z.infer<typeof commandSchema>;
-export type SandboxFile = { path: string; bytes: Uint8Array; role: 'source' | 'dependency' | 'launcher' };
+export type SandboxFile = { path: string; bytes: Uint8Array; role: 'source' | 'support' | 'dependency' | 'launcher' };
 export type SandboxBinding = { path: string; sha256: string; size: number };
 export type SandboxRuntimeState = { sessionId: string; operationId: string; phase: 'transfer' | 'execute' | 'prepare'; turnId: string | null; previousTurnId: string };
 export type SandboxExecReceipt = { sessionId: string; turnId: string; toolCallId: string; eventId: string; command: string; exitCode: number; output: string };
@@ -61,7 +62,8 @@ function checkedFiles(input: SandboxOperationInput): SandboxFile[] {
   if (!Array.isArray(input.files) || !input.files.length || input.files.length > MAX_FILES || !Array.isArray(input.allowedPaths) || !input.allowedPaths.length || input.allowedPaths.some(p => !pathSchema.safeParse(p).success)) throw new Error('SANDBOX_FILES_REJECTED');
   const seen = new Set<string>(); let total = 0;
   const files = input.files.map(file => {
-    if (!safeTransferPath(file.path) || !(file.bytes instanceof Uint8Array) || !['source', 'dependency', 'launcher'].includes(file.role)) throw new Error('SANDBOX_FILES_REJECTED');
+    if (!safeTransferPath(file.path) || !(file.bytes instanceof Uint8Array) || !['source', 'support', 'dependency', 'launcher'].includes(file.role)) throw new Error('SANDBOX_FILES_REJECTED');
+    if (file.role === 'support' && (!REFERENCE_SUPPORT_PATHS.includes(file.path) || input.allowedPaths.includes(file.path))) throw new Error('SANDBOX_SUPPORT_REJECTED');
     if (file.role === 'source' && (!input.allowedPaths.includes(file.path) || !pathSchema.safeParse(file.path).success)) throw new Error('SANDBOX_SOURCE_REJECTED');
     if (file.role === 'dependency' && !file.path.startsWith('node_modules/')) throw new Error('SANDBOX_DEPENDENCY_REJECTED');
     if (file.role === 'launcher' && !file.path.startsWith('_trusted/')) throw new Error('SANDBOX_LAUNCHER_REJECTED');
@@ -167,7 +169,7 @@ const bridgeResponseSchema = z.object({ kind: z.literal('response'), id: z.strin
 type BridgeResponse = z.infer<typeof bridgeResponseSchema>;
 export function safeRequestHeaders(headers: IncomingHttpHeaders, adapterToken: string): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const name of ['content-type', 'accept', 'cookie', 'stripe-signature', 'authorization']) {
+  for (const name of ['content-type', 'accept', 'cookie', 'paywallproof-replay-signature', 'authorization']) {
     const value = headers[name];
     if (value === undefined) continue;
     if (typeof value !== 'string' || value.length > 4096 || /[\r\n]/.test(value)) throw new Error('BRIDGE_HEADERS_REJECTED');
@@ -256,7 +258,7 @@ async function openBridge(input: { root: string; workspace: string; operationId:
   const address = server.address(); if (!address || typeof address === 'string') { await close(); throw new Error('BRIDGE_LISTEN_FAILED'); }
   const observation = Promise.race([ready.then(() => input.target.onReady({ origin: `http://127.0.0.1:${address.port}`, ...credentials, registerRoutes })), failure]).finally(async () => { await close(); });
   void observation.catch(() => {});
-  return { environment: { TARGET_ADAPTER_TOKEN: credentials.adapterToken, LOCAL_REPLAY_SECRET: credentials.replaySecret, STRIPE_WEBHOOK_SECRET: credentials.webhookSecret, PP_REPAIR_COMMAND_TIMEOUT_MS: String(input.commandTimeoutMs), PP_REPAIR_BRIDGE_SOCKET: `../${socketName}`, PP_REPAIR_BRIDGE_TOKEN: token, PP_REPAIR_BRIDGE_MODULE: `../uploads/pp_${input.operationId}_bridge.cjs` }, observation, close };
+  return { environment: { TARGET_ADAPTER_TOKEN: credentials.adapterToken, LOCAL_REPLAY_SECRET: credentials.replaySecret, POLAR_WEBHOOK_SECRET: credentials.webhookSecret, PP_REPAIR_COMMAND_TIMEOUT_MS: String(input.commandTimeoutMs), PP_REPAIR_BRIDGE_SOCKET: `../${socketName}`, PP_REPAIR_BRIDGE_TOKEN: token, PP_REPAIR_BRIDGE_MODULE: `../uploads/pp_${input.operationId}_bridge.cjs` }, observation, close };
 }
 async function stopChild(child: ChildProcess) {
   if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;

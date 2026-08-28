@@ -236,7 +236,7 @@ describe('independent control HTTP: configured scope and honest reads', () => {
     const body = await json(response);
     expect(body).toMatchObject({
       target: { id: 'reference', origin: 'http://127.0.0.1:39991' }, repository, defaultRef,
-      stripeConfigured: false, priceId: 'price_pro_synthetic', model: 'synthetic-local-model',
+      polarConfigured: false, priceId: 'price_pro_synthetic', model: 'synthetic-local-model',
       limits: expect.any(Object), coverageLimits: expect.any(Array),
     });
     for (const secret of [operatorToken, adapterToken, replaySecret]) expect(JSON.stringify(body)).not.toContain(secret);

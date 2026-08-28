@@ -16,7 +16,7 @@ type Variables={csrfToken:string};
 export function createControlApp(config:ControllerConfig) {
   const controller=new Controller(config);
   const app=new Hono<{Variables:Variables}>();
-  const secrets=[config.operatorToken,config.adapterToken,config.replaySecret,...config.stripeKey?[config.stripeKey]:[]];
+  const secrets=[config.operatorToken,config.adapterToken,config.replaySecret,...config.polarToken?[config.polarToken]:[]];
   const loginAttempts:number[]=[];
   app.use('*',bodyLimit({maxSize:1024*1024,onError:c=>c.json({error:{code:'REQUEST_TOO_LARGE',message:'Request exceeds the allowed size.'}},413)}));
   app.use('*',async(c,next)=>{
@@ -79,10 +79,10 @@ export function createControlApp(config:ControllerConfig) {
     else controller.database.prepare('UPDATE http_requests SET response=? WHERE id=?').run(JSON.stringify({status:c.res.status,body}),id);
   });
   app.get('/api/session',c=>c.json({csrfToken:c.get('csrfToken')}));
-  app.get('/api/config',c=>c.json({target:{id:'reference',origin:config.targetOrigin},repository:config.repository,defaultRef:config.defaultRef,stripeConfigured:controller.stripe!==null,priceId:config.priceId,model:config.model,limits:RUN_LIMITS,coverageLimits}));
+  app.get('/api/config',c=>c.json({target:{id:'reference',origin:config.targetOrigin},repository:config.repository,defaultRef:config.defaultRef,polarConfigured:controller.polar!==null,priceId:config.priceId,model:config.model,limits:RUN_LIMITS,coverageLimits}));
   app.get('/api/projects',c=>c.json(controller.list('project')));
   app.post('/api/projects',async c=>c.json(controller.createProject(await c.req.json()),201));
-  app.post('/api/projects/:id/preflight',async c=>{const {mode}=z.strictObject({mode:z.enum(['stripe_sandbox','local_replay'])}).parse(await c.req.json());return c.json(await controller.preflight(c.req.param('id'),mode));});
+  app.post('/api/projects/:id/preflight',async c=>{const {mode}=z.strictObject({mode:z.enum(['polar_sandbox','local_replay'])}).parse(await c.req.json());return c.json(await controller.preflight(c.req.param('id'),mode));});
   app.get('/api/projects/:id/policies',c=>{controller.project(c.req.param('id'));return c.json(controller.list(`policy:${c.req.param('id')}`));});
   app.post('/api/projects/:id/policies',async c=>c.json(await controller.proposePolicy(c.req.param('id'),await c.req.json()),201));
   app.post('/api/runs',async c=>c.json(await controller.createRun(await c.req.json()),201));
@@ -99,6 +99,12 @@ export function createControlApp(config:ControllerConfig) {
     return c.json({runs:results,message:'Only recorded run-owned fixtures are eligible for cleanup. Reports and unrelated users are preserved.'});
   });
   app.get('/api/runs/:id',c=>c.json(controller.viewRun(c.req.param('id'))));
+  app.get('/api/runs/:id/checkout',c=>{
+    const url=controller.checkoutUrl(c.req.param('id'));
+    if(!url)return c.json({error:{code:'CHECKOUT_NOT_READY',message:'The sandbox checkout has not been created yet.'}},409);
+    c.header('Referrer-Policy','no-referrer');
+    return c.redirect(url,303);
+  });
   app.get('/api/runs/:id/artifacts/:artifactId',async c=>{
     const artifact=await controller.artifact(c.req.param('id'),c.req.param('artifactId'));
     return new Response(artifact.bytes,{headers:{'Content-Type':artifact.metadata.contentType,'Content-Disposition':`attachment; filename="${artifact.metadata.id}"`,'Content-Length':String(artifact.bytes.byteLength),'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});

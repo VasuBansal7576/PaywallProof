@@ -7,7 +7,7 @@ export class ControlError extends Error {
   constructor(readonly code:string) { super(code); }
 }
 const milliseconds = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
-const createSchema = z.strictObject({projectId:identifier,policy:policySchema,targetBuild:identifier,featureConfigHash:digest,mode:z.enum(['stripe_sandbox','local_replay']),projectConfigHash:digest.optional()});
+const createSchema = z.strictObject({projectId:identifier,policy:policySchema,targetBuild:identifier,featureConfigHash:digest,mode:z.enum(['polar_sandbox','local_replay']),projectConfigHash:digest.optional()});
 export const runSchema = createSchema.extend({
   id:identifier,status:z.enum(['awaiting_plan_approval','running','stopping','completed','canceled']),
   outcome:z.enum(['passed','failed','inconclusive']).nullable(),createdAt:milliseconds,startedAt:milliseconds.nullable(),
@@ -16,7 +16,7 @@ export const runSchema = createSchema.extend({
 });
 export type RunRecord = z.infer<typeof runSchema>;
 const decisionSchema = z.strictObject({runId:identifier,approvalId:identifier,bindingHash:digest,decision:z.enum(['allow','deny'])});
-const operationKind = z.enum(['prepare_fixture','change_test_subscription','advance_test_clock','probe_feature','cleanup_run']);
+const operationKind = z.enum(['prepare_fixture','change_test_subscription','await_period_end','probe_feature','cleanup_run']);
 const claimSchema = z.strictObject({runId:identifier,operationId:identifier,kind:operationKind,args:z.record(z.string(),z.unknown()),approvalId:identifier,leaseMs:z.number().int().min(1).max(30000)});
 const operationSchema = z.strictObject({
   operationId:identifier,runId:identifier,kind:operationKind,argsHash:digest,state:z.enum(['dispatched','unknown','confirmed']),
@@ -24,7 +24,7 @@ const operationSchema = z.strictObject({
 });
 type Operation = z.infer<typeof operationSchema>;
 const eventSchema = z.object({sequence:z.number().int(),type:identifier,payload:z.unknown(),occurredAt:milliseconds});
-export const RUN_LIMITS = Object.freeze({users:2,customers:1,clocks:1,subscriptions:1,operations:100,activeMilliseconds:900000,approvalMilliseconds:900000});
+export const RUN_LIMITS = Object.freeze({users:2,customers:1,checkouts:1,subscriptions:1,operations:100,activeMilliseconds:900000,approvalMilliseconds:900000});
 
 function boundary<T>(action:()=>T):T {
   try { return action(); } catch(error) {

@@ -1,7 +1,8 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import Stripe from 'stripe';
+import { signReplay } from './replay-signature';
+import { Webhook } from 'standardwebhooks';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { createReferenceApp, type ReferenceOptions } from './index';
@@ -53,7 +54,7 @@ function event(status = 'active', created = 100, scheduled = false) {
 }
 async function sendEvent(target: ReturnType<typeof createReferenceApp>, payload: unknown, route = '/staging/replay', secret = 'whsec_test_replay_only') {
   const body = JSON.stringify(payload);
-  return target.app.request(route, { method: 'POST', headers: { ...headers, 'stripe-signature': Stripe.webhooks.generateTestHeaderString({ payload: body, secret }) }, body });
+  return target.app.request(route, { method: 'POST', headers: { ...headers, 'paywallproof-replay-signature': signReplay({ payload: body, secret }) }, body });
 }
 
 describe('reference target real HTTP and SQLite', () => {
@@ -93,7 +94,7 @@ describe('reference target real HTTP and SQLite', () => {
       expect(await feature.json()).toEqual(status === 200 ? { fixtureMarker: user.fixtureMarker } : { error: 'ACCESS_DENIED' });
     }
     const billing = await target.app.request(`/staging/users/${user.principalId}/billing?runId=${user.runId}`, { headers });
-    expect(await billing.json()).toMatchObject({ status: 'canceled', initialInvoicePaid: true, priceId: 'price_pro', periodEnd: 1000 });
+    expect(await billing.json()).toMatchObject({ status: 'canceled', initialPaymentConfirmed: true, priceId: 'price_pro', periodEnd: 1000 });
     const me = await target.app.request('/api/me', { headers: { cookie: session.cookie } });
     expect(await me.json()).toMatchObject({ executionMode: 'local_replay', canExport: false });
   });
@@ -116,10 +117,13 @@ describe('reference target real HTTP and SQLite', () => {
     const { target } = setup();
     await provision(target);
     expect((await sendEvent(target, event(), '/staging/replay', 'wrong')).status).toBe(400);
-    expect((await sendEvent(target, event(), '/api/stripe/webhook')).status).toBe(400);
-    const unavailable = await sendEvent(target, event(), '/api/stripe/webhook', 'whsec_test_real_only');
+    expect((await sendEvent(target, event(), '/api/polar/webhook')).status).toBe(400);
+    const body=JSON.stringify({type:'subscription.updated',timestamp:new Date().toISOString(),data:{}});
+    const date=new Date(),deliveryId='contract_delivery';
+    const signed=new Webhook(Buffer.from('whsec_test_real_only').toString('base64')).sign(deliveryId,date,body);
+    const unavailable=await target.app.request('/api/polar/webhook',{method:'POST',body,headers:{'content-type':'application/json','webhook-id':deliveryId,'webhook-timestamp':String(Math.floor(date.getTime()/1000)),'webhook-signature':signed}});
     expect(unavailable.status).toBe(503);
-    expect(await unavailable.json()).toEqual({ error: 'STRIPE_WEBHOOK_UNAVAILABLE', processed: false });
+    expect(await unavailable.json()).toEqual({ error: 'POLAR_WEBHOOK_UNAVAILABLE', processed: false });
     expect((await sendEvent(target, { ...event(), livemode: true })).status).toBe(400);
   });
 

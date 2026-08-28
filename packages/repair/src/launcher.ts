@@ -1,11 +1,11 @@
 import { z } from 'zod';
 import type { FixedSandboxCommand, SandboxFile } from './sandbox.ts';
 
-const inputSchema = z.strictObject({ buildId: z.string().regex(/^[a-f0-9]{40}$/), priceId: z.string().regex(/^price_[A-Za-z0-9]{1,200}$/) });
+const inputSchema = z.strictObject({ buildId: z.string().regex(/^[a-f0-9]{40}$/), priceId: z.union([z.uuid(),z.string().regex(/^price_[A-Za-z0-9_]{1,200}$/)]) });
 // Exact versions in pnpm-lock.yaml. A dependency upgrade requires a reviewed launcher update.
 const versions = {
   next: '16.3.3', react: '19.2.8', 'react-dom': '19.2.8', hono: '4.13.5',
-  zod: '4.4.3', stripe: '22.6.0', 'better-sqlite3': '13.0.2',
+  zod: '4.4.3', standardwebhooks: '1.0.0', 'better-sqlite3': '13.0.2',
   typescript: '5.9.3', '@types/react': '19.2.18', '@types/node': '22.20.1',
 };
 const tsconfig = {
@@ -49,8 +49,8 @@ function generated(name, value) {
   }
 }
 async function main() {
-  if (process.env.STRIPE_SECRET_KEY || process.env.GITHUB_TOKEN || process.env.NODE_OPTIONS || process.env.NODE_PATH) throw new Error('LAUNCHER_ENV_REJECTED');
-  for (const name of ['TARGET_ADAPTER_TOKEN', 'STRIPE_WEBHOOK_SECRET', 'LOCAL_REPLAY_SECRET']) {
+  if (process.env.POLAR_ACCESS_TOKEN || process.env.POLAR_REFERENCE_TOKEN || process.env.STRIPE_SECRET_KEY || process.env.GITHUB_TOKEN || process.env.NODE_OPTIONS || process.env.NODE_PATH) throw new Error('LAUNCHER_ENV_REJECTED');
+  for (const name of ['TARGET_ADAPTER_TOKEN', 'POLAR_WEBHOOK_SECRET', 'LOCAL_REPLAY_SECRET']) {
     if (!/^[a-f0-9]{64}$/.test(process.env[name] || '')) throw new Error('LAUNCHER_FIXTURE_CREDENTIAL_REQUIRED');
   }
   const bridge = process.env.PP_REPAIR_BRIDGE_MODULE || '';
@@ -74,7 +74,7 @@ async function main() {
   process.env.NEXT_DISABLE_SWC_WASM = '1';
   process.env.NEXT_IGNORE_INCORRECT_LOCKFILE = '1';
   process.env.STAGING_ENABLED = 'true';
-  process.env.STRIPE_PRICE_ID = config.priceId;
+  process.env.BILLING_PRICE_ID = config.priceId;
   process.env.TARGET_BUILD_ID = config.buildId;
   process.env.REFERENCE_DATABASE_PATH = path.join(root, 'reference.sqlite');
   generated('package.json', { name: 'paywallproof-repair-reference', version: '0.0.0', private: true, dependencies: versions });

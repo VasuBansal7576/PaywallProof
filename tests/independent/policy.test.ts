@@ -19,12 +19,12 @@ function singleCases<T>(cases: readonly T[]): [T][] {
 
 function policyInput(overrides: Record<string, unknown> = {}) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     priceId: 'price_pro',
     featureId: 'pro_export',
     featureConfigHash: 'a'.repeat(64),
     cancellation: 'allow_until_period_end',
-    requireInitialInvoicePaid: true,
+    requireInitialPaymentConfirmed: true,
     syncWindowSeconds: 60,
     predicateVersion: 'export-v1',
     ...overrides,
@@ -37,7 +37,7 @@ function subscription(overrides: Record<string, unknown> = {}) {
     customerId: 'cus_owned',
     priceId: 'price_pro',
     status: 'active',
-    initialInvoicePaid: true,
+    initialPaymentConfirmed: true,
     cancelAtPeriodEnd: false,
     periodEnd: 2_000,
     billingTime: 1_000,
@@ -147,8 +147,8 @@ describe('independent contract: immutable policy creation', () => {
   });
 
   it.each<[string, unknown]>([
-    ['schemaVersion', 2], ['schemaVersion', '1'],
-    ['cancellation', 'deny_immediately'], ['requireInitialInvoicePaid', false],
+    ['schemaVersion', 1], ['schemaVersion', '1'],
+    ['cancellation', 'deny_immediately'], ['requireInitialPaymentConfirmed', false],
     ['syncWindowSeconds', 4], ['syncWindowSeconds', 301],
     ['syncWindowSeconds', 5.5], ['syncWindowSeconds', '60'],
     ['syncWindowSeconds', NaN], ['syncWindowSeconds', Infinity],
@@ -198,13 +198,13 @@ describe('independent contract: expected access', () => {
     (billingTime) => expectUnknown(billing({ subscription: subscription({ cancelAtPeriodEnd: true, billingTime }) })),
   );
 
-  it.each([true, false])('denies confirmed cancellation even with invoice paid = %s', (initialInvoicePaid) => {
-    expect(accessFor(billing({ subscription: subscription({ status: 'canceled', initialInvoicePaid }) })))
+  it.each([true, false])('denies confirmed cancellation even with invoice paid = %s', (initialPaymentConfirmed) => {
+    expect(accessFor(billing({ subscription: subscription({ status: 'canceled', initialPaymentConfirmed }) })))
       .toEqual({ kind: 'deny' });
   });
 
   it('does not invent a paid entitlement for an active unpaid subscription', () => {
-    expectUnknown(billing({ subscription: subscription({ initialInvoicePaid: false }) }));
+    expectUnknown(billing({ subscription: subscription({ initialPaymentConfirmed: false }) }));
   });
 
   it.each(['trialing', 'past_due', 'unpaid', 'incomplete', 'incomplete_expired', 'paused', 'deleted', 'ACTIVE', 'future_status'])(
@@ -268,7 +268,7 @@ describe('independent contract: expected access', () => {
   });
 
   it.each<[string, unknown]>([
-    ['status', null], ['status', 1], ['initialInvoicePaid', 'true'],
+    ['status', null], ['status', 1], ['initialPaymentConfirmed', 'true'],
     ['cancelAtPeriodEnd', 1], ['extra', true],
   ])('rejects malformed subscription field %s', (field, value) => {
     expect(() => accessFor(billing({ subscription: subscription({ [field]: value }) }))).toThrow();

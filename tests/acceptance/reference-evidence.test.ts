@@ -95,7 +95,7 @@ async function replay(app: Reference, payload: unknown, validSignature = true) {
     method: 'POST', body: raw,
     headers: {
       authorization: `Bearer ${adapterToken}`, 'content-type': 'application/json',
-      'stripe-signature': `t=${timestamp},v1=${digest}`,
+      'paywallproof-replay-signature': `t=${timestamp},v1=${digest}`,
     },
   });
 }
@@ -110,7 +110,7 @@ function expectedBilling(scenario: Scenario, identity: { customerId: string; sub
     livemode: false, identityResolved: true, noSubscriptionConfirmed: false, customerId: identity.customerId,
     subscription: {
       id: identity.subscriptionId, customerId: identity.customerId, priceId,
-      status: scenario === 'SC04' ? 'canceled' : 'active', initialInvoicePaid: true,
+      status: scenario === 'SC04' ? 'canceled' : 'active', initialPaymentConfirmed: true,
       cancelAtPeriodEnd: scenario !== 'SC02', periodEnd,
       billingTime: scenario === 'SC04' ? periodEnd + 1 : scenario === 'SC03' ? startedBillingTime + 100 : startedBillingTime,
     },
@@ -145,7 +145,7 @@ async function collectScenario(
     billingTime: scenarioId === 'SC01' ? null : scenarioId === 'SC04' ? periodEnd + 1 : scenarioId === 'SC03' ? startedBillingTime + 100 : startedBillingTime,
   };
 
-  const stripe = await store.record({ ...metadata, source: 'stripe', observedAt: Date.now(), payload: expectedBilling(scenarioId, identity) });
+  const stripe = await store.record({ ...metadata, source: 'billing_provider', observedAt: Date.now(), payload: expectedBilling(scenarioId, identity) });
   const application = await store.record({ ...metadata, source: 'application', observedAt: applicationObservedAt, payload: applicationPayload });
   const api = await store.record({
     ...metadata, source: 'api_probe', observedAt: apiObservedAt,
@@ -159,7 +159,7 @@ async function collectScenario(
   });
   const result = await evaluateEvidence(store, {
     runId: identity.runId, scenarioId, subjectId: user.principalId, policy, targetBuild: buildId, mode: 'local_replay',
-    fixtureMarker: user.fixtureMarker, stripeId: stripe.id, applicationId: application.id, apiId: api.id, browserId: browser.id,
+    fixtureMarker: user.fixtureMarker, providerId: stripe.id, applicationId: application.id, apiId: api.id, browserId: browser.id,
     now: Date.now(), notBefore,
   });
   expect(result.browser.verdict).toBe('inconclusive');
@@ -194,9 +194,9 @@ describe('vertical reference/evidence acceptance: actual HTTP plus synthetic bil
     });
     evidence = new EvidenceStore(join(directory, 'evidence.sqlite'));
     const policy = createPolicy({
-      schemaVersion: 1, priceId, featureId: 'pro_export',
+      schemaVersion: 2, priceId, featureId: 'pro_export',
       featureConfigHash: createHash('sha256').update(JSON.stringify(feature)).digest('hex'),
-      cancellation: 'allow_until_period_end', requireInitialInvoicePaid: true, syncWindowSeconds: 60,
+      cancellation: 'allow_until_period_end', requireInitialPaymentConfirmed: true, syncWindowSeconds: 60,
       predicateVersion: 'reference-export-v1',
     });
     const free = await createUser(reference, identity.runId, 'free');
@@ -228,7 +228,7 @@ describe('vertical reference/evidence acceptance: actual HTTP plus synthetic bil
     const badSignature = await replay(reference, lifecycleEvent('SC02', identity), false);
     expect(badSignature.status).toBe(400);
     const afterRejectedSignature = await staging(reference, `/staging/users/${subscriber.principalId}/billing?runId=${identity.runId}`);
-    expect(await afterRejectedSignature.json()).toMatchObject({ status: 'none', initialInvoicePaid: false });
+    expect(await afterRejectedSignature.json()).toMatchObject({ status: 'none', initialPaymentConfirmed: false });
 
     const apiObservationIds = [freeResult.apiObservationId];
     for (const scenario of ['SC02', 'SC03', 'SC04'] as const) {

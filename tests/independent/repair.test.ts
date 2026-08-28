@@ -306,7 +306,7 @@ describe('independent repair: actual filesystem path safety', () => {
 });
 
 describe('independent repair: verification receipt binding', () => {
-  it.each<[string, string]>([['local_replay', 'verified_local'], ['stripe_sandbox', 'verified_stripe_sandbox']])('records only the declared synthetic %s receipt mode', async (verificationMode, state) => {
+  it.each<[string, string]>([['local_replay', 'verified_local'], ['polar_sandbox', 'verified_polar_sandbox']])('records only the declared synthetic %s receipt mode', async (verificationMode, state) => {
     const store = await open();
     const proposal = await proposedForVerification(store, { verificationMode });
     const input = verification(proposal.id);
@@ -441,7 +441,7 @@ describe('independent repair: verification receipt binding', () => {
 });
 
 describe('independent repair: exact publication approvals without provider writes', () => {
-  it.each<[string, boolean]>([['local_replay', true], ['stripe_sandbox', false]])('binds %s publication draft mode and final text', async (verificationMode, draft) => {
+  it.each<[string, boolean]>([['local_replay', true], ['polar_sandbox', false]])('binds %s publication draft mode and final text', async (verificationMode, draft) => {
     const store = await open();
     const record = await verified(store, { verificationMode });
     const pending = await store.requestPublication({ proposalId: record.id, title: 'Synthetic title', body: 'Synthetic preamble.' });
@@ -576,8 +576,8 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}
 
 function replayPolicy() {
   return createPolicy({
-    schemaVersion: 1, priceId: 'price_synthetic_replay', featureId: 'export', featureConfigHash: 'a'.repeat(64),
-    cancellation: 'allow_until_period_end', requireInitialInvoicePaid: true, syncWindowSeconds: 60, predicateVersion: 'synthetic-export-v1',
+    schemaVersion: 2, priceId: 'price_synthetic_replay', featureId: 'export', featureConfigHash: 'a'.repeat(64),
+    cancellation: 'allow_until_period_end', requireInitialPaymentConfirmed: true, syncWindowSeconds: 60, predicateVersion: 'synthetic-export-v1',
   });
 }
 
@@ -589,7 +589,7 @@ function replayBilling(scenarioId: ReplayScenario): ReplayBilling {
     livemode: false, identityResolved: true, noSubscriptionConfirmed: false, customerId: originalCustomer,
     subscription: {
       id: originalSubscription, customerId: originalCustomer, priceId: 'price_synthetic_replay',
-      status: scenarioId === 'SC04' ? 'canceled' : 'active', initialInvoicePaid: true,
+      status: scenarioId === 'SC04' ? 'canceled' : 'active', initialPaymentConfirmed: true,
       cancelAtPeriodEnd: scenarioId === 'SC03', periodEnd: 20_000,
       billingTime: scenarioId === 'SC02' ? 10_000 : scenarioId === 'SC03' ? 15_000 : 20_000,
     },
@@ -609,7 +609,7 @@ async function recordedReplay(scenarioId: ReplayScenario, overrides: Record<stri
     return await evidence.record({
       runId: originalReplayRun, scenarioId,
       subjectId: scenarioId === 'SC01' ? 'synthetic_original_free_user' : 'synthetic_original_paid_user',
-      source: 'stripe', policyHash: replayPolicy().hash, targetBuild: originalReplayBuild,
+      source: 'billing_provider', policyHash: replayPolicy().hash, targetBuild: originalReplayBuild,
       observedAt: initialTime + replayScenarios.indexOf(scenarioId) * 1_000,
       billingTime: payload.subscription?.billingTime ?? null,
       mode: 'local_replay', payload, ...overrides,
@@ -646,14 +646,14 @@ function requiredSubscription(plan: ReplayPlan, scenario: Exclude<ReplayScenario
 // EvidenceStore hashes these synthetic fixtures; no provider observation, browser
 // action, signed target replay, runtime execution or repair acceptance is claimed.
 describe('independent repair replay: isolated identities and recorded billing facts', () => {
-  it.each(['local_replay', 'stripe_sandbox'] as const)('creates an explicitly synthetic plan from coherent %s-labeled fixture records', async (mode) => {
+  it.each(['local_replay', 'polar_sandbox'] as const)('creates an explicitly synthetic plan from coherent %s-labeled fixture records', async (mode) => {
     const input = await replayInputs();
     for (const scenario of replayScenarios) {
       const index = input.observations.findIndex((record) => record.scenarioId === scenario);
       input.observations[index] = await recordedReplay(scenario, { mode });
     }
     const plan = createRepairReplayPlan(input);
-    expect(plan).toMatchObject({ schemaVersion: 1, mode: 'local_replay', policyHash: input.policy.hash });
+    expect(plan).toMatchObject({ schemaVersion: 2, mode: 'local_replay', policyHash: input.policy.hash });
     expect(plan.runId).toMatch(uuidPattern);
     expect(plan.runId).not.toBe(input.runId);
     expect(plan.markers.free).toMatch(uuidPattern);
@@ -699,11 +699,11 @@ describe('independent repair replay: isolated identities and recorded billing fa
   });
 
   it('preserves an unpaid initial-invoice fact in the canceled state', async () => {
-    const input = replaceScenario(await replayInputs(), 'SC04', await recordedReplay('SC04', { payload: replaySubscription('SC04', { initialInvoicePaid: false }) }));
+    const input = replaceScenario(await replayInputs(), 'SC04', await recordedReplay('SC04', { payload: replaySubscription('SC04', { initialPaymentConfirmed: false }) }));
     const plan = createRepairReplayPlan(input);
-    expect(requiredSubscription(plan, 'SC02').initialInvoicePaid).toBe(true);
-    expect(requiredSubscription(plan, 'SC03').initialInvoicePaid).toBe(true);
-    expect(requiredSubscription(plan, 'SC04').initialInvoicePaid).toBe(false);
+    expect(requiredSubscription(plan, 'SC02').initialPaymentConfirmed).toBe(true);
+    expect(requiredSubscription(plan, 'SC03').initialPaymentConfirmed).toBe(true);
+    expect(requiredSubscription(plan, 'SC04').initialPaymentConfirmed).toBe(false);
   });
 
   it('does not mutate frozen observations or policy and detaches the resulting plan', async () => {
@@ -808,13 +808,13 @@ describe('independent repair replay: authoritative selection and isolation', () 
     const input = await replayInputs();
     const overrides = field === 'payload'
       ? { payload: replaySubscription('SC03', { billingTime: 16_000 }) }
-      : field === 'subjectId' ? { subjectId: 'synthetic_different_paid_user' } : { mode: 'stripe_sandbox' };
+      : field === 'subjectId' ? { subjectId: 'synthetic_different_paid_user' } : { mode: 'polar_sandbox' };
     input.observations.push(await recordedReplay('SC03', overrides));
     await expectReplayRejected(() => createRepairReplayPlan(input), 'REPAIR_BILLING_EVIDENCE_REQUIRED');
   });
 
   it.each(replayScenarios)('rejects mixed execution mode in selected %s evidence', async (scenario) => {
-    const input = replaceScenario(await replayInputs(), scenario, await recordedReplay(scenario, { mode: 'stripe_sandbox' }));
+    const input = replaceScenario(await replayInputs(), scenario, await recordedReplay(scenario, { mode: 'polar_sandbox' }));
     await expectReplayRejected(() => createRepairReplayPlan(input), 'REPAIR_BILLING_EVIDENCE_REQUIRED');
   });
 
@@ -863,9 +863,9 @@ describe('independent repair replay: missing, malformed and unsupported state', 
     ['SC01', { ...replayBilling('SC01'), customerId: 'cus_synthetic_free' }],
     ['SC01', replayBilling('SC02')],
     ['SC02', replaySubscription('SC02', { status: 'trialing' })],
-    ['SC02', replaySubscription('SC02', { initialInvoicePaid: false })],
+    ['SC02', replaySubscription('SC02', { initialPaymentConfirmed: false })],
     ['SC02', replaySubscription('SC02', { cancelAtPeriodEnd: true })],
-    ['SC03', replaySubscription('SC03', { initialInvoicePaid: false })],
+    ['SC03', replaySubscription('SC03', { initialPaymentConfirmed: false })],
     ['SC03', replaySubscription('SC03', { cancelAtPeriodEnd: false })],
     ['SC03', replaySubscription('SC03', { billingTime: 20_000 })],
     ['SC04', replaySubscription('SC04', { status: 'active' })],
@@ -904,7 +904,7 @@ describe('independent repair replay: deterministic explicit synthetic event payl
         metadata: { runId: plan.runId }, status: state.status, cancel_at_period_end: state.cancelAtPeriodEnd,
         items: { data: [{ price: { id: state.priceId, livemode: false }, current_period_end: state.periodEnd }], has_more: false },
         latest_invoice: {
-          id: expect.stringMatching(/\S/), object: 'invoice', livemode: false, status: state.initialInvoicePaid ? 'paid' : 'open',
+          id: expect.stringMatching(/\S/), object: 'invoice', livemode: false, status: state.initialPaymentConfirmed ? 'paid' : 'open',
           customer: state.customerId, billing_reason: 'subscription_create', parent: { subscription_details: { subscription: state.id } },
         },
       } },
@@ -924,7 +924,7 @@ describe('independent repair replay: deterministic explicit synthetic event payl
   });
 
   it('renders open invoice status only for the recorded false payment fact', async () => {
-    const input = replaceScenario(await replayInputs(), 'SC04', await recordedReplay('SC04', { payload: replaySubscription('SC04', { initialInvoicePaid: false }) }));
+    const input = replaceScenario(await replayInputs(), 'SC04', await recordedReplay('SC04', { payload: replaySubscription('SC04', { initialPaymentConfirmed: false }) }));
     const plan = createRepairReplayPlan(input);
     const canceled = JSON.parse(replayPayload(plan, 'SC04'));
     expect(canceled.data.object.latest_invoice.status).toBe('open');

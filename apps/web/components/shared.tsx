@@ -5,7 +5,7 @@ export function Badge({ children, tone = 'neutral' }: { children: ReactNode; ton
   return <span className={`badge badge-${tone}`}><span className="badge-dot" />{children}</span>;
 }
 export function ModeBadge({ mode }: { mode: Mode }) {
-  return <Badge tone={mode === 'local_replay' ? 'amber' : 'blue'}>{mode === 'local_replay' ? 'Local replay' : 'Stripe sandbox'}</Badge>;
+  return <Badge tone={mode === 'local_replay' ? 'amber' : 'blue'}>{mode === 'local_replay' ? 'Local replay' : 'Polar sandbox'}</Badge>;
 }
 export function RunBadge({ run }: { run: Run }) {
   const label = run.status === 'stopping' ? 'Stopping' : run.outcome ?? ({ awaiting_plan_approval: 'Needs approval', running: 'Running', stopping: 'Stopping', canceled: 'Canceled', completed: 'Untested' })[run.status];
@@ -19,7 +19,7 @@ export function ErrorNotice({ error }: { error: { code: string; message: string 
   return error ? <div className="error-notice" role="alert"><strong>{error.code.replaceAll('_', ' ')}</strong><p>{error.message}</p></div> : null;
 }
 export function ReplayNotice() {
-  return <div className="replay-warning"><span aria-hidden="true">◈</span><div><strong>Local replay uses synthetic billing events.</strong><span> It exercises the real target and ordinary user session. It does not verify Stripe delivery or a live sandbox integration.</span></div></div>;
+  return <div className="replay-warning"><span aria-hidden="true">◈</span><div><strong>Local replay uses synthetic billing events.</strong><span> It exercises the real target and ordinary user session. It does not verify Polar delivery or a live sandbox integration.</span></div></div>;
 }
 export function EmptyState({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
   return <div className="empty-state"><div className="empty-icon" aria-hidden="true">▤</div><h3>{title}</h3><p>{children}</p>{action}</div>;

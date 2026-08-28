@@ -9,7 +9,7 @@ import { createReferenceLauncher } from './launcher.ts';
 
 const execute = promisify(execFile);
 const buildId = 'a'.repeat(40), priceId = 'price_fixtureOnly';
-const names = ['next', 'react', 'react-dom', 'hono', 'zod', 'stripe', 'better-sqlite3', 'typescript', '@types/react', '@types/node'];
+const names = ['next', 'react', 'react-dom', 'hono', 'zod', 'standardwebhooks', 'better-sqlite3', 'typescript', '@types/react', '@types/node'];
 let parent = '', root = '';
 const bridge = '../uploads/pp_000000000000000000000000_bridge.cjs';
 async function put(path: string, value: string) { await mkdir(dirname(path), { recursive: true }); await writeFile(path, value); }
@@ -17,7 +17,7 @@ const record = "const fs=require('node:fs'),p=require('node:path').join(process.
 async function run(extra: Partial<NodeJS.ProcessEnv> = {}) {
   return execute(process.execPath, ['_trusted/reference.cjs'], { cwd: root,
     env: { NODE_ENV: 'test', PATH: '/usr/bin:/bin', HOME: root, TMPDIR: root,
-      TARGET_ADAPTER_TOKEN: '1'.repeat(64), STRIPE_WEBHOOK_SECRET: '2'.repeat(64), LOCAL_REPLAY_SECRET: '3'.repeat(64),
+      TARGET_ADAPTER_TOKEN: '1'.repeat(64), POLAR_WEBHOOK_SECRET: '2'.repeat(64), LOCAL_REPLAY_SECRET: '3'.repeat(64),
       PP_REPAIR_BRIDGE_MODULE: join(parent, 'uploads/pp_000000000000000000000000_bridge.cjs'), ...extra }, timeout: 5_000, maxBuffer: 10_000 });
 }
 beforeEach(async () => {
@@ -33,7 +33,7 @@ beforeEach(async () => {
   for (const name of ['apps/demo-saas/app/layout.tsx', 'apps/demo-saas/app/dashboard/page.tsx', 'apps/demo-saas/server.ts', 'apps/demo-saas/next.config.ts']) await put(join(root, name), '// synthetic source, never executed');
   for (const name of ['typescript/lib/typescript.js', 'typescript/bin/tsc', '@types/react/index.d.ts', '@types/node/index.d.ts', 'better-sqlite3/build/Release/better_sqlite3.node']) await put(join(root, 'node_modules', name), 'synthetic preflight bytes');
   await put(join(root, 'node_modules/next/dist/build/swc/index.js'), record + "exports.loadBindingsSync=()=>{record({kind:'native-preflight',ci:process.env.CI,wasm:process.env.NEXT_DISABLE_SWC_WASM});return {isWasm:false};};");
-  await put(join(root, 'node_modules/next/dist/server/next.js'), record + "module.exports=options=>{record({kind:'next',options,env:{nodeEnv:process.env.NODE_ENV,priceId:process.env.STRIPE_PRICE_ID,buildId:process.env.TARGET_BUILD_ID,staging:process.env.STAGING_ENABLED}});return{prepare:async()=>record({kind:'prepare'}),getRequestHandler:()=>()=>{},close:async()=>record({kind:'close'})};};");
+  await put(join(root, 'node_modules/next/dist/server/next.js'), record + "module.exports=options=>{record({kind:'next',options,env:{nodeEnv:process.env.NODE_ENV,priceId:process.env.BILLING_PRICE_ID,buildId:process.env.TARGET_BUILD_ID,staging:process.env.STAGING_ENABLED}});return{prepare:async()=>record({kind:'prepare'}),getRequestHandler:()=>()=>{},close:async()=>record({kind:'close'})};};");
   await put(join(root, 'node_modules/better-sqlite3/lib/index.js'), record + "module.exports=class{constructor(name){record({kind:'sqlite',name});}close(){record({kind:'sqlite-close'});}};");
   await put(join(parent, 'uploads', 'pp_000000000000000000000000_bridge.cjs'), record + "exports.serve=async handler=>{if(typeof handler!=='function')throw Error('handler');record({kind:'bridge'});};");
 });

@@ -12,6 +12,16 @@ const metadataSchema = z.strictObject({
   sha256: z.string().regex(/^[a-f0-9]{64}$/), contentType: z.literal('image/png'), source: z.literal('browser'),
   collectedAt: timestamp, sizeBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(), expiresAt: timestamp.optional(),
 });
+const repairMetadataSchema = metadataSchema.extend({
+  repairRunId: z.uuid(), repairJobId: z.uuid(), phase: z.enum(['before', 'after']),
+}).refine(value => value.repairRunId !== value.runId);
+
+/** Only the worker's complete repair annotation may be removed at the download boundary. */
+export function artifactDownloadMetadata(stored: unknown): unknown {
+  const repair = repairMetadataSchema.safeParse(stored);
+  // Keep malformed records intact so the strict download service rejects them.
+  return repair.success ? metadataSchema.strip().parse(repair.data) : stored;
+}
 const inputSchema = z.strictObject({ runId: identifier, artifactId });
 const configurationSchema = z.strictObject({
   rootDirectory: z.string().min(1).refine(isAbsolute),
@@ -43,6 +53,13 @@ export class ArtifactError extends Error {
     super(messages[code]);
     this.status = statuses[code];
   }
+}
+export function artifactRetentionFromDays(value: unknown): number {
+  const parsed = z.string().regex(/^[1-9][0-9]*$/).transform(Number)
+    .pipe(z.number().int().positive().max(Math.floor(Number.MAX_SAFE_INTEGER / 86_400_000)))
+    .safeParse(value === undefined ? '7' : value);
+  if (!parsed.success) throw new ArtifactError('ARTIFACT_CONFIGURATION_INVALID');
+  return parsed.data * 86_400_000;
 }
 export type ArtifactMetadata = z.infer<typeof metadataSchema>;
 export type ArtifactServiceOptions = {

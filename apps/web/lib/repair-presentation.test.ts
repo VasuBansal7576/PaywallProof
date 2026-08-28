@@ -13,7 +13,7 @@ const policyHash = 'b'.repeat(64);
 function runFixture(): Run {
   return runSchema.parse({
     id: 'run_presentation', projectId: 'project_presentation', targetBuild: sha, featureConfigHash: 'f'.repeat(64), mode: 'local_replay', status: 'completed', outcome: 'failed',
-    policy: { schemaVersion: 1, priceId: 'price_test', featureId: 'pro_export', featureConfigHash: 'f'.repeat(64), cancellation: 'allow_until_period_end', requireInitialInvoicePaid: true, syncWindowSeconds: 60, predicateVersion: 'reference-export-v1', hash: policyHash },
+    policy: { schemaVersion: 2, priceId: 'price_test', featureId: 'pro_export', featureConfigHash: 'f'.repeat(64), cancellation: 'allow_until_period_end', requireInitialPaymentConfirmed: true, syncWindowSeconds: 60, predicateVersion: 'reference-export-v1', hash: policyHash },
     createdAt: now - 100_000, startedAt: now - 90_000, verdicts: ['failed'], approval: { id: 'original_approval', bindingHash: 'a'.repeat(64), expiresAt: now - 10_000, decision: 'allow' },
   });
 }

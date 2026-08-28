@@ -5,7 +5,7 @@ const identifier = z.string().min(1);
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 export const observationSchema = z.object({
   id: identifier, runId: identifier, scenarioId: identifier, subjectId: identifier,
-  source: z.enum(['stripe', 'application', 'api_probe', 'browser']), policyHash: digest, targetBuild: identifier,
+  source: z.enum(['billing_provider', 'application', 'api_probe', 'browser']), policyHash: digest, targetBuild: identifier,
   observedAt: z.number().int().nonnegative().max(8_640_000_000_000_000), billingTime: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).nullable(),
   mode: modeSchema, sha256: digest, payload: z.unknown(),
 });
@@ -20,7 +20,7 @@ export type Artifact = z.infer<typeof artifactSchema>;
 export type EvidenceFacts = { kind: 'recorded'; observation: Observation; facts: Array<{ label: string; value: string }> } | { kind: 'unavailable'; reason: string };
 const billingSchema = z.object({
   livemode: z.boolean(), identityResolved: z.boolean(), noSubscriptionConfirmed: z.boolean(), customerId: identifier.nullable(),
-  subscription: z.object({ id: identifier, customerId: identifier, priceId: identifier, status: identifier, initialInvoicePaid: z.boolean(), cancelAtPeriodEnd: z.boolean(), periodEnd: z.number(), billingTime: z.number() }).nullable(),
+  subscription: z.object({ id: identifier, customerId: identifier, priceId: identifier, status: identifier, initialPaymentConfirmed: z.boolean(), cancelAtPeriodEnd: z.boolean(), periodEnd: z.number(), billingTime: z.number() }).nullable(),
 });
 const applicationSchema = z.object({ principalId: identifier, runId: identifier, customerId: identifier.nullable(), status: identifier, buildId: identifier });
 const probeSchema = z.object({ status: z.number().int().min(100).max(599).nullable(), body: z.unknown(), transportError: z.boolean(), denialStatuses: z.array(z.number()) });
@@ -39,13 +39,13 @@ export function scenarioEvidence(detail: RunDetail, scenario: Scenario, source: 
   if (new Set(linked.map(record => record.subjectId)).size !== 1) return { kind: 'unavailable', reason: 'The linked observations contain different principals. No combined scenario summary is available.' };
   if (observation.runId !== detail.run.id || observation.scenarioId !== scenario.id || observation.policyHash !== detail.run.policy.hash || observation.targetBuild !== detail.run.targetBuild || observation.mode !== detail.run.mode) return { kind: 'unavailable', reason: 'The linked observation does not match this run, scenario, policy, mode, and target build.' };
   const facts: Array<{ label: string; value: string }> = [];
-  if (source === 'stripe') {
+  if (source === 'billing_provider') {
     const parsed = billingSchema.safeParse(observation.payload);
     if (!parsed.success) return { kind: 'unavailable', reason: 'The recorded provider payload has an unsupported shape. Inspect the raw observation.' };
     const billing = parsed.data;
-    facts.push({ label: 'Billing source', value: observation.mode === 'local_replay' ? 'Synthetic local replay' : 'Stripe sandbox' }, { label: 'Identity resolved', value: billing.identityResolved ? 'Yes' : 'No' }, { label: 'Mode flag', value: billing.livemode ? 'Live mode, outside allowed scope' : 'Test mode' }, { label: 'Customer', value: billing.customerId ?? 'No customer recorded' });
+    facts.push({ label: 'Billing source', value: observation.mode === 'local_replay' ? 'Synthetic local replay' : 'Polar sandbox' }, { label: 'Identity resolved', value: billing.identityResolved ? 'Yes' : 'No' }, { label: 'Mode flag', value: billing.livemode ? 'Live mode, outside allowed scope' : 'Test mode' }, { label: 'Customer', value: billing.customerId ?? 'No customer recorded' });
     if (!billing.subscription) facts.push({ label: 'Subscription', value: billing.noSubscriptionConfirmed ? 'Absence confirmed' : 'Not resolved' });
-    else facts.push({ label: 'Subscription', value: billing.subscription.id }, { label: 'Provider status', value: billing.subscription.status }, { label: 'Price', value: billing.subscription.priceId }, { label: 'Initial invoice paid', value: billing.subscription.initialInvoicePaid ? 'Yes' : 'No' }, { label: 'Cancel at period end', value: billing.subscription.cancelAtPeriodEnd ? 'Yes' : 'No' }, { label: 'Period boundary', value: `${billing.subscription.periodEnd} Unix seconds` });
+    else facts.push({ label: 'Subscription', value: billing.subscription.id }, { label: 'Provider status', value: billing.subscription.status }, { label: 'Price', value: billing.subscription.priceId }, { label: 'Initial invoice paid', value: billing.subscription.initialPaymentConfirmed ? 'Yes' : 'No' }, { label: 'Cancel at period end', value: billing.subscription.cancelAtPeriodEnd ? 'Yes' : 'No' }, { label: 'Period boundary', value: `${billing.subscription.periodEnd} Unix seconds` });
   } else if (source === 'application') {
     const parsed = applicationSchema.safeParse(observation.payload);
     if (!parsed.success) return { kind: 'unavailable', reason: 'The recorded application payload has an unsupported shape. Inspect the raw observation.' };
@@ -85,7 +85,7 @@ export function linkedArtifacts(detail: RunDetail, observationIds: string[], sce
 export function expectedRule(scenarioId: string): string {
   switch (scenarioId) {
     case 'SC01': return 'An authenticated user with no subscription must be denied the protected export without receiving fixture data.';
-    case 'SC02': return 'An active subscription for the configured price with a paid initial invoice permits the protected export.';
+    case 'SC02': return 'An active subscription for the configured price with a paid initial order permits the protected export.';
     case 'SC03': return 'Scheduled cancellation preserves paid access before the period boundary while the subscription is active.';
     case 'SC04': return 'After provider-confirmed cancellation and the synchronization deadline, the protected export must be denied without returning fixture data.';
     default: return 'This scenario is outside the declared core lifecycle. No expected rule has been inferred.';

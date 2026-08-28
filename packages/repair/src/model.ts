@@ -21,7 +21,7 @@ const allowedPathsSchema=z.array(pathSchema).min(1).max(100).refine(paths=>new S
 export const proposalSchema=z.strictObject({
   runId:identifier,findingId:identifier,attempt:z.union([z.literal(1),z.literal(2)]),baseCommit:gitSha,baseBranch:branchSchema,
   repository:repositorySchema,branch:branchSchema,policyHash:digest,oracleHash:digest,allowedPaths:allowedPathsSchema,
-  changes:changesSchema,diffHash:digest,verificationMode:z.enum(['local_replay','stripe_sandbox']),failureCode:identifier,
+  changes:changesSchema,diffHash:digest,verificationMode:z.enum(['local_replay','polar_sandbox']),failureCode:identifier,
   summary:z.string().min(1).max(4000),reportUrl:z.string().url().refine(value=>{const url=new URL(value);return ['https:','http:'].includes(url.protocol)&&!url.username&&!url.password;}),
 });
 export const receiptSchema=z.strictObject({id:identifier,executionId:identifier,checkId:identifier,oracleHash:digest,policyHash:digest,baseCommit:gitSha,diffHash:digest.nullable(),artifactHash:digest,observedAt:timestamp,exitCode:z.number().int().min(0).max(255),outcome:z.enum(['pass','fail']),failureCode:identifier.nullable()});
@@ -33,7 +33,7 @@ export const approvalSchema=z.strictObject({id:identifier,bindingHash:digest,exp
 export const publicationReceiptSchema=z.strictObject({repository:repositorySchema,branch:branchSchema,baseCommit:gitSha,commitSha:gitSha,treeSha:gitSha,prNumber:z.number().int().positive(),url:z.string().url(),draft:z.boolean(),manifestHash:digest,collectedAt:timestamp,transportMode:z.enum(['github','synthetic'])});
 export const resultSchema=z.strictObject({kind:z.enum(['published','synthetic']),receipt:publicationReceiptSchema});
 export const progressSchema=z.strictObject({transportMode:z.enum(['github','synthetic']),treeSha:gitSha.nullable(),commitSha:gitSha.nullable(),prAttempted:z.boolean(),result:resultSchema.nullable()});
-export const recordSchema=z.strictObject({id:identifier,createdAt:timestamp,proposal:proposalSchema,state:z.enum(['proposed','verified_local','verified_stripe_sandbox','awaiting_publication','published','abandoned']),manifest:manifestSchema.nullable(),manifestHash:digest.nullable(),approval:approvalSchema.nullable(),progress:progressSchema.nullable(),leaseToken:identifier.nullable(),leaseUntil:timestamp});
+export const recordSchema=z.strictObject({id:identifier,createdAt:timestamp,proposal:proposalSchema,state:z.enum(['proposed','verified_local','verified_polar_sandbox','awaiting_publication','published','abandoned']),manifest:manifestSchema.nullable(),manifestHash:digest.nullable(),approval:approvalSchema.nullable(),progress:progressSchema.nullable(),leaseToken:identifier.nullable(),leaseUntil:timestamp});
 export type RepairRecord=z.infer<typeof recordSchema>;
 export type PublicationProgress=z.infer<typeof progressSchema>;
 export function checked<T>(schema:z.ZodType<T>,input:unknown):T {try{return schema.parse(parseJson(input));}catch{throw new RepairError('INVALID_INPUT');}}

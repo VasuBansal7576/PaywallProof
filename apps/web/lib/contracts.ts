@@ -1,17 +1,17 @@
 import { z } from 'zod';
 
-export const modeSchema = z.enum(['stripe_sandbox', 'local_replay']);
+export const modeSchema = z.enum(['polar_sandbox', 'local_replay']);
 export type Mode = z.infer<typeof modeSchema>;
 export const configSchema = z.object({
   target: z.object({ id: z.literal('reference'), origin: z.string() }), repository: z.string(), defaultRef: z.string(),
-  stripeConfigured: z.boolean(), priceId: z.string(), model: z.string(), limits: z.record(z.string(), z.unknown()), coverageLimits: z.array(z.string()),
+  polarConfigured: z.boolean(), priceId: z.string(), model: z.string(), limits: z.record(z.string(), z.unknown()), coverageLimits: z.array(z.string()),
 });
 export type Config = z.infer<typeof configSchema>;
 export const projectSchema = z.object({ id: z.string(), name: z.string(), repository: z.string(), ref: z.string(), targetId: z.literal('reference'), ownershipConfirmed: z.boolean(), modelConsent: z.boolean() });
 export type Project = z.infer<typeof projectSchema>;
 export const policySchema = z.object({
-  schemaVersion: z.literal(1), priceId: z.string(), featureId: z.string(), featureConfigHash: z.string(),
-  cancellation: z.literal('allow_until_period_end'), requireInitialInvoicePaid: z.literal(true), syncWindowSeconds: z.number(), predicateVersion: z.string(), hash: z.string(),
+  schemaVersion: z.literal(2), priceId: z.string(), featureId: z.string(), featureConfigHash: z.string(),
+  cancellation: z.literal('allow_until_period_end'), requireInitialPaymentConfirmed: z.literal(true), syncWindowSeconds: z.number(), predicateVersion: z.string(), hash: z.string(),
 });
 export type Policy = z.infer<typeof policySchema>;
 export const runSchema = z.object({
@@ -42,7 +42,7 @@ export type Preflight = z.infer<typeof preflightSchema>;
 
 export const scenarios = [
   { id: 'SC01', title: 'Free user', description: 'An ordinary free user cannot export protected data.' },
-  { id: 'SC02', title: 'Paid activation', description: 'An active subscription with a paid initial invoice can export.' },
+  { id: 'SC02', title: 'Paid activation', description: 'An active subscription with a paid initial order can export.' },
   { id: 'SC03', title: 'Scheduled cancellation', description: 'Access continues before the paid period ends.' },
   { id: 'SC04', title: 'Cancellation boundary', description: 'Confirmed cancellation removes protected access.' },
 ];

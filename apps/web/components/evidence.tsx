@@ -9,7 +9,7 @@ import { Badge, EmptyState, ErrorNotice, JsonDetails, formatDate, shortId } from
 
 export function ScenarioEvidence({ detail, scenario }: { detail: RunDetail; scenario: Scenario }) {
   const sources = [
-    { source: 'stripe', label: detail.run.mode === 'local_replay' ? 'Recorded replay billing' : 'Recorded Stripe state' },
+    { source: 'billing_provider', label: detail.run.mode === 'local_replay' ? 'Recorded replay billing' : 'Recorded Polar state' },
     { source: 'application', label: 'Stored application state' },
     { source: 'api_probe', label: 'Ordinary API request' },
     { source: 'browser', label: 'Ordinary browser action' },

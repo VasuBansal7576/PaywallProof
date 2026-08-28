@@ -33,9 +33,12 @@ export class BrowserRunner {
       const page = await context.newPage();
       page.setDefaultTimeout(15_000);
       await page.goto(new URL('/dashboard',origin).href,{waitUntil:'domcontentloaded',timeout:30_000});
-      const responsePromise = page.waitForResponse(response=>response.url()===new URL('/api/export',origin).href&&response.request().method()==='GET');
-      await page.getByTestId('export-button').click();
-      const response = await responsePromise;
+      // Attach handlers to both promises immediately. A response timeout can occur
+      // while Playwright is still waiting for a missing or disabled export button.
+      const [response] = await Promise.all([
+        page.waitForResponse(response=>response.url()===new URL('/api/export',origin).href&&response.request().method()==='GET'),
+        page.getByTestId('export-button').click(),
+      ]);
       let networkBody:unknown;
       try { networkBody=await response.json(); } catch { networkBody=await response.text(); }
       const result = page.getByTestId('export-result');

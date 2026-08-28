@@ -48,7 +48,7 @@ describe('repair security controls against real local handlers',()=>{
     const results=await probeRepairSecurity(input);
     expect(results.map(result=>result.id)).toEqual(SECURITY_CONTROLS);
     expect(results.filter(result=>result.outcome!=='pass')).toEqual([]);
-    expect(await target.snapshot({runId:input.runId,principalId:input.principalId})).toMatchObject({status:'none',initialInvoicePaid:false});
+    expect(await target.snapshot({runId:input.runId,principalId:input.principalId})).toMatchObject({status:'none',initialPaymentConfirmed:false});
   });
   it('rejects an export route that grants access without a session',async()=>{
     fault='public-export';

@@ -7,15 +7,15 @@ import { z } from 'zod';
 const userSchema = z.object({
   id: z.string(), run_id: z.string(), fixture_marker: z.string(), customer_id: z.string().nullable(),
   status: z.string(), subscription_id: z.string().nullable(), price_id: z.string().nullable(),
-  initial_invoice_paid: z.number(), cancel_at_period_end: z.number(), period_end: z.number().nullable(),
-  billing_mode: z.enum(['none', 'local_replay', 'stripe_sandbox']), last_event_created: z.number(),
+  initial_payment_confirmed: z.number(), cancel_at_period_end: z.number(), period_end: z.number().nullable(),
+  billing_mode: z.enum(['none', 'local_replay', 'polar_sandbox']), last_event_created: z.number(),
 });
 export type User = z.infer<typeof userSchema>;
 export type BillingUpdate = {
   customerId: string; subscriptionId: string; priceId: string; status: string;
-  initialInvoicePaid: boolean; cancelAtPeriodEnd: boolean; periodEnd: number;
+  initialPaymentConfirmed: boolean; cancelAtPeriodEnd: boolean; periodEnd: number;
 };
-export type EventMode = 'local_replay' | 'stripe_sandbox';
+export type EventMode = 'local_replay' | 'polar_sandbox';
 
 export class TargetError extends Error {
   constructor(readonly code: string, readonly status: 400 | 401 | 403 | 404 | 409 | 410 | 413 | 422 | 503) {
@@ -37,7 +37,7 @@ export class ReferenceStore {
       CREATE TABLE IF NOT EXISTS reference_users (
         id TEXT PRIMARY KEY, run_id TEXT NOT NULL, fixture_marker TEXT NOT NULL,
         customer_id TEXT UNIQUE, status TEXT NOT NULL DEFAULT 'none', subscription_id TEXT,
-        price_id TEXT, initial_invoice_paid INTEGER NOT NULL DEFAULT 0,
+        price_id TEXT, initial_payment_confirmed INTEGER NOT NULL DEFAULT 0,
         cancel_at_period_end INTEGER NOT NULL DEFAULT 0, period_end INTEGER,
         billing_mode TEXT NOT NULL DEFAULT 'none', last_event_created INTEGER NOT NULL DEFAULT 0
       );
@@ -159,7 +159,7 @@ export class ReferenceStore {
       if (input.mode === 'local_replay' && input.created < current.last_event_created) return 'stale';
       if (!input.skipProjection) {
         const b = input.billing;
-        this.db.prepare(`UPDATE reference_users SET status = ?, subscription_id = ?, price_id = ?, initial_invoice_paid = ?, cancel_at_period_end = ?, period_end = ?, billing_mode = ?, last_event_created = ? WHERE id = ?`).run(b.status, b.subscriptionId, b.priceId, Number(b.initialInvoicePaid), Number(b.cancelAtPeriodEnd), b.periodEnd, input.mode, Math.max(input.created, current.last_event_created), current.id);
+        this.db.prepare(`UPDATE reference_users SET status = ?, subscription_id = ?, price_id = ?, initial_payment_confirmed = ?, cancel_at_period_end = ?, period_end = ?, billing_mode = ?, last_event_created = ? WHERE id = ?`).run(b.status, b.subscriptionId, b.priceId, Number(b.initialPaymentConfirmed), Number(b.cancelAtPeriodEnd), b.periodEnd, input.mode, Math.max(input.created, current.last_event_created), current.id);
       } else {
         this.db.prepare('UPDATE reference_users SET billing_mode = ?, last_event_created = ? WHERE id = ?').run(input.mode, Math.max(input.created, current.last_event_created), current.id);
       }
