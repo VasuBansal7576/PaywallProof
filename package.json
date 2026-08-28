@@ -18,6 +18,7 @@
     "test:acceptance": "vitest run tests/acceptance",
     "test:polar": "tsx scripts/verify-polar.ts",
     "test:runtime": "tsx scripts/verify-runtime.ts",
+    "test:repair": "tsx scripts/verify-repair.ts",
     "demo:reset": "tsx scripts/reset-reference.ts"
   },
   "dependencies": {

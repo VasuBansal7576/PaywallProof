@@ -50,7 +50,10 @@ For Polar runs, configure `POLAR_ACCESS_TOKEN`, `POLAR_REFERENCE_TOKEN`, `POLAR_
 | `pnpm test:acceptance` | Local reference integration tests |
 | `pnpm test:polar` | Real read-only Polar preflight; not lifecycle acceptance |
 | `pnpm test:runtime` | TrueForge installation and approval behavior |
+| `pnpm test:repair` | Isolated fault injection, model-generated repair and unchanged before/after oracle |
 | `pnpm exec tsx scripts/verify-local-workflow.ts` | Full local-replay product run through TrueForge |
 | `pnpm demo:reset` | Stop inventoried runs and clean only their owned fixtures |
 
 Provider audit records are retained honestly. An active or unexpired checkout that cannot be safely removed remains a reported leftover. A retained report never becomes a fresh verification merely because it is still accessible.
+
+`pnpm test:repair` requires the real `.local/local-workflow-report.json` produced by the local workflow verifier and at least 4 GiB free. It copies committed source into an isolated repository, injects a scheduled-cancellation fault, reproduces it through the real application, then asks the installed local model to repair it. Only the explicit application-source allowlist reaches the model, never this script or the host evaluator. Results remain under `.local/full-repair-*/`; failures are preserved. It makes no provider, publication or paid model call and does not modify the working application.

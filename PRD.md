@@ -111,7 +111,7 @@ The target application MUST expose the small staging adapter defined in section 
 
 The MVP does not support production scans, real charges, refunds, tax calculations, discounts, metered billing, credits, multiple subscriptions per user, team-level entitlements, multiple currencies, disputes, or Polar Connect.
 
-The MVP does not automate Polar's hosted card-entry UI. Subscription creation through the Polar API tests billing state and feature access, not the checkout form. The report MUST state this coverage limit.
+The MVP does not automate Polar's hosted card-entry UI. The authenticated operator flow exposes a sandbox checkout link for completion with official test payment details. Automation then observes the resulting subscription, paid initial order and feature access. It does not claim to test checkout form usability. The report MUST state this coverage limit.
 
 The MVP does not include a universal vulnerability scanner, a generic test-generation platform, automatic merging, automatic production deployment, or repairing production account data.
 

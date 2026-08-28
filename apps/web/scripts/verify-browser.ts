@@ -200,6 +200,39 @@ try {
   await expect(fixturePage.locator('.run-summary')).toContainText('Connected');
   expect(fixtureMutations).toBe(0);
   record('run-read recovery clears stale errors, retains saved results and creates no mutations');
+
+  // A separate intercepted context exercises config polling while preflight is
+  // ready. No request from this fixture can reach the worker.
+  const changedContext = await browser.newContext();
+  const changedPage = await changedContext.newPage();
+  changedPage.on('pageerror', error => errors.push(error.message));
+  let polledConfig = config;
+  let forbiddenWrites = 0;
+  const currentFixture = { ...project, ref: config.defaultRef, repository: config.repository };
+  await changedContext.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (route.request().method() === 'POST' && path === `/api/projects/${project.id}/preflight`) {
+      await route.fulfill({ json: { ready: true, featureConfigHash: run.policy.featureConfigHash, checks: ['Target', 'Billing mode', 'TrueForge'].map(name => ({ name, status: 'pass', detail: 'Isolated presentation fixture, not a real preflight.' })) } }); return;
+    }
+    if (route.request().method() !== 'GET') { forbiddenWrites++; await route.fulfill({ status: 409, json: {} }); return; }
+    const response = path === '/api/session' ? { csrfToken: 'presentation-only-no-auth' } : path === '/api/config' ? polledConfig : path === '/api/projects' ? [currentFixture] : path === '/api/runs' ? [] : path === `/api/projects/${project.id}/policies` ? [run.policy] : null;
+    await route.fulfill({ status: response === null ? 404 : 200, json: response });
+  });
+  await changedPage.goto(`${origin}/projects/${project.id}`);
+  await changedPage.getByRole('radio').first().check();
+  await changedPage.getByRole('button', { name: 'Check prerequisites', exact: true }).click();
+  await expect(changedPage.getByRole('button', { name: 'Review run approval', exact: true })).toBeEnabled();
+  polledConfig = { ...config, defaultRef: `${config.defaultRef}-changed` };
+  await expect(changedPage.getByRole('status', { name: 'Project configuration changed' })).toBeVisible({ timeout: 10_000 });
+  await expect(changedPage.getByRole('button', { name: 'Review run approval', exact: true })).toBeDisabled();
+  await expect(changedPage.getByRole('button', { name: 'Save immutable policy', exact: true })).toBeDisabled();
+  await expect(changedPage.locator('.check-row')).toHaveCount(0);
+  polledConfig = config;
+  await expect(changedPage.getByRole('status', { name: 'Project configuration changed' })).toHaveCount(0, { timeout: 10_000 });
+  await expect(changedPage.getByRole('button', { name: 'Review run approval', exact: true })).toBeDisabled();
+  expect(forbiddenWrites).toBe(0);
+  await changedContext.close();
+  record('configuration refresh invalidates ready preflight; reverting configuration cannot revive old approval state');
   expect(errors).toEqual([]);
   await writeFile(`${output}/verification.json`, JSON.stringify({ at: new Date().toISOString(), liveRunId: run.id, checks, browserErrors: errors, providerMutations: 0, newProjects: 0, newRuns: 0, fixturesPersisted: false }, null, 2));
 } finally { await browser.close(); }
