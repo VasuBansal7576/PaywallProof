@@ -18,6 +18,8 @@
     "test:acceptance": "vitest run tests/acceptance",
     "test:polar": "tsx scripts/verify-polar.ts",
     "test:runtime": "tsx scripts/verify-runtime.ts",
+    "model:configure": "tsx scripts/configure-free-model.ts",
+    "dev:model": "tsx scripts/start-free-model.ts",
     "test:repair": "tsx scripts/verify-repair.ts",
     "demo:reset": "tsx scripts/reset-reference.ts"
   },

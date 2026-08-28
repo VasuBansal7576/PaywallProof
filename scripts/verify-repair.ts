@@ -14,6 +14,7 @@ import { createRepairReplayPlan, oracleFingerprint } from '../packages/repair/sr
 import { runRepairOracleProcess } from '../packages/repair/src/oracle-process.ts';
 import { RepairCoordinator } from '../apps/worker/src/repairs.ts';
 import { assertRepairDiskCapacity } from '../packages/repair/src/capacity.ts';
+import { runtimeModel } from './free-model-config.ts';
 
 // Explicit fault-injection acceptance test, not a production finding or payment.
 // Only an isolated Git copy is changed. The generator never receives host tests.
@@ -23,11 +24,12 @@ const directory = resolve(root, '.local', `full-repair-${randomUUID()}`);
 const repositoryRoot = resolve(directory, 'repository');
 await mkdir(repositoryRoot, { recursive: true, mode: 0o700 });
 const reportPath = resolve(directory, 'acceptance.json');
-const report: Record<string, unknown> = { scope: 'isolated-fault-injection-acceptance', mode: 'local_replay', noProviderCalls: true, noPublication: true, generatorHasHostTests: false, startedAt: new Date().toISOString(), status: 'running' };
+const report: Record<string, unknown> = { scope: 'isolated-fault-injection-acceptance', mode: 'local_replay', noBillingProviderCalls: true, noPublication: true, generatorHasHostTests: false, startedAt: new Date().toISOString(), status: 'running' };
 const save = async () => writeFile(reportPath, JSON.stringify(report, null, 2), { mode: 0o600 });
 const progress = async (phase: string) => { report.phase = phase; await save(); process.stdout.write(`${phase}\n`); };
 const runtimeUrl = 'http://127.0.0.1:8790';
-const model = 'paywallproof-local/qwen3-4b-instruct';
+const model = await runtimeModel();
+report.model = model;
 const runtime = new TrueForgeAdapter({ baseUrl: runtimeUrl, model, timeoutSeconds: 300 });
 let sessionId: string | undefined;
 let coordinator: RepairCoordinator | undefined;

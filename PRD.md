@@ -2,13 +2,15 @@
 
 ## Product requirements and implementation specification
 
-Version: 2.0
+Version: 2.1
 Updated: August 28, 2026
 Owner: Vasu
 Status: Implementation and verification in progress. Executed results are recorded separately in docs/verification-status.md.
 Working name: PaywallProof. Name availability has not been checked.
 
 **August 28 provider decision:** Polar replaces Stripe. This version preserves all access scenarios, repair requirements and safety checks, and replaces provider-specific setup, timing, payment evidence and signing contracts. [Migration requirements](docs/billing-provider-migration.md) define the acceptance gate. Account preflight is verified; a complete paid provider lifecycle is not yet verified.
+
+**August 28 model decision:** Ollama is not required and must not be restored on the owner's Mac. A free hosted model may supply inference through the [zero-price policy gateway](docs/free-model.md). Require a dedicated $0-capped key, current zero-price checks, no paid fallback, explicit remote-processing consent and unchanged evidence/repair acceptance. TrueForge, Qodo and all product capabilities remain required. Local sandbox execution is separate from model inference. Hosted inference and generated-repair acceptance remain unverified until exercised with actual credentials.
 
 > Check whether your SaaS gives the right people access to paid features. Reproduce failures, show the evidence, and propose a tested repair.
 

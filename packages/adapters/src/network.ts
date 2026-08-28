@@ -47,6 +47,9 @@ export class TargetTransport {
         method: options.method ?? 'GET', headers: {...options.headers,'Accept-Encoding':'identity'}, signal: options.signal,
         // Pin the checked address for this connection. DNS cannot change between validation and dispatch.
         lookup: (_hostname, _options, callback) => callback(null, destination.address, destination.family),
+        // macOS can exhaust wildcard ephemeral ports while loopback still has
+        // capacity. Bind only the explicitly authorized loopback connection.
+        ...(this.config.allowLoopback && destination.address === '127.0.0.1' ? { localAddress: '127.0.0.1' } : {}),
         agent: false,
       }, response => {
         const status = response.statusCode ?? 502;

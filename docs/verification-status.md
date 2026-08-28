@@ -18,6 +18,14 @@ Qodo reviewed `b7d5e37` and correctly found stale ready-preflight state after a 
 
 Recovery against the actual baseline ID passed staging with a valid structured receipt and reached genuine model tool execution. At 16:21 UTC, a separate operator-authorized cleanup uninstalled Ollama and removed its model files while that turn was running. TrueForge recorded `status:error`, `message:terminated`; the coordinator abandoned the job with `RUNTIME_TURN_NOT_COMPLETED`. The failed report is `capacity-resume-correct-binding.json`, and `preparation-events.json` retains the source-inspection receipts. No candidate or before/after success is claimed. The executable and model directory were confirmed absent. Restoration is pending the operator's decision in that cleanup workflow; no reinstall, hosted fallback or paid model was started here.
 
+## August 28: Ollama excluded from this Mac
+
+The owner explicitly requested proceeding without Ollama. No restoration is pending or authorized. The new free hosted connection and its account/setup restrictions are documented in [Run without Ollama](free-model.md). No key has been created and no hosted inference or generated repair has been verified. Earlier local-model receipts remain historical evidence, not proof of the new connection.
+
+The new implementation-aware gateway suite passes 67 tests, covering price changes, paid routing, key limits, credential separation, malformed requests, bounded streaming, disconnects and the exact TrueForge binding. TypeScript, ESLint and the operator production build pass. Setup exits without activation when its private key is missing.
+
+The final full suite passes **1,721 tests across 25 files, zero failures/skips**, recorded in `.local/full-suite-free-model-loopback.json`. The first run lacked socket permission. The authorized rerun exposed `EADDRNOTAVAIL` on local connections. A standalone HTTP probe reproduced it without any project code; explicitly binding its source to `127.0.0.1` returned HTTP 200. `TargetTransport` now applies that source binding only to already-authorized loopback destinations. DNS validation, external-network restrictions and every test assertion remain unchanged. Both failed suite reports are retained as `full-suite-free-model.json` and `full-suite-free-model-authorized.json`. No OS network setting was changed.
+
 ## August 28 provider migration
 
 Polar's isolated sandbox replaces Stripe. GitHub sign-in and sandbox organization creation completed. Separate worker and read-only reference tokens expire November 26, 2026. A private USD 10 monthly sandbox product was created. Both tokens passed actual organization/product/price preflight with API version `2026-04` and `X-Polar-Sandbox: 1`. Private receipts are under `.local/polar-sandbox-setup/`; no credentials or customer email are published.
@@ -47,7 +55,7 @@ Qodo reviewed the rebuilt UI at `1e5cc72`. Its new first-install capacity findin
 ## Remaining acceptance gates
 
 - The real Polar paid checkout, actual webhook delivery and complete provider-backed SC01–SC04 remain unverified. Sending a private email alias needs the specific authorization required by the execution guard. No rejected transfer was bypassed.
-- A full generated application repair and its before/after regression run remain unverified. The latest editing turn was interrupted by removal of the local model runtime. Restore the explicitly required local model before another bounded attempt; do not substitute a paid provider or relabel a failed attempt.
+- A full generated application repair and its before/after regression run remain unverified. The latest editing turn was interrupted by removal of the local model runtime. The owner now requires proceeding without Ollama. Activate and verify the restricted free hosted connection before a fresh bounded attempt; do not restore Ollama, substitute a paid provider or relabel a failed attempt.
 - Qodo reviewed the latest implementation at `ed4cdd9` and confirmed the stale-preflight UI fix. No implementation merge or deployment has occurred.
 
 ## Earlier checkpoints and remaining work

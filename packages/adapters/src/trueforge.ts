@@ -1,4 +1,5 @@
 import { TrueForge, type TrueForgeApi } from "@truefoundry/trueforge-sdk";
+import { FREE_GATEWAY_ORIGIN, FREE_MODEL_ID, FREE_RUNTIME_MODEL } from './free-model.ts';
 
 export type RuntimeTurn = TrueForgeApi.Turn;
 export type RuntimeEvent = TrueForgeApi.TurnStreamingEvent;
@@ -20,7 +21,7 @@ function localUrl(value: string): string {
   return url.toString().replace(/\/$/, "");
 }
 
-/** Local TrueForge only. Provider keys stay in TrueForge, never in agent specs. */
+/** Local TrueForge only. Remote free inference goes through the policy gateway. */
 export class TrueForgeAdapter {
   private readonly client: TrueForge;
   private readonly model: string;
@@ -52,6 +53,9 @@ export class TrueForgeAdapter {
       for (const model of provider.manifest.models) {
         if (`${provider.name}/${model.name}` !== this.model) continue;
         localUrl(provider.manifest.baseUrl);
+        if (this.model === FREE_RUNTIME_MODEL && (provider.manifest.baseUrl !== `${FREE_GATEWAY_ORIGIN}/v1` || model.modelId !== FREE_MODEL_ID)) {
+          throw new Error('The free hosted model requires the fixed zero-price policy gateway.');
+        }
         if (/cloud/i.test(model.modelId)) throw new Error("Cloud model IDs are disabled in the no-charge runtime.");
         return model;
       }
@@ -59,9 +63,9 @@ export class TrueForgeAdapter {
     throw new Error("The configured runtime model must belong to a local custom provider.");
   }
 
-  async checkConnection(): Promise<{ model: string; local: true }> {
+  async checkConnection(): Promise<{ model: string; local: true; inference?: 'free_hosted' }> {
     await this.localModel();
-    return { model: this.model, local: true };
+    return { model: this.model, local: true, ...(this.model === FREE_RUNTIME_MODEL ? { inference: 'free_hosted' as const } : {}) };
   }
 
   async createSession(options: {
