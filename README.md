@@ -2,7 +2,7 @@
 
 Check whether subscription state and access to a paid feature agree. Reproduce failures, collect evidence, and prepare a tested repair for approval.
 
-The complete local-replay scan passes through TrueForge and the real browser. Real Polar payment lifecycle and generated-repair acceptance remain pending. The full requirements are in [PRD.md](PRD.md).
+A recorded complete local-replay scan passed through TrueForge and the real browser. Real Polar payment lifecycle and generated-repair acceptance remain pending. The full requirements are in [PRD.md](PRD.md).
 
 ## Boundaries
 
