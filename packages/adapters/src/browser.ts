@@ -12,18 +12,48 @@ export class BrowserRunner {
     const browser = await chromium.launch({headless:true,args:[`--host-resolver-rules=MAP ${origin.hostname} ${destination.address}`]});
     try {
       const context = await browser.newContext({viewport:{width:1280,height:900},acceptDownloads:false,serviceWorkers:'block'});
+      const requests = new AbortController();
+      let active = 0, count = 0, bytes = 0;
+      const queue: { resolve:()=>void; reject:(error:Error)=>void }[] = [];
+      const stopRequests = (error = new Error('BROWSER_PROBE_CLOSED')) => {
+        requests.abort(error);
+        for (const waiting of queue.splice(0)) waiting.reject(error);
+      };
+      context.once('close', () => stopRequests());
+      const rejectBudget = () => {
+        stopRequests(new Error('BROWSER_RESOURCE_LIMIT'));
+        void context.close().catch(()=>{});
+        throw new Error('BROWSER_RESOURCE_LIMIT');
+      };
+      const acquire = async () => {
+        requests.signal.throwIfAborted();
+        if (active < 2) { active++; return; }
+        await new Promise<void>((resolve,reject)=>queue.push({resolve,reject}));
+      };
+      const release = () => {
+        const next = queue.shift();
+        if (next) next.resolve(); else active--;
+      };
       await context.route('**/*', async route=>{
-        const url = new URL(route.request().url());
-        const allowedPath=['/dashboard','/api/me','/api/export'].includes(url.pathname)||url.pathname.startsWith('/_next/');
-        if(url.origin!==origin.origin||!['http:','https:'].includes(url.protocol)||url.username||url.password||route.request().method()!=='GET'||!allowedPath) {await route.abort('blockedbyclient');return;}
+        let acquired = false;
         try {
+          if (++count > 128) rejectBudget();
+          const url = new URL(route.request().url());
+          const allowedPath=['/dashboard','/api/me','/api/export'].includes(url.pathname)||url.pathname.startsWith('/_next/');
+          if(url.origin!==origin.origin||!['http:','https:'].includes(url.protocol)||url.username||url.password||route.request().method()!=='GET'||!allowedPath) {await route.abort('blockedbyclient').catch(()=>{});return;}
+          await acquire(); acquired = true;
+          requests.signal.throwIfAborted();
           // Browser redirect routing is not a security boundary. The trusted transport
           // pins DNS and rejects redirects before any destination is contacted.
-          const response=await this.transport.request(url.pathname+url.search,{headers:await route.request().allHeaders()});
+          const response=await this.transport.request(url.pathname+url.search,{headers:await route.request().allHeaders(),signal:requests.signal,onResponseBytes:size=>{
+            bytes += size;
+            if (bytes > 64 * 1024 * 1024) rejectBudget();
+          }});
           const headers:Record<string,string>={};
           for(const [key,value] of Object.entries(response.headers))if(value!==undefined&&!['transfer-encoding','connection','content-length'].includes(key))headers[key]=Array.isArray(value)?value.join(', '):value;
           await route.fulfill({status:response.status,headers,body:response.rawBody});
-        }catch{await route.abort('blockedbyclient');}
+        }catch{await route.abort('blockedbyclient').catch(()=>{});}
+        finally { if (acquired) release(); }
       });
       await context.routeWebSocket('**/*', socket=>socket.close());
       const firstCookie = cookie.split(';')[0] ?? '';
@@ -53,6 +83,9 @@ export class BrowserRunner {
       }
       if(uiStatus==='denied'&&visibleText.trim()&&networkRecord&&'error'in networkRecord&&networkRecord.error==='ACCESS_DENIED')body={error:'ACCESS_DENIED',visibleText,networkBody};
       const screenshot = await page.screenshot({fullPage:true});
+      requests.signal.throwIfAborted();
+      stopRequests();
+      await context.close();
       await mkdir(this.artifactDirectory,{recursive:true});
       const artifactId = `${randomUUID()}.png`;
       await writeFile(resolve(this.artifactDirectory,artifactId),screenshot,{mode:0o600});

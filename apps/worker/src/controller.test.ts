@@ -1,5 +1,5 @@
 import {afterEach,describe,expect,it,vi} from 'vitest';
-import {mkdtempSync,rmSync,writeFileSync} from 'node:fs';
+import {mkdtempSync,realpathSync,rmSync,writeFileSync} from 'node:fs';
 import {createHash,randomUUID} from 'node:crypto';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -46,6 +46,19 @@ describe('runtime startup failure recovery',()=>{
       disk.mockResolvedValue({type:1n,bsize:4096n,blocks:1n,bfree:1n,bavail:0n,files:1n,ffree:1n});
       for(let attempt=0;attempt<3;attempt++)await expect(coordinator.start(source.runId,{})).rejects.toMatchObject({code:'REPAIR_DISK_CAPACITY_INSUFFICIENT'});
       expect(put).not.toHaveBeenCalled();expect(inspect).not.toHaveBeenCalled();expect(coordinator.jobs(source.runId)).toEqual([]);
+    }finally{coordinator.close();}
+  });
+  it('measures a missing artifact destination before reaching the next repair gate',async()=>{
+    const {directory}=setup(),ancestor=realpathSync(directory),put=vi.fn();
+    const inspect=vi.spyOn(TrueForgeAdapter.prototype,'inspectTurn');
+    capacityMocks.statfs.mockReset().mockResolvedValue({bavail:16n*1024n**3n,bsize:1n});
+    const policy=createPolicy({schemaVersion:2,priceId:'price_synthetic',featureId:'pro_export',featureConfigHash:hashValue(feature),cancellation:'allow_until_period_end',requireInitialPaymentConfirmed:true,syncWindowSeconds:5,predicateVersion:'reference-export-v1'});
+    const source:RepairSource={runId:randomUUID(),baseCommit:'a'.repeat(40),policy,oracleHash:'b'.repeat(64),observations:[],runtime:{sessionId:'synthetic-session',turnId:'synthetic-turn'},scenarios:[{id:'SC04',observationIds:[],api:{verdict:'fail',code:'SYNTHETIC_FAILURE'},browser:{verdict:'pass',code:'SYNTHETIC'},state:{verdict:'pass',code:'SYNTHETIC'}}]};
+    const coordinator=new RepairCoordinator({repositoryRoot:process.cwd(),repository:'synthetic/repository',databasePath:join(directory,'capacity.sqlite'),artifactDirectory:join(ancestor,'missing','artifacts'),runtimeUrl:'http://127.0.0.1:39984',model:'synthetic',webOrigin:'http://127.0.0.1:39983',documents:{put,get:()=>null,list:()=>[]},source:async()=>source});
+    try{
+      await expect(coordinator.start(source.runId,{})).rejects.toMatchObject({code:'REPAIR_ORACLE_CHANGED'});
+      expect(capacityMocks.statfs).toHaveBeenNthCalledWith(2,ancestor,{bigint:true});
+      expect(put).not.toHaveBeenCalled();expect(inspect).not.toHaveBeenCalled();
     }finally{coordinator.close();}
   });
   it.each([undefined,'7','30','60'])('parses an operator retention setting: %s',value=>{

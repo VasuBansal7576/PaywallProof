@@ -111,7 +111,7 @@ export class TrueForgeAdapter {
 
   async continueTurn(options:{sessionId:string;previousTurnId:string;input:string}) {
     let latest:RuntimeTurn|undefined;
-    for await(const turn of await this.client.sessions.listTurns(options.sessionId))latest=turn;
+    for await(const turn of await this.client.sessions.listTurns(options.sessionId,{limit:1}))latest=turn;
     if(!latest||latest.id!==options.previousTurnId||latest.state.status!=='done'||latest.state.requiredActions.length)throw new Error('Runtime continuation requires the latest completed turn without pending approvals.');
     const {data}=await this.client.sessions.createTurn(options.sessionId,{previousTurnId:options.previousTurnId,input:[{type:'user.message',content:options.input}]});
     return data;
@@ -123,7 +123,7 @@ export class TrueForgeAdapter {
   }
   async findContinuation(options:{sessionId:string;previousTurnId:string}):Promise<RuntimeTurn|undefined> {
     const matching:RuntimeTurn[]=[];
-    for await(const turn of await this.client.sessions.listTurns(options.sessionId))if(turn.previousTurnId===options.previousTurnId)matching.push(turn);
+    for await(const turn of await this.client.sessions.listTurns(options.sessionId,{limit:1}))if(turn.previousTurnId===options.previousTurnId)matching.push(turn);
     if(matching.length>1)throw new Error('Ambiguous runtime continuation; do not dispatch again.');
     return matching[0];
   }
@@ -150,7 +150,7 @@ export class TrueForgeAdapter {
 
   async continueApproval(options: { sessionId: string; turnId: string; decisions: RuntimeApprovalDecision[] }) {
     let latest: RuntimeTurn | undefined;
-    for await (const turn of await this.client.sessions.listTurns(options.sessionId)) latest = turn;
+    for await (const turn of await this.client.sessions.listTurns(options.sessionId,{limit:1})) latest = turn;
     if (latest?.id !== options.turnId) throw new Error("Cannot continue an approval from a superseded runtime turn.");
     const pending = await this.inspectApprovals(options);
     const key = (value: { threadId: string; toolCallId: string }) => JSON.stringify([value.threadId, value.toolCallId]);

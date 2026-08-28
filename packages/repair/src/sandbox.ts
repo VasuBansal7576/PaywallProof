@@ -40,14 +40,14 @@ export type SandboxResult = {
   files: { path: string; bytes: Uint8Array }[]; execReceipts: SandboxExecReceipt[]; observation: unknown;
 };
 export class SandboxRunError extends Error {
-  constructor(readonly code: string, readonly runtime: { sessionId: string; operationId: string; turnIds: string[]; execReceipts: SandboxExecReceipt[] }) { super(code); }
+  constructor(readonly code: string, readonly runtime: { sessionId: string; operationId: string; turnIds: string[]; execReceipts: SandboxExecReceipt[] }, cause?: unknown) { super(code, { cause }); }
 }
 type Operation = { input: SandboxOperationInput; id: string; workspace: string; previous: string; turns: string[]; receipts: SandboxExecReceipt[]; files: SandboxFile[]; signal: AbortSignal; redactions: string[]; dispatched: boolean; archiveHash: string; commandTimeoutMs: number; root?: string };
 type Chunk = { name: string; bytes: Buffer; hash: string };
 type PackedFiles = { chunks: Chunk[]; bundleHash: string; size: number; manifest: { path: string; hash: string; size: number; offset: number }[] };
 const hash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 const binding = (path: string, bytes: Uint8Array): SandboxBinding => ({ path, sha256: hash(bytes), size: bytes.byteLength });
-function fail(operation: Operation, code: string): never { throw new SandboxRunError(code, { sessionId: operation.input.sessionId, operationId: operation.id, turnIds: [...operation.turns], execReceipts: [...operation.receipts] }); }
+function fail(operation: Operation, code: string, cause?: unknown): never { throw new SandboxRunError(code, { sessionId: operation.input.sessionId, operationId: operation.id, turnIds: [...operation.turns], execReceipts: [...operation.receipts] }, cause); }
 function localUrl(value: string) {
   const url = new URL(value);
   if (url.protocol !== 'http:' || !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) || url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Error('LOCAL_RUNTIME_REQUIRED');
@@ -333,7 +333,7 @@ export class RepairSandboxRunner {
       await this.execute(operation, 'stage', this.bootstrap(operation, packed, null, {}, true));
       // Read bytes before exposing the candidate editing turn.
       await this.result(operation, false, null);
-      await this.turn(operation, 'prepare', `The sanitized checkout is in ${operation.workspace}. Edit only these existing source paths relative to it: ${JSON.stringify(operation.files.filter(f => f.role === 'source').map(f => f.path))}. Never change dependencies, launchers, tests, oracle, auth settings, environment files or lockfiles. Never install dependencies or use network access. Your answer is a candidate, not a verified repair.\n\n${input.instructions}`, []);
+      await this.turn(operation, 'prepare', `The sanitized checkout is in ${operation.workspace}. Exec starts at the sandbox session root, NOT inside the checkout. Set cwd to ${JSON.stringify(operation.workspace)} on every inspection/edit exec call, or use these exact session-root-relative source paths: ${JSON.stringify(operation.files.filter(f => f.role === 'source').map(f => `${operation.workspace}/${f.path}`))}. Bare paths such as packages/ or apps/ do not exist at the session root. Inspect and edit the actual files in this checkout; a prose suggestion does not modify them. Never change dependencies, launchers, tests, oracle, auth settings, environment files or lockfiles. Never install dependencies or use network access. Your answer is a candidate, not a verified repair.\n\n${input.instructions}`, []);
       await this.execute(operation, 'snapshot', this.bootstrap(operation, packed, null, {}, false));
       return this.result(operation, true, null);
     });
@@ -357,12 +357,14 @@ export class RepairSandboxRunner {
       if (operation.dispatched) await this.runtime.cancel({ sessionId: input.sessionId }).catch(() => {});
       if (error instanceof SandboxRunError) throw error;
       if (error instanceof RepairError) fail(operation, error.code);
-      fail(operation, operation.signal.aborted ? 'SANDBOX_CANCELLED' : 'SANDBOX_OPERATION_FAILED');
+      fail(operation, operation.signal.aborted ? 'SANDBOX_CANCELLED' : 'SANDBOX_OPERATION_FAILED', error);
     } finally { operation.signal.removeEventListener('abort', cancel); }
   }
   private async assertLatest(operation: Operation) {
     let latest: TrueForgeApi.Turn | undefined;
-    for await (const turn of await this.client.sessions.listTurns(operation.input.sessionId)) latest = turn;
+    // Turn inputs contain base64 attachments. Keep each response to one turn;
+    // a default page can otherwise repeat hundreds of MiB of prior uploads.
+    for await (const turn of await this.client.sessions.listTurns(operation.input.sessionId, { limit: 1 })) latest = turn;
     if (!latest || latest.id !== operation.previous || latest.state.status !== 'done' || latest.state.requiredActions.length) fail(operation, 'RUNTIME_PREVIOUS_TURN_REJECTED');
   }
   private async turn(operation: Operation, phase: SandboxRuntimeState['phase'], text: string, chunks: Chunk[], expectedCommand?: string) {
@@ -515,7 +517,7 @@ process.stdout.write('SANDBOX_COMMAND_FINISHED\\n');
   private async sandboxRoot(operation: Operation): Promise<string> {
     if (operation.root) return operation.root;
     const ids = new Set<string>(); let count = 0;
-    for await (const item of await this.client.sessions.listEvents(operation.input.sessionId)) { if (++count > 20_000) fail(operation, 'RUNTIME_HISTORY_EXCEEDED'); if (item.event.type === 'sandbox.created') ids.add(item.event.sandboxId); }
+    for await (const item of await this.client.sessions.listEvents(operation.input.sessionId, { limit: 1 })) { if (++count > 20_000) fail(operation, 'RUNTIME_HISTORY_EXCEEDED'); if (item.event.type === 'sandbox.created') ids.add(item.event.sandboxId); }
     if (ids.size === 0 && operation.turns.length === 0) {
       // TrueForge creates a sandbox lazily when its first attachment arrives.
       // Check the configured volume before that one-byte initialization, then

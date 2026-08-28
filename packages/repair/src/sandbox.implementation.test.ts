@@ -103,6 +103,14 @@ describe('repair runner implementation with synthetic SDK, no model/provider', (
     expect(mocks.createTurn).toHaveBeenCalledTimes(1);
     expect(mocks.cancel).toHaveBeenCalledTimes(1);
   });
+  it('retains private diagnostic causes without serializing them into runtime evidence', async () => {
+    mocks.get.mockRejectedValueOnce(new Error('private-runtime-canary'));
+    let caught:unknown;
+    try { await new RepairSandboxRunner().run(request()); } catch (error) { caught=error; }
+    expect(caught).toMatchObject({code:'SANDBOX_OPERATION_FAILED',cause:{message:'private-runtime-canary'}});
+    expect(JSON.stringify(caught)).not.toContain('private-runtime-canary');
+    expect(mocks.createTurn).not.toHaveBeenCalled();
+  });
   it('rejects conflicting sandbox identities without initialization or file upload', async () => {
     mocks.listEvents.mockImplementation(async function* () {
       yield { event: { type: 'sandbox.created', sandboxId: `v1:local:${mocks.syntheticRoot}` } };
@@ -224,6 +232,9 @@ describe('repair runner implementation with synthetic SDK, no model/provider', (
     expect(Buffer.from(result.files[0]?.bytes ?? []).toString()).toBe('module.exports=41;');
     expect(result.candidateBindings[0]?.sha256).not.toBe(result.baselineBindings[0]?.sha256);
     expect(result).not.toHaveProperty('verified');
+    const instructions = [...inputs.values()].find(value => value.includes('sanitized checkout'));
+    expect(instructions).toContain(JSON.stringify([`${result.workspace}/src/value.cjs`]));
+    expect(instructions).toContain(`Set cwd to ${JSON.stringify(result.workspace)}`);
   });
   it('does not retry an uncertain create response and retains the pending persistence record', async () => {
     lost = true; const states: SandboxRuntimeState[] = [];

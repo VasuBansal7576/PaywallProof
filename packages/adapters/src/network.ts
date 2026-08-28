@@ -29,11 +29,13 @@ export class TargetTransport {
     if (!first || addresses.some(record => !publicAddress(record.address))) throw new Error('NETWORK_DESTINATION_REJECTED');
     return first;
   }
-  async request(path: string, options: { method?: string; headers?: Record<string, string>; body?: string; beforeDispatch?:()=>void } = {}) {
+  async request(path: string, options: { method?: string; headers?: Record<string, string>; body?: string; beforeDispatch?:()=>void; signal?:AbortSignal; onResponseBytes?:(bytes:number)=>void } = {}) {
+    options.signal?.throwIfAborted();
     if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\')) throw new Error('INVALID_TARGET_PATH');
     const url = new URL(path, this.origin);
     if (url.origin !== this.origin.origin || url.username || url.password || url.hash) throw new Error('TARGET_SCOPE_REJECTED');
     const destination = await this.destination();
+    options.signal?.throwIfAborted();
     // Pinned Next's Webpack development entry exceeds 12 MB. Only static JS/CSS gets the larger
     // bound; evidence bodies and all mutation responses keep the original cap.
     const staticBundle=(options.method??'GET')==='GET'&&/^\/_next\/static\/[A-Za-z0-9_./%~-]+\.(js|css)$/.test(url.pathname);
@@ -42,7 +44,7 @@ export class TargetTransport {
     return new Promise<{status:number;body:unknown;rawBody:Buffer;headers: http.IncomingHttpHeaders}>((resolve, reject) => {
       const client = url.protocol === 'https:' ? https : http;
       const request = client.request(url, {
-        method: options.method ?? 'GET', headers: {...options.headers,'Accept-Encoding':'identity'},
+        method: options.method ?? 'GET', headers: {...options.headers,'Accept-Encoding':'identity'}, signal: options.signal,
         // Pin the checked address for this connection. DNS cannot change between validation and dispatch.
         lookup: (_hostname, _options, callback) => callback(null, destination.address, destination.family),
         agent: false,
@@ -54,6 +56,8 @@ export class TargetTransport {
         response.on('data', (chunk: Buffer) => {
           bytes += chunk.length;
           if (bytes > maximumBytes) { response.destroy(new Error('RESPONSE_LIMIT')); return; }
+          try { options.onResponseBytes?.(chunk.length); }
+          catch { response.destroy(new Error('RESPONSE_BUDGET_EXCEEDED')); return; }
           chunks.push(chunk);
         });
         response.on('error', reject);

@@ -1,4 +1,4 @@
-import {describe,expect,it} from 'vitest';
+import {describe,expect,it,vi} from 'vitest';
 import {createServer} from 'node:http';
 import {mkdtemp,rm,readdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -7,6 +7,39 @@ import {BrowserRunner} from './browser.ts';
 import {TargetTransport} from './network.ts';
 
 describe('browser probe failure lifetime, implementation-aware',()=>{
+  it.each(['request-count','total-bytes'])('bounds hostile asset traffic by %s and leaves no evidence artifact',async limit=>{
+    const directory=await mkdtemp(join(tmpdir(),'pp-browser-budget-'));
+    // Deliberately hostile local HTML. It is a test input, not application evidence.
+    const html=`<!doctype html><html><body><script>for(let i=0;i<${limit==='request-count'?2048:6};i++)fetch('/_next/static/flood-'+i+'.js').catch(()=>{});</script></body></html>`;
+    const payload=Buffer.alloc(limit==='total-bytes'?12*1024*1024:32,32);
+    const server=createServer((request,response)=>{
+      const asset=request.url?.startsWith('/_next/static/');
+      response.writeHead(200,{'content-type':asset?'application/javascript':'text/html'});
+      response.end(asset?payload:html);
+    });
+    let restore:(()=>void)|undefined;
+    try{
+      await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
+      const address=server.address();if(!address||typeof address==='string')throw new Error('No test listener');
+      const transport=new TargetTransport({origin:`http://127.0.0.1:${address.port}`,allowLoopback:true});
+      const original=transport.request.bind(transport),signals:AbortSignal[]=[];
+      let active=0,peak=0;
+      const spy=vi.spyOn(transport,'request').mockImplementation(async(path,options)=>{
+        active++;peak=Math.max(peak,active);if(options?.signal)signals.push(options.signal);
+        try{return await original(path,options);}finally{active--;}
+      });
+      restore=()=>spy.mockRestore();
+      const result=await new BrowserRunner(transport,directory).probe('synthetic_session=budget_test');
+      expect(result).toMatchObject({probe:{status:null,body:null,transportError:true},artifact:null});
+      expect(peak).toBeLessThanOrEqual(2);
+      expect(signals.some(signal=>signal.aborted&&signal.reason instanceof Error&&signal.reason.message==='BROWSER_RESOURCE_LIMIT')).toBe(true);
+      expect(await readdir(directory)).toEqual([]);
+    }finally{
+      restore?.();server.closeAllConnections();
+      if(server.listening)await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
+      await rm(directory,{recursive:true,force:true});
+    }
+  },25000);
   it('handles both response and click timeouts when the page never renders an export action',async()=>{
     const directory=await mkdtemp(join(tmpdir(),'pp-browser-timeout-'));
     // Deliberately incomplete synthetic HTML, never presented as application evidence.

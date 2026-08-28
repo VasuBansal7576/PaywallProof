@@ -16,7 +16,7 @@ import {createReferenceLauncher} from '../../../packages/repair/src/launcher.ts'
 import {oracleFingerprint,createRepairReplayPlan,CORE_SCENARIOS} from '../../../packages/repair/src/oracle.ts';
 import {runRepairOracleProcess} from '../../../packages/repair/src/oracle-process.ts';
 import {SECURITY_CONTROLS} from '../../../packages/repair/src/controls.ts';
-import {assertRepairDiskCapacity} from '../../../packages/repair/src/capacity.ts';
+import {assertRepairDestinationCapacity,assertRepairDiskCapacity,REPAIR_MIN_FREE_BYTES} from '../../../packages/repair/src/capacity.ts';
 
 const execute=promisify(execFile);
 type ScenarioId=typeof CORE_SCENARIOS[number];
@@ -71,7 +71,9 @@ export class RepairCoordinator {
     const finding=request.findingId?failures.find(item=>item.id===request.findingId):failures[0];
     if(!finding)throw new RepairError('REPAIR_REQUIRES_CONFIRMED_FAILURE');
     // Reject before consuming an attempt, loading dependencies or starting a turn.
-    await assertRepairDiskCapacity([this.config.repositoryRoot,this.config.artifactDirectory,resolve(homedir(),'Library','Application Support','trueforge','sandboxes')]);
+    await assertRepairDiskCapacity([this.config.repositoryRoot]);
+    await assertRepairDestinationCapacity(this.config.artifactDirectory,REPAIR_MIN_FREE_BYTES);
+    await assertRepairDestinationCapacity(resolve(homedir(),'Library','Application Support','trueforge','sandboxes'),REPAIR_MIN_FREE_BYTES);
     await this.checkOracle(source.oracleHash);
     const latest=jobs.sort((a,b)=>b.createdAt-a.createdAt)[0];
     const runtime=latest?{sessionId:latest.sessionId,turnId:latest.turnId}:source.runtime;
