@@ -17,6 +17,7 @@ import {oracleFingerprint,createRepairReplayPlan,CORE_SCENARIOS} from '../../../
 import {runRepairOracleProcess} from '../../../packages/repair/src/oracle-process.ts';
 import {SECURITY_CONTROLS} from '../../../packages/repair/src/controls.ts';
 import {assertRepairDestinationCapacity,assertRepairDiskCapacity,REPAIR_MIN_FREE_BYTES} from '../../../packages/repair/src/capacity.ts';
+import {isUnexecutedRuntimeFailure} from '../../../packages/repair/src/runtime-continuation.ts';
 
 const execute=promisify(execFile);
 type ScenarioId=typeof CORE_SCENARIOS[number];
@@ -78,7 +79,8 @@ export class RepairCoordinator {
     const latest=jobs.sort((a,b)=>b.createdAt-a.createdAt)[0];
     const runtime=latest?{sessionId:latest.sessionId,turnId:latest.turnId}:source.runtime;
     const turn=await this.runtime.inspectTurn(runtime);
-    if(turn.state.status!=='done'||turn.state.requiredActions.length)throw new RepairError('REPAIR_RUNTIME_BUSY');
+    const recoverable=latest&&turn.state.status==='error'&&isUnexecutedRuntimeFailure(turn,await this.runtime.listTurnEvents(runtime));
+    if(!recoverable&&(turn.state.status!=='done'||turn.state.requiredActions.length))throw new RepairError('REPAIR_RUNTIME_BUSY');
     // Each explicit owner repair request authorizes one new bounded local-only job.
     // It never renews the original run's billing scope or recreates provider objects.
     const createdAt=Date.now();

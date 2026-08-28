@@ -29,6 +29,10 @@ Luna receives the ordered TrueForge conversation and tool schemas. The current i
 
 Structured final output is buffered before returning JSON or SSE; interim commentary is excluded. Reported Codex token counts are forwarded when available and omitted otherwise. Completion IDs contain actual Codex thread and turn IDs. Only one request runs at a time, with a 2 MiB input limit, 8 MiB protocol output limit and 180-second cancellation. Processes and temporary directories are cleaned up on completion or failure.
 
+Ordinary decisions require nonempty content in the requested schema. If a completed generation nevertheless contains neither text nor a tool proposal, the bridge requests one replacement under the same deadline and guards. It never synthesizes an acknowledgment or dispatches a tool from the empty response. A second empty response, transport failure, billing rejection or unauthorized proposal still fails. Combined usage is reported only when both generations supplied actual usage receipts; otherwise it is omitted.
+
+Sandbox `exec` proposals use structured command arguments, including an explicit working directory or null. The bridge serializes them once for TrueForge and omits a null directory. This avoids the malformed nested JSON escaping reproduced in a real Luna response. Other tools retain their existing argument format. Exact single-command operations must stop after their recorded result; multi-step source repairs may continue inspecting and editing until the requested work is complete.
+
 Preflight contacts the authenticated gateway health endpoint; a saved TrueForge registration alone cannot establish readiness. TrueForge masks credentials in its provider listing, so this probe reads the separate owned, private local capability file, not an API key or Codex authentication file.
 
 ## Verification

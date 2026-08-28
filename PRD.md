@@ -675,6 +675,8 @@ Read-only reconciliation must match the run metadata, immutable external custome
 
 For GitHub publication, use a deterministic run/attempt marker and branch identity. Read the branch and PR before retrying an uncertain creation. Recover the existing PR if it matches. Never open duplicates because a response was lost.
 
+A repair may use its remaining authorized attempt after a terminal model failure only when the latest persisted turn history proves that no tool was dispatched. Missing or contradictory history and uncertain tool activity remain blocked. This does not reset the repair count, replace the original evidence or authorize provider/publication retries.
+
 ### 12.2 Proposed execution defaults
 
 These are initial product limits, not measured performance claims:
@@ -926,6 +928,8 @@ The authorized external spending limit is zero. Do not buy a plan, enter a payme
 Use local execution where supported. Polar integration evidence must come from real Polar sandbox resources, never live charges. Qodo review must use verified free access. TrueForge may use a local model through its documented provider interface. Its generated-code sandbox requirement remains mandatory; a local process or invented runtime trace does not satisfy it.
 
 Track each external integration's access, billing verification, and execution evidence separately. A installed SDK does not mean the integration was exercised. An offer email does not prove credits have been claimed or remain available. Keep private redemption links and account details out of public artifacts.
+
+For the selected Codex subscription bridge, a completed empty model decision may receive one replacement generation under the existing deadline and spending checks. Never manufacture an acknowledgment, execute an empty proposal, or retry a transport, billing or authorization error through this path. Report combined token usage only when both generations supply measured usage. The same exact-command and tool restrictions apply to the replacement.
 
 ### 19.2 Independent tests
 

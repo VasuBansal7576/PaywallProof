@@ -247,6 +247,27 @@ describe('Codex decision protocol gateway', () => {
     expect(response.status).toBe(200); expect(text).toContain('"finish_reason":"tool_calls"'); expect(text).toContain('data: [DONE]');
     expect(text).toContain('synthetic-only'); expect(text).not.toContain('"usage"');
   });
+  it.each(['pp_synthetic_checkout', null])('uses structured exec arguments without nested JSON escaping, cwd %s', async cwd => {
+    const command = 'node -e "const fs=require(\'fs\'); console.log(\'a\\nb\')"';
+    const f = fixture(async () => {
+      return {text:JSON.stringify({content:'Inspect the source.',tool_calls:[{name:'exec',arguments:{intent:'Bounded source inspection',command,cwd}}]}),threadId:'t',turnId:'u'};
+    });
+    const response=await f.post({...body(),tools});expect(response.status).toBe(200);
+    const generation=f.model.generate.mock.calls[0];
+    expect(generation?.[0]).toContain('For multi-step instructions, continue with the next necessary proposal');
+    expect(generation?.[0]).not.toContain('If a tool has already returned for the current instruction, acknowledge its actual result; do not execute again');
+    expect(generation?.[1]).toMatchObject({properties:{tool_calls:{items:{properties:{arguments:{type:'object',properties:{cwd:{anyOf:[{type:'string'},{type:'null'}]}}}}}}}});
+    const result=await response.json();
+    expect(JSON.parse(result.choices[0].message.tool_calls[0].function.arguments)).toEqual({intent:'Bounded source inspection',command,...(cwd===null?{}:{cwd})});
+  });
+  it('keeps other tool proposals available alongside structured exec',async()=>{
+    const f=fixture(async(_prompt,schema)=>{
+      expect(JSON.stringify(schema)).toContain('read_source');
+      return{text:'{"content":"Read source metadata.","tool_calls":[{"name":"read_source","arguments":"{\\"path\\":\\"synthetic.ts\\"}"}]}',threadId:'t',turnId:'u'};
+    });
+    const response=await f.post({...body(),tools:[...tools,{type:'function',function:{name:'read_source',parameters:{type:'object'}}}]});
+    expect(response.status).toBe(200);
+  });
   it.each([
     { content: null, tool_calls: [{ name: 'unknown', arguments: '{}' }] },
     { content: null, tool_calls: [{ name: 'exec', arguments: '[]' }] },
@@ -270,6 +291,35 @@ describe('Codex decision protocol gateway', () => {
     const f = fixture(async () => { throw new Error('private credential and trace'); });
     const response = await f.post(); expect(response.status).toBe(503);
     expect(await response.text()).not.toContain('private credential'); expect(f.model.generate).toHaveBeenCalledOnce();
+  });
+  it('requests one replacement for an empty decision and counts both actual generations', async () => {
+    let calls=0;
+    const f=fixture(async (_prompt,schema)=>{
+      expect(schema.properties).toMatchObject({content:{type:'string',minLength:1}});
+      calls++;
+      return {text:JSON.stringify(calls===1?{content:null,tool_calls:[]}:{content:'Actual replacement proposal',tool_calls:[{name:'exec',arguments:'{"command":"synthetic-only"}'}]}),threadId:`t${calls}`,turnId:`u${calls}`,usage:{inputTokens:10,outputTokens:3,totalTokens:13}};
+    });
+    const response=await f.post({...body(),tools});expect(response.status).toBe(200);
+    const result=await response.json();expect(result.choices[0].message.content).toBe('Actual replacement proposal');
+    expect(result.choices[0].message.tool_calls).toHaveLength(1);expect(result.usage).toEqual({prompt_tokens:20,completion_tokens:6,total_tokens:26});
+    expect(f.model.generate).toHaveBeenCalledTimes(2);
+  });
+  it('fails after two empty decisions without inventing an acknowledgment',async()=>{
+    const f=fixture(async()=>({text:'{"content":null,"tool_calls":[]}',threadId:'t',turnId:'u'}));
+    const response=await f.post();expect(response.status).toBe(503);expect(await response.text()).toContain('CODEX_EMPTY_DECISION');expect(f.model.generate).toHaveBeenCalledTimes(2);
+  });
+  it('omits combined usage when one generation provides no usage receipt',async()=>{
+    let calls=0;const f=fixture(async()=>++calls===1?{text:'{"content":null,"tool_calls":[]}',threadId:'t1',turnId:'u1'}:{text:'{"content":"Actual replacement","tool_calls":[]}',threadId:'t2',turnId:'u2',usage:{inputTokens:10,outputTokens:3,totalTokens:13}});
+    const response=await f.post();expect(response.status).toBe(200);expect(await response.json()).not.toHaveProperty('usage');expect(f.model.generate).toHaveBeenCalledTimes(2);
+  });
+  it('still rejects unauthorized proposals after an empty decision',async()=>{
+    let calls=0;const f=fixture(async()=>({text:JSON.stringify(++calls===1?{content:null,tool_calls:[]}:{content:'Unauthorized replacement',tool_calls:[{name:'unknown',arguments:'{}'}]}),threadId:'t',turnId:'u'}));
+    expect((await f.post({...body(),tools})).status).toBe(503);expect(f.model.generate).toHaveBeenCalledTimes(2);
+  });
+  it('never repeats a completed exact command while replacing an empty acknowledgment',async()=>{
+    let calls=0;const f=fixture(async()=>({text:JSON.stringify(++calls===1?{content:null,tool_calls:[]}:{content:'Repeat rejected',tool_calls:[{name:'exec',arguments:JSON.stringify({intent:'repeat',command:exact})}]}),threadId:'t',turnId:'u'}));
+    const response=await f.post({...body(),tools,messages:[{role:'user',content:instruction},{role:'assistant',content:null,tool_calls:[{id:'prior',type:'function',function:{name:'exec',arguments:JSON.stringify({intent:'completed',command:exact})}}]},{role:'tool',tool_call_id:'prior',content:'{"success":true,"response":{"exitCode":1}}'}]});
+    expect(response.status).toBe(503);expect(await response.text()).toContain('CODEX_EXACT_EXEC_PROPOSAL_REJECTED');expect(f.model.generate).toHaveBeenCalledTimes(2);
   });
   it('permits only one in-flight generation', async () => {
     let complete: (() => void) | undefined;

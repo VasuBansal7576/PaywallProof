@@ -11,6 +11,7 @@ import { TrueForgeAdapter } from '../../adapters/src/trueforge.ts';
 import { pathSchema, RepairError } from './model.ts';
 import { REFERENCE_SUPPORT_PATHS } from './checkout.ts';
 import { assertRepairDestinationCapacity, assertRepairDiskCapacity } from './capacity.ts';
+import {isUnexecutedRuntimeFailure} from './runtime-continuation.ts';
 
 const CHUNK_BYTES = 8 * 1024 * 1024;
 const MAX_BYTES = 512 * 1024 * 1024;
@@ -377,7 +378,10 @@ for(const sourcePath of previewPaths){
     // Turn inputs contain base64 attachments. Keep each response to one turn;
     // a default page can otherwise repeat hundreds of MiB of prior uploads.
     for await (const turn of await this.client.sessions.listTurns(operation.input.sessionId, { limit: 1 })) latest = turn;
-    if (!latest || latest.id !== operation.previous || latest.state.status !== 'done' || latest.state.requiredActions.length) fail(operation, 'RUNTIME_PREVIOUS_TURN_REJECTED');
+    if(!latest||latest.id!==operation.previous)fail(operation,'RUNTIME_PREVIOUS_TURN_REJECTED');
+    if(latest.state.status==='done'&&!latest.state.requiredActions.length)return;
+    if(latest.state.status==='error'&&isUnexecutedRuntimeFailure(latest,await this.runtime.listTurnEvents({sessionId:operation.input.sessionId,turnId:latest.id})))return;
+    fail(operation,'RUNTIME_PREVIOUS_TURN_REJECTED');
   }
   private async turn(operation: Operation, phase: SandboxRuntimeState['phase'], text: string, chunks: Chunk[], expectedCommand?: string) {
     operation.signal.throwIfAborted(); await this.assertLatest(operation);

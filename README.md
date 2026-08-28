@@ -4,6 +4,8 @@ Check whether subscription state and access to a paid feature agree. Reproduce f
 
 A recorded complete local-replay scan passed through TrueForge and the real browser. Real Polar payment lifecycle and generated-repair acceptance remain pending. The full requirements are in [PRD.md](PRD.md).
 
+[Recorded local-replay sample](examples/recorded-local-replay.json) contains an explicitly reduced projection of the actual Luna run, including scenario outcomes, screenshot hashes, cleanup and the source receipt hash. It is not a Polar transaction or a fabricated demonstration report.
+
 ## Boundaries
 
 - Authorized staging applications and isolated provider sandbox resources only.

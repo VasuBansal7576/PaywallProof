@@ -86,6 +86,18 @@ function request(): SandboxRunInput {
 }
 
 describe('repair runner implementation with synthetic SDK, no model/provider', () => {
+  it('continues from a terminal model failure only when its persisted history confirms no tool was dispatched',async()=>{
+    const failed={status:'error' as const,message:'Synthetic empty model decision',completedAt:new Date().toISOString()};
+    mocks.listTurns.mockImplementation(async function*(){yield latest==='previous'?{...turn(latest),state:failed}:turn(latest);});
+    mocks.listTurnEvents.mockImplementation(async({turnId}:{turnId:string})=>turnId==='previous'?[{type:'turn.done',id:'failed-done',threadId:null,createdAt:new Date().toISOString(),state:failed}]:events.get(turnId)??[]);
+    const result=await new RepairSandboxRunner().run(request());expect(result.execReceipts[0]?.output).toContain('42');
+  });
+  it.each(['missing-history','tool-response','contradictory-completion'])('does not recover a failed turn with %s',async mode=>{
+    const failed={status:'error' as const,message:'Synthetic failure',completedAt:new Date().toISOString()};
+    mocks.listTurns.mockImplementation(async function*(){yield{...turn(latest),state:failed};});
+    mocks.listTurnEvents.mockResolvedValue(mode==='missing-history'?[]:mode==='tool-response'?[{type:'turn.done',id:'failed',threadId:null,createdAt:new Date().toISOString(),state:failed},{type:'tool.response',id:'uncertain',threadId:'main',createdAt:new Date().toISOString(),toolCallId:'uncertain',content:'{}'}]:[{type:'turn.done',id:'conflict',threadId:null,createdAt:new Date().toISOString(),state:done()}]);
+    await expect(new RepairSandboxRunner().run(request())).rejects.toMatchObject({code:'RUNTIME_PREVIOUS_TURN_REJECTED'});expect(mocks.createTurn).not.toHaveBeenCalled();
+  });
   it('initializes a lazy sandbox with one bounded attachment before transferring application files', async () => {
     mocks.listEvents.mockImplementation(async function* () {
       if (counter > 0) yield { event: { type: 'sandbox.created', sandboxId: `v1:local:${mocks.syntheticRoot}` } };

@@ -11,9 +11,9 @@ const decisionSchema = z.strictObject({
   tool_calls: z.array(z.strictObject({ name: z.string().min(1), arguments: z.string() })).max(16),
 });
 const generatedDecisionSchema = z.strictObject({ content: z.string().nullable(), tool_calls: z.array(z.strictObject({
-  name: z.string().min(1), arguments: z.union([z.string(), z.strictObject({ intent: z.string(), command: z.string() })]),
+  name: z.string().min(1), arguments: z.union([z.string(), z.strictObject({ intent: z.string(), command: z.string(), cwd: z.string().nullable().optional() })]),
 })).max(16) });
-const outputSchema = z.toJSONSchema(decisionSchema);
+const outputSchema = z.toJSONSchema(decisionSchema.extend({content:z.string().min(1)}));
 export type CodexGeneration = CodexGeneratedOutput;
 export type CodexBackend = {
   check(signal: AbortSignal): Promise<unknown>;
@@ -49,7 +49,15 @@ function exactExecContract(request: Completion) {
 }
 export function decisionOutputSchema(request: Completion) {
   const contract = exactExecContract(request);
-  if (!contract) return outputSchema;
+  if (!contract) {
+    if (!request.tools?.some(tool => tool.function.name === 'exec')) return outputSchema;
+    // A command is already a string. Nesting another JSON document around it
+    // requires a second escaping layer and has failed on real model responses.
+    const exec = z.strictObject({ name: z.literal('exec'), arguments: z.strictObject({ intent: z.string(), command: z.string(), cwd: z.string().nullable() }) });
+    const otherNames = request.tools.filter(tool => tool.function.name !== 'exec').map(tool => tool.function.name);
+    const calls = otherNames.length ? z.union([exec, z.strictObject({ name: z.enum(otherNames), arguments: z.string() })]) : exec;
+    return z.toJSONSchema(z.strictObject({ content: z.string().min(1), tool_calls: z.array(calls).max(16) }));
+  }
   // The model still produces the decision. Constrain the trusted controller's
   // exact operation instead of accepting a guessed command and rejecting it
   // only after TrueForge has already executed it.
@@ -59,13 +67,18 @@ export function decisionOutputSchema(request: Completion) {
 }
 export function codexDecisionPrompt(request: Completion) {
   const active = activeExchange(request);
-  return `Return one assistant decision as JSON: content plus tool_calls. Follow the output schema for arguments: an object for exact-command proposals, otherwise a JSON-encoded string. Tools are proposals executed by TrueForge, not by you. Never invent their results. Follow the current instruction below, not an older command. If a tool has already returned for the current instruction, acknowledge its actual result; do not execute again, including after failure. Respect tool_choice and parallel_tool_calls.\n\nCURRENT INSTRUCTION (verbatim):\n${active.text}\n\nMESSAGES SINCE THAT INSTRUCTION:\n${JSON.stringify(active.following)}\n\nEARLIER CONTEXT (completed history and system instructions):\n${JSON.stringify(request.messages.slice(0, Math.max(0, active.index)))}\n\nAVAILABLE TOOLS AND CALL POLICY:\n${JSON.stringify({ tools: request.tools ?? [], tool_choice: request.tool_choice ?? 'auto', parallel_tool_calls: request.parallel_tool_calls ?? true })}`;
+  return `Return one assistant decision as JSON: content plus tool_calls. Follow the output schema for arguments: exec uses an object, other tools use a JSON-encoded string. Set exec cwd to null only when no working directory is needed. Tools are proposals executed by TrueForge, not by you. Never invent their results. Follow the current instruction below, not an older command. For an exact single-command instruction, acknowledge its recorded result and never repeat it, including after failure. For multi-step instructions, continue with the next necessary proposal until the requested work is actually complete. Do not mistake source inspection for a completed edit. Respect tool_choice and parallel_tool_calls.\n\nCURRENT INSTRUCTION (verbatim):\n${active.text}\n\nMESSAGES SINCE THAT INSTRUCTION:\n${JSON.stringify(active.following)}\n\nEARLIER CONTEXT (completed history and system instructions):\n${JSON.stringify(request.messages.slice(0, Math.max(0, active.index)))}\n\nAVAILABLE TOOLS AND CALL POLICY:\n${JSON.stringify({ tools: request.tools ?? [], tool_choice: request.tool_choice ?? 'auto', parallel_tool_calls: request.parallel_tool_calls ?? true })}`;
 }
 
 export function parseCodexDecision(result: CodexGeneration, request: Completion) {
   if (Buffer.byteLength(result.text) > 256 * 1024) throw new CodexSubscriptionError('CODEX_DECISION_TOO_LARGE');
   const generated = generatedDecisionSchema.parse(JSON.parse(result.text));
-  const parsed = decisionSchema.safeParse({ ...generated, tool_calls: generated.tool_calls.map(call => ({ ...call, arguments: typeof call.arguments === 'string' ? call.arguments : JSON.stringify(call.arguments) })) });
+  const parsed = decisionSchema.safeParse({ ...generated, tool_calls: generated.tool_calls.map(call => {
+    if (typeof call.arguments === 'string') return call;
+    if (call.name !== 'exec') throw new CodexSubscriptionError('CODEX_INVALID_TOOL_ARGUMENTS');
+    const { cwd, ...args } = call.arguments;
+    return { ...call, arguments: JSON.stringify({ ...args, ...(cwd === null || cwd === undefined ? {} : { cwd }) }) };
+  }) });
   if (!parsed.success) throw new CodexSubscriptionError('CODEX_INVALID_DECISION');
   const decision = parsed.data;
   const contract = exactExecContract(request);
@@ -115,9 +128,22 @@ export function createCodexModelGateway(gatewayToken: string, model: CodexBacken
       const parsed = requestSchema.safeParse(await boundedJson(c.req.raw.body, 2 * 1024 * 1024, signal));
       if (!parsed.success) return c.json({ error: 'CODEX_REQUEST_REJECTED' }, 400);
       const request = parsed.data;
-      const result = await model.generate(codexDecisionPrompt(request), decisionOutputSchema(request), signal);
+      const prompt=codexDecisionPrompt(request),schema=decisionOutputSchema(request);
+      let result=await model.generate(prompt,schema,signal);
       signal.throwIfAborted();
-      const message = parseCodexDecision(result, request);
+      let message:ReturnType<typeof parseCodexDecision>;
+      try {message=parseCodexDecision(result,request);}
+      catch(error){
+        // A completed but empty proposal dispatched no tool. One replacement
+        // generation is safe; transport, billing and authorization errors are
+        // never retried. The same deadline and exact-command guards still apply.
+        if(!(error instanceof CodexSubscriptionError)||error.code!=='CODEX_EMPTY_DECISION')throw error;
+        const first=result;
+        result=await model.generate(`${prompt}\n\nYour previous structured decision was empty and no proposed tool was forwarded. Return a nonempty decision that follows the current instruction and the unchanged schema. Do not claim an action happened without a recorded tool result.`,schema,signal);
+        signal.throwIfAborted();
+        message=parseCodexDecision(result,request);
+        result={...result,usage:first.usage&&result.usage?{inputTokens:first.usage.inputTokens+result.usage.inputTokens,outputTokens:first.usage.outputTokens+result.usage.outputTokens,totalTokens:first.usage.totalTokens+result.usage.totalTokens}:undefined};
+      }
       const id = `codex_${result.threadId}_${result.turnId}`;
       const common = { id, model: CODEX_MODEL_ID, created: Math.floor(Date.now() / 1000) };
       const usage = result.usage ? { prompt_tokens: result.usage.inputTokens, completion_tokens: result.usage.outputTokens, total_tokens: result.usage.totalTokens } : undefined;
