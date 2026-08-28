@@ -45,7 +45,7 @@ describe('free hosted model gateway, implementation-aware', () => {
   });
 
   it.each([
-    { model: 'google/gemma-4-31b-it' }, { model: 'openrouter/auto' }, { model: `${FREE_MODEL_ID}:online` },
+    { model: 'cohere/north-mini-code' }, { model: 'z-ai/glm-5.2:free' }, { model: 'google/gemma-4-31b-it:free' }, { model: 'openrouter/auto' }, { model: `${FREE_MODEL_ID}:online` },
     { models: [FREE_MODEL_ID, 'paid/model'] }, { provider: { max_price: { prompt: 1 } } },
     { plugins: [{ id: 'web' }] }, { route: 'fallback' }, { preset: 'paid-preset' }, { user: 'private-account' },
     { tools: [{ type: 'web_search' }] }, { messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'https://example.com/image' } }] }] },
@@ -53,6 +53,30 @@ describe('free hosted model gateway, implementation-aware', () => {
   ])('rejects unsafe request fields before any external request: %j', async patch => {
     const f = fixture();
     expect((await f.post({ ...completion(), ...patch })).status).toBe(400);
+    expect(f.calls).toHaveLength(0);
+  });
+
+  it('preserves the installed TrueForge SDK assistant reasoning and tool-result continuation shape', async () => {
+    const f = fixture();
+    const messages = [
+      { role: 'user', content: 'Run the synthetic execution probe.' },
+      { role: 'assistant', content: null, reasoning_content: 'Synthetic provider reasoning fixture.',
+        tool_calls: [{ id: 'exec_fixture', type: 'function', function: { name: 'exec', arguments: '{"command":"probe"}' } }] },
+      { role: 'tool', tool_call_id: 'exec_fixture', content: '{"success":true}' },
+    ];
+    const response = await f.post({ ...completion(), messages });
+    expect(response.status).toBe(200);
+    await response.text();
+    expect(JSON.parse(String(f.calls[2]?.options.body)).messages).toEqual(messages);
+  });
+
+  it.each([
+    { role: 'user', content: 'probe', reasoning_content: 'not assistant output' },
+    { role: 'assistant', content: null, reasoning_content: { provider: 'paid' } },
+    { role: 'assistant', content: null, reasoning_details: [{ type: 'unknown' }] },
+  ])('does not admit other metadata through reasoning compatibility: %j', async message => {
+    const f = fixture();
+    expect((await f.post({ ...completion(), messages: [message] })).status).toBe(400);
     expect(f.calls).toHaveLength(0);
   });
 
@@ -231,7 +255,7 @@ describe('free hosted model gateway, implementation-aware', () => {
   ])('binds the TrueForge selection to the exact guarded connection: $baseUrl $modelId', async ({ baseUrl, modelId, allowed }) => {
     const fetcher = vi.fn(async () => json({ data: [{ name: 'paywallproof-free', manifest: {
       type: 'custom', name: 'paywallproof-free', baseUrl,
-      models: [{ name: 'gemma-4-31b', modelId, properties: { contextLength: 262144, maxOutputTokens: 8192 } }],
+      models: [{ name: 'north-mini-code', modelId, properties: { contextLength: 262144, maxOutputTokens: 8192 } }],
     } }] }));
     vi.stubGlobal('fetch', fetcher);
     const adapter = new TrueForgeAdapter({ model: FREE_RUNTIME_MODEL });

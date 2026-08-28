@@ -20,11 +20,29 @@ Recovery against the actual baseline ID passed staging with a valid structured r
 
 ## August 28: Ollama excluded from this Mac
 
-The owner explicitly requested proceeding without Ollama. No restoration is pending or authorized. The new free hosted connection and its account/setup restrictions are documented in [Run without Ollama](free-model.md). No key has been created and no hosted inference or generated repair has been verified. Earlier local-model receipts remain historical evidence, not proof of the new connection.
+The owner explicitly requested proceeding without Ollama. No restoration is pending or authorized. The new free hosted connection and its account/setup restrictions are documented in [Run without Ollama](free-model.md). A dedicated key was subsequently created with owner approval and a $0 limit. The authenticated metadata response reported `limit: 0`, `limit_remaining: 0`, `usage: 0`, `byok_usage: 0`, but `include_byok_in_limit: false`. Setup correctly refused activation before inference. The key editor had no control for that field; the documented update API requires a separate management credential. The new key is now disabled, confirmed in the UI, pending permission for that credential and completion of the cap. Existing keys and billing settings were untouched. No hosted inference or generated repair has been verified. Earlier local-model receipts remain historical evidence, not proof of the new connection.
 
 The new implementation-aware gateway suite passes 67 tests, covering price changes, paid routing, key limits, credential separation, malformed requests, bounded streaming, disconnects and the exact TrueForge binding. TypeScript, ESLint and the operator production build pass. Setup exits without activation when its private key is missing.
 
+After the actual key-creation attempt, all 67 gateway tests passed again without changing the implementation or assertions. The existing BYOK-exclusion case rejects before any generation request. This receipt is `.local/free-model-key-activation-tests.json`. The private key file is mode `0600`; no saved runtime selection or gateway capability was created by the rejected setup.
+
 The final full suite passes **1,721 tests across 25 files, zero failures/skips**, recorded in `.local/full-suite-free-model-loopback.json`. The first run lacked socket permission. The authorized rerun exposed `EADDRNOTAVAIL` on local connections. A standalone HTTP probe reproduced it without any project code; explicitly binding its source to `127.0.0.1` returned HTTP 200. `TargetTransport` now applies that source binding only to already-authorized loopback destinations. DNS validation, external-network restrictions and every test assertion remain unchanged. Both failed suite reports are retained as `full-suite-free-model.json` and `full-suite-free-model-authorized.json`. No OS network setting was changed.
+
+## August 28: free hosted runtime activated
+
+The owner separately approved a temporary management credential. It updated only PaywallProof's dedicated key to `limit: 0`, `include_byok_in_limit: true` and enabled, with authenticated readback confirming zero remaining limit and zero usage. The management credential was immediately deleted through OpenRouter, then rejected with HTTP 401 when checked. Its private local file was removed. Existing keys and billing settings remained untouched. Receipts are `.local/openrouter-zero-cap-receipt.json` and `.local/openrouter-management-revocation.json`.
+
+Gemma's free provider rejected the actual runtime probe and a minimal diagnostic with HTTP 429. Both failures remain recorded. An explicit configuration change selected `cohere/north-mini-code:free`, whose current catalog lists zero prices and tool support. The runtime alias is now `paywallproof-free/north-mini-code`. The gateway rejects the earlier Gemma ID, paid IDs and model fallback arrays.
+
+The first North Mini Code turn executed Python successfully but its continuation failed with HTTP 400 because the gateway rejected the installed SDK's assistant `reasoning_content` field. The focused regression failed before the fix and passed afterward. Assistant reasoning text is now accepted under the same body-size cap; other roles, structured reasoning metadata and routing overrides remain rejected. Those test receipts are `.local/free-model-reasoning-before.json` and `.local/free-model-reasoning-after.json`.
+
+The fresh actual check at `.local/runtime-verification-2026-08-28T18-26-39-324Z.json` passed sandbox execution returning 42, stream reconnection, one approved tool call, zero denied tool calls and stale-approval rejection. Post-inference account readback reports both usage counters at zero. No Ollama process, model weights, paid fallback or credit purchase was used.
+
+The initial complete suite passes **1,726 tests across 25 files, zero failures/skips**, recorded in `.local/full-suite-free-model-activation.json`. TypeScript, ESLint and the operator production build pass.
+
+The full hosted repair attempt at `.local/full-repair-7d5f49fb-1ff1-4a01-bdec-a5c5a7e92700/acceptance.json` completed the actual failing baseline. Only scheduled-cancellation access failed, in API and browser checks. The other scenarios and all fourteen security controls passed, and both disposable users were deleted. During repair attachment transfer, the model replayed the earlier baseline exec command and made thirteen further tool calls. The unchanged runner rejected the attempt as `UNEXPECTED_RUNTIME_TOOL`. The evaluator remained outside the model's checkout; no generated patch or verified repair is claimed.
+
+An explicitly selected free GLM 5.2 endpoint returned HTTP 429 during its installation probe, before sandbox execution. Its failed receipt is `.local/runtime-verification-2026-08-28T18-33-31-363Z.json`. The configuration was then restored to North Mini Code, whose installation checks passed. No paid fallback, credit purchase, quota bypass or cap increase occurred. The final complete suite passes **1,727 tests across 25 files, zero failures/skips**, recorded in `.local/full-suite-free-model-final.json`. It adds rejection coverage for the unselected GLM ID. Full generated-repair and provider-lifecycle acceptance remain open.
 
 ## August 28 provider migration
 
@@ -55,7 +73,7 @@ Qodo reviewed the rebuilt UI at `1e5cc72`. Its new first-install capacity findin
 ## Remaining acceptance gates
 
 - The real Polar paid checkout, actual webhook delivery and complete provider-backed SC01–SC04 remain unverified. Sending a private email alias needs the specific authorization required by the execution guard. No rejected transfer was bypassed.
-- A full generated application repair and its before/after regression run remain unverified. The latest editing turn was interrupted by removal of the local model runtime. The owner now requires proceeding without Ollama. Activate and verify the restricted free hosted connection before a fresh bounded attempt; do not restore Ollama, substitute a paid provider or relabel a failed attempt.
+- A full generated application repair and its before/after regression run remain unverified. The free hosted runtime is activated and passes actual execution and approval checks. Its full repair attempt failed because the model called tools during transfer; the stronger free endpoint returned HTTP 429. Preserve those failures and the unchanged evaluator. Do not restore Ollama, substitute a paid provider, increase the $0 cap or relabel a failed attempt.
 - Qodo reviewed the latest implementation at `ed4cdd9` and confirmed the stale-preflight UI fix. No implementation merge or deployment has occurred.
 
 ## Earlier checkpoints and remaining work

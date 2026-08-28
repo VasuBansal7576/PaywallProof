@@ -2,8 +2,8 @@ import { timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-export const FREE_MODEL_ID = 'google/gemma-4-31b-it:free';
-export const FREE_RUNTIME_MODEL = 'paywallproof-free/gemma-4-31b';
+export const FREE_MODEL_ID = 'cohere/north-mini-code:free';
+export const FREE_RUNTIME_MODEL = 'paywallproof-free/north-mini-code';
 export const FREE_GATEWAY_ORIGIN = 'http://127.0.0.1:8791';
 const upstream = 'https://openrouter.ai/api/v1';
 const requestLimit = 2 * 1024 * 1024;
@@ -23,9 +23,13 @@ const functionCall = z.strictObject({ name: z.string(), arguments: z.string() })
 const message = z.strictObject({
   role: z.enum(['system', 'user', 'assistant', 'tool']),
   content: z.union([z.string(), z.array(z.strictObject({ type: z.literal('text'), text: z.string() })), z.null()]).optional(),
+  // The installed OpenAI-compatible SDK sends prior model reasoning with an
+  // assistant tool call. Preserve that text on the next turn, within the same
+  // body-size budget; it cannot override request routing or pricing.
+  reasoning_content: z.string().optional(),
   name: z.string().optional(), tool_call_id: z.string().optional(),
   tool_calls: z.array(z.strictObject({ id: z.string(), type: z.literal('function'), function: functionCall })).optional(),
-});
+}).refine(value => value.reasoning_content === undefined || value.role === 'assistant');
 const completionSchema = z.strictObject({
   model: z.literal(FREE_MODEL_ID), messages: z.array(message).min(1).max(512),
   stream: z.boolean().optional(),

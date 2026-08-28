@@ -19,7 +19,7 @@ try {
   const client = new TrueForge({ baseUrl: 'http://127.0.0.1:8790', maxRetries: 0, timeoutInSeconds: 15 });
   await client.settings.modelProviders.createOrUpdate({ manifest: {
     type: 'custom', name: 'paywallproof-free', baseUrl: `${FREE_GATEWAY_ORIGIN}/v1`, auth: { apiKey: gatewayToken },
-    models: [{ name: 'gemma-4-31b', modelId: FREE_MODEL_ID, properties: { contextLength: verified.contextLength, maxOutputTokens: 8192 } }],
+    models: [{ name: 'north-mini-code', modelId: FREE_MODEL_ID, properties: { contextLength: verified.contextLength, maxOutputTokens: 8192 } }],
   } });
   const { data: providers } = await client.settings.modelProviders.list();
   const registered = providers.find(provider => provider.name === 'paywallproof-free');
