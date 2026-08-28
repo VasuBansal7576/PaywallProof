@@ -194,6 +194,19 @@ The owner separately approves **Publish PR**. Publishing does not merge the PR o
 
 Use text and icons as well as color. Keep controls keyboard accessible. Collapse raw traces by default. Show "Untested", "Inconclusive", and "Blocked" as distinct labels.
 
+### 3.7 Human and agent workspace
+
+The operator UI uses a dark navigation rail, light working area and green action accent. All existing project, policy, approval, scenario, finding, evidence, report and repair controls remain available. The redesign does not remove product scope.
+
+- Show the latest run by its recorded creation timestamp, not by API array position. Count only saved records; do not invent activity or evidence.
+- Search the entire run history by project name, full run identifier and build. Combine search with result or attention filters. The review queue includes pending plans, failed runs and inconclusive runs.
+- Preserve all project and recent-run navigation on narrow screens. The menu must expose its expanded state, close with Escape and return focus to its trigger. Run status and execution mode remain visible in mobile history rows.
+- Run tabs have stable `#scenarios`, `#findings`, `#evidence`, `#report`, `#activity` and `#repairs` links. Arrow keys, Home and End change tab focus; reload and browser history restore the selected tab.
+- Offer full identifiers and recorded JSON through labeled copy controls. Report downloads must retain the same run, mode, policy and observations displayed in the UI. Clipboard failure must say so rather than report success.
+- Keep approvals, local-replay limitations, runtime failures and cleanup receipts explicit. A generated candidate never becomes verified merely because the UI can display its source.
+
+UI verification covers the real local workspace plus separately intercepted, nonpersistent presentation fixtures for empty states, large histories, hostile names, worker-read failures and recovery. Presentation fixtures cannot authorize writes or count as product evidence.
+
 ## 4. Product requirements
 
 | ID | Requirement | Completion evidence |

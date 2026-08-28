@@ -31,8 +31,8 @@ Qodo's posted review is bound to `04ffb22` and retains two earlier findings. The
 ## Remaining acceptance gates
 
 - The real Polar paid checkout, actual webhook delivery and complete provider-backed SC01–SC04 remain unverified. Sending a private email alias needs the specific authorization required by the execution guard. No rejected transfer was bypassed.
-- A full generated application repair and its before/after regression run remain unverified. The installed repair dependency set is 285,845,229 bytes before archives and Next build output; the current three-phase workflow materializes it repeatedly. The filesystem has roughly 400 MiB available after safe cleanup of obsolete project-generated files. A Git checkpoint actually failed with `No space left on device` before cleanup. No unrelated user files or model weights were deleted. Do not fill the volume to force a repair run.
-- Qodo's updated review cites the migration commit; the requested fresh pass and review of the final disk/UI follow-up remain pending. No implementation merge or deployment has occurred.
+- A full generated application repair and its before/after regression run remain unverified. The installed repair dependency set is 285,845,229 bytes before archives and Next build output; the current three-phase workflow materializes it repeatedly. That earlier attempt was blocked by roughly 400 MiB of available space. The later owner-authorized app cleanup cleared the capacity blocker. Actual full-launcher debugging now continues with the disk checks enabled; no failed attempt is reported as verified.
+- Qodo's latest posted review cites the migration checkpoint. The new preflight concern has been tested without reproducing it; review of the rebuilt UI and repair-runtime follow-up remains pending. No implementation merge or deployment has occurred.
 
 ## Earlier checkpoints and remaining work
 
@@ -66,3 +66,19 @@ Qodo's posted review is bound to `04ffb22` and retains two earlier findings. The
 ## Required evidence
 
 Each implementation increment records its tests, results, blocked checks, and Qodo review. Never count a skipped credentialed suite as passed. The acceptance catalogue in PRD.md remains mandatory.
+
+## August 28 operator workspace rebuild
+
+The operator UI now has a dark navigation rail, light workspace, responsive run history, full-history search, result filters and an attention queue. Run pages retain all scenario, finding, evidence, report, activity and repair controls. Tab deep links, browser history, keyboard navigation, labeled identifier/JSON copy controls and authenticated report downloads use the existing saved data and APIs. The PRD adds these requirements without removing scope.
+
+The actual browser regression script verified token sign-in, saved-data counts, full-ID search, exact clipboard contents, filters, tab focus/history/reload, assertion-to-receipt agreement, a real JSON download, 320/390/768px layouts, mobile menu focus recovery, local read-only preflight and consent gates. A separate browser context intercepted every API request for empty/300-run/hostile-name/read-failure presentation fixtures. No fixture was persisted, and no new project, run or provider object was created. Browser receipts and actual screenshots are in ignored `apps/web/.local/`.
+
+The full regression checkpoint after the UI rebuild and lazy-initialization fix passed 1,629 tests across 24 files with no failures or skips. TypeScript, ESLint and the operator production build also passed. Isolated acceptance repository copies under `.local` are excluded from test discovery to avoid duplicate test counts. New UI and failure-injection tests are implementation-aware; existing independent tests remain unchanged.
+
+Qodo's claim that handled preflight errors leave unknown request outcomes did not reproduce. Four HTTP regression cases now verify exact durable status/body replay after invalid JSON, invalid mode, a missing project and a thrown preflight read error. The handler ran at most once; private error text stayed redacted. The actual Hono error handler resumes the middleware that records the response.
+
+Storage cleanup explicitly authorized by the owner removed seven named unused app bundles while retaining Zoom and Telegram. It restored more than 11 GiB of available space at that checkpoint. The earlier 400 MiB blocker is historical, not the current state.
+
+Full generated-repair acceptance is being exercised in an isolated Git copy with a deliberately injected access-policy error. This is an acceptance fixture, not a production finding. The actual run caught colocated test files shipped by Next and a dependency: the packager now excludes these while the sandbox still rejects test files. It also caught TrueForge's lazy sandbox initialization: a bounded one-byte attachment now initializes the sandbox only after a volume-capacity check, followed by validation of the actual recorded sandbox identity and root. Three targeted tests failed before that initialization fix and pass afterward. The full reference launcher subsequently failed during actual execution; no generated repair is claimed from those failed attempts. Fixed launcher stage diagnostics disclose no exception text or credentials.
+
+The launcher failures then exposed two assumptions in its synthetic tests: SQLite 13 uses platform prebuilds, and Next 16.3.3 does not export `loadBindingsSync`. The launcher now checks the actual SQLite prebuild and initializes SWC through the exported synchronous transform, whose method names are checked against installed TypeScript declarations. This preserves the no-download preflight. Native loading was separately confirmed inside the actual sandbox; no filesystem permission was broadened.

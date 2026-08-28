@@ -237,3 +237,25 @@ describe('repair publication recovery with synthetic runtime responses',()=>{
     expect(dispatch).not.toHaveBeenCalled();expect(controller.repairs.store.get(fixture.proposalId).approval?.decision).toBe('pending');
   });
 });
+
+describe('HTTP idempotency after handled preflight failures',()=>{
+  it.each(['invalid-json','invalid-mode','missing-project','failed-read'] as const)('persists and replays a redacted %s response without stranding the request ID',async kind=>{
+    const {controller,app}=setup(true);
+    if(!app)throw new Error('HTTP fixture missing');
+    const preflight=vi.spyOn(controller,'preflight');
+    if(kind==='failed-read')preflight.mockRejectedValue(new Error('private-token-must-not-leak'));
+    const body=kind==='invalid-json'?'{':JSON.stringify({mode:kind==='invalid-mode'?'live':'local_replay'});
+    const id=`preflight-${kind}`;
+    const send=()=>app.request('http://127.0.0.1:39982/api/projects/missing-project/preflight',{method:'POST',headers:{Authorization:'Bearer synthetic-operator','X-Request-ID':id,'Content-Type':'application/json'},body});
+    const first=await send(),firstBody=await first.text();
+    expect(first.status).toBe(kind==='failed-read'?422:kind==='missing-project'?404:400);
+    const second=await send();
+    expect(second.status).toBe(first.status);
+    expect(await second.text()).toBe(firstBody);
+    expect(firstBody).not.toContain('private-token-must-not-leak');
+    expect(firstBody).not.toContain('OPERATION_OUTCOME_UNKNOWN');
+    expect(preflight).toHaveBeenCalledTimes(kind==='missing-project'||kind==='failed-read'?1:0);
+    const saved=controller.database.prepare('SELECT response FROM http_requests WHERE id=?').get(id);
+    expect(saved).toMatchObject({response:JSON.stringify({status:first.status,body:firstBody})});
+  });
+});

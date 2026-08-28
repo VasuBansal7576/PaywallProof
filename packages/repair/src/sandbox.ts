@@ -495,10 +495,20 @@ process.stdout.write('SANDBOX_COMMAND_FINISHED\\n');
     if (offset !== allBytes.length) fail(operation, 'SNAPSHOT_MANIFEST_INVALID');
     return { sessionId: operation.input.sessionId, operationId: operation.id, workspace: operation.workspace, turnIds: [...operation.turns], lastTurnId: operation.previous, transferArchiveHash: operation.archiveHash, baselineBindings: operation.files.map(f => binding(f.path, f.bytes)), candidateBindings, files, execReceipts: [...operation.receipts], observation };
   }
-  private async sandboxRoot(operation: Operation) {
+  private async sandboxRoot(operation: Operation): Promise<string> {
     if (operation.root) return operation.root;
     const ids = new Set<string>(); let count = 0;
     for await (const item of await this.client.sessions.listEvents(operation.input.sessionId)) { if (++count > 20_000) fail(operation, 'RUNTIME_HISTORY_EXCEEDED'); if (item.event.type === 'sandbox.created') ids.add(item.event.sandboxId); }
+    if (ids.size === 0 && operation.turns.length === 0) {
+      // TrueForge creates a sandbox lazily when its first attachment arrives.
+      // Check the configured volume before that one-byte initialization, then
+      // require the actual event and validate its root before uploading source.
+      const payloadBytes = operation.files.reduce((total, file) => total + BigInt(file.bytes.byteLength), 0n);
+      await assertRepairDiskCapacity([join(homedir(), 'Library', 'Application Support', 'trueforge', 'sandboxes')], 3n * payloadBytes + 128n * 1024n ** 2n);
+      const bytes = Buffer.from('0');
+      await this.turn(operation, 'transfer', 'Store this initialization attachment. Reply STORED. Do not call tools or execute anything.', [{ name: `pp_${operation.id}_init.txt`, bytes, hash: hash(bytes) }]);
+      return this.sandboxRoot(operation);
+    }
     if (ids.size !== 1) fail(operation, 'SANDBOX_ID_AMBIGUOUS');
     const id = [...ids][0]; if (!id?.startsWith('v1:local:')) fail(operation, 'LOCAL_SANDBOX_REQUIRED');
     const root = id.slice('v1:local:'.length);

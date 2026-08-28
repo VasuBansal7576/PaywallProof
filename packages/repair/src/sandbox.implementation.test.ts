@@ -86,6 +86,37 @@ function request(): SandboxRunInput {
 }
 
 describe('repair runner implementation with synthetic SDK, no model/provider', () => {
+  it('initializes a lazy sandbox with one bounded attachment before transferring application files', async () => {
+    mocks.listEvents.mockImplementation(async function* () {
+      if (counter > 0) yield { event: { type: 'sandbox.created', sandboxId: `v1:local:${mocks.syntheticRoot}` } };
+    });
+    const result = await new RepairSandboxRunner().run(request());
+    const first = z.object({ input: z.array(z.object({ content: z.array(z.unknown()) })) }).parse(mocks.createTurn.mock.calls[0]?.[1]);
+    expect(first.input[0]?.content).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'file', data: 'data:application/octet-stream;base64,MA==' })]));
+    expect(result.execReceipts).toHaveLength(1);
+    expect(result.execReceipts[0]?.output).toContain('42');
+    expect(mocks.statfs.mock.calls[0]?.[0]).toBe(join(homedir(), 'Library', 'Application Support', 'trueforge', 'sandboxes'));
+  });
+  it('does not loop or guess a filesystem path when sandbox initialization emits no ID', async () => {
+    mocks.listEvents.mockImplementation(async function* () { /* synthetic missing event */ });
+    await expect(new RepairSandboxRunner().run(request())).rejects.toMatchObject({ code: 'SANDBOX_ID_AMBIGUOUS' });
+    expect(mocks.createTurn).toHaveBeenCalledTimes(1);
+    expect(mocks.cancel).toHaveBeenCalledTimes(1);
+  });
+  it('rejects conflicting sandbox identities without initialization or file upload', async () => {
+    mocks.listEvents.mockImplementation(async function* () {
+      yield { event: { type: 'sandbox.created', sandboxId: `v1:local:${mocks.syntheticRoot}` } };
+      yield { event: { type: 'sandbox.created', sandboxId: 'v1:local:another-root' } };
+    });
+    await expect(new RepairSandboxRunner().run(request())).rejects.toMatchObject({ code: 'SANDBOX_ID_AMBIGUOUS' });
+    expect(mocks.createTurn).not.toHaveBeenCalled();
+  });
+  it('checks free space before even the lazy initialization attachment', async () => {
+    mocks.listEvents.mockImplementation(async function* () { /* synthetic uninitialized sandbox */ });
+    mocks.statfs.mockResolvedValue({ bavail: 0n, bsize: 4096n });
+    await expect(new RepairSandboxRunner().run(request())).rejects.toMatchObject({ code: 'REPAIR_DISK_CAPACITY_INSUFFICIENT' });
+    expect(mocks.createTurn).not.toHaveBeenCalled();
+  });
   it.each([-1n, 0n, 1n])('checks the exact free-space boundary: %s', async delta => {
     mocks.statfs.mockResolvedValue({ bavail: REPAIR_MIN_FREE_BYTES + delta, bsize: 1n });
     const result = assertRepairDiskCapacity(['/synthetic/volume']);

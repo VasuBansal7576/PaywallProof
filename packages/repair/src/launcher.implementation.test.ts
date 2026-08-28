@@ -6,9 +6,11 @@ import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createReferenceLauncher } from './launcher.ts';
+import { collectRepairDependencies } from './checkout.ts';
 
 const execute = promisify(execFile);
 const buildId = 'a'.repeat(40), priceId = 'price_fixtureOnly';
+const nativeSQLitePath = `better-sqlite3/prebuilds/${process.platform}-${process.arch}.node`;
 const names = ['next', 'react', 'react-dom', 'hono', 'zod', 'standardwebhooks', 'better-sqlite3', 'typescript', '@types/react', '@types/node'];
 let parent = '', root = '';
 const bridge = '../uploads/pp_000000000000000000000000_bridge.cjs';
@@ -31,8 +33,8 @@ beforeEach(async () => {
     await put(join(root, 'node_modules', name, 'package.json'), JSON.stringify(metadata));
   }
   for (const name of ['apps/demo-saas/app/layout.tsx', 'apps/demo-saas/app/dashboard/page.tsx', 'apps/demo-saas/server.ts', 'apps/demo-saas/next.config.ts']) await put(join(root, name), '// synthetic source, never executed');
-  for (const name of ['typescript/lib/typescript.js', 'typescript/bin/tsc', '@types/react/index.d.ts', '@types/node/index.d.ts', 'better-sqlite3/build/Release/better_sqlite3.node']) await put(join(root, 'node_modules', name), 'synthetic preflight bytes');
-  await put(join(root, 'node_modules/next/dist/build/swc/index.js'), record + "exports.loadBindingsSync=()=>{record({kind:'native-preflight',ci:process.env.CI,wasm:process.env.NEXT_DISABLE_SWC_WASM});return {isWasm:false};};");
+  for (const name of ['typescript/lib/typescript.js', 'typescript/bin/tsc', '@types/react/index.d.ts', '@types/node/index.d.ts', nativeSQLitePath]) await put(join(root, 'node_modules', name), 'synthetic preflight bytes');
+  await put(join(root, 'node_modules/next/dist/build/swc/index.js'), record + "exports.transformSync=()=>{record({kind:'native-preflight',ci:process.env.CI,wasm:process.env.NEXT_DISABLE_SWC_WASM});return {code:'const preflight = 1;'};};exports.getBindingsSync=()=>({isWasm:false});");
   await put(join(root, 'node_modules/next/dist/server/next.js'), record + "module.exports=options=>{record({kind:'next',options,env:{nodeEnv:process.env.NODE_ENV,priceId:process.env.BILLING_PRICE_ID,buildId:process.env.TARGET_BUILD_ID,staging:process.env.STAGING_ENABLED}});return{prepare:async()=>record({kind:'prepare'}),getRequestHandler:()=>()=>{},close:async()=>record({kind:'close'})};};");
   await put(join(root, 'node_modules/better-sqlite3/lib/index.js'), record + "module.exports=class{constructor(name){record({kind:'sqlite',name});}close(){record({kind:'sqlite-close'});}};");
   await put(join(parent, 'uploads', 'pp_000000000000000000000000_bridge.cjs'), record + "exports.serve=async handler=>{if(typeof handler!=='function')throw Error('handler');record({kind:'bridge'});};");
@@ -40,6 +42,16 @@ beforeEach(async () => {
 afterEach(async () => { await rm(parent, { recursive: true, force: true }); });
 
 describe('trusted reference launcher factory (synthetic implementation checks)', () => {
+  it('packages runtime files but excludes colocated dependency tests and their declarations', async () => {
+    const dependency = join(root, 'node_modules', 'fixture-dependency');
+    await put(join(dependency, 'package.json'), JSON.stringify({ name: 'fixture-dependency', version: '1.0.0' }));
+    await put(join(dependency, 'runtime.js'), 'exports.answer = 42;');
+    await put(join(dependency, 'runtime-test.js'), 'exports.isRuntime = true;');
+    for (const path of ['build.test.js', 'base64.test.ts', 'lib/base64.test.d.ts', 'deep/unit.SPEC.cjs', 'Tests/hidden.js', '__tests__/hidden.js']) await put(join(dependency, path), 'throw new Error("test code must stay outside the model workspace");');
+    const result = await collectRepairDependencies(root, ['fixture-dependency']);
+    expect(result.files.map(file => file.path).sort()).toEqual(['node_modules/fixture-dependency/package.json', 'node_modules/fixture-dependency/runtime-test.js', 'node_modules/fixture-dependency/runtime.js']);
+    expect(result.totalBytes).toBe(result.files.reduce((total, file) => total + file.bytes.byteLength, 0));
+  });
   it('returns deterministic trusted bytes and a fixed command', () => {
     const one = createReferenceLauncher({ buildId, priceId });
     expect(one).toEqual(createReferenceLauncher({ buildId, priceId }));
@@ -59,14 +71,14 @@ describe('trusted reference launcher factory (synthetic implementation checks)',
     expect(await readFile(join(root, 'apps/demo-saas/server.ts'), 'utf8')).toBe('// synthetic source, never executed');
     await run({ NODE_ENV: 'development', PP_REPAIR_BRIDGE_MODULE: bridge }); // Exact relative compatibility form; same config is never overwritten.
   });
-  it.each(['typescript/lib/typescript.js', '@types/node/index.d.ts', 'better-sqlite3/build/Release/better_sqlite3.node'])('rejects missing %s before Next/SWC executes', async missing => {
+  it.each(['typescript/lib/typescript.js', '@types/node/index.d.ts', nativeSQLitePath])('rejects missing %s before Next/SWC executes', async missing => {
     await rm(join(root, 'node_modules', missing));
-    await expect(run()).rejects.toMatchObject({ code: 1, stderr: 'REFERENCE_LAUNCHER_FAILED\n' });
+    await expect(run()).rejects.toMatchObject({ code: 1, stderr: 'REFERENCE_LAUNCHER_FAILED\nREFERENCE_LAUNCHER_STAGE=dependencies\n' });
     await expect(readFile(join(root, 'observed.json'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
   it('rejects a broken native binding without falling through to Next preparation', async () => {
-    await put(join(root, 'node_modules/next/dist/build/swc/index.js'), "exports.loadBindingsSync=()=>{throw Error('synthetic missing native');};");
-    await expect(run()).rejects.toMatchObject({ code: 1 });
+    await put(join(root, 'node_modules/next/dist/build/swc/index.js'), "exports.transformSync=()=>{throw Error('private-native-error-must-not-leak');};");
+    await expect(run()).rejects.toMatchObject({ code: 1, stderr: 'REFERENCE_LAUNCHER_FAILED\nREFERENCE_LAUNCHER_STAGE=native-swc\n' });
     await expect(readFile(join(root, 'observed.json'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
   it('rejects dependency drift and foreign generated config', async () => {

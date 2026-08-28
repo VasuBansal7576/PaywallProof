@@ -74,7 +74,9 @@ export async function collectRepairDependencies(repositoryRoot:string,names:read
     installed.set(destination,directory);versions.push({name,version:metadata.version,destination});
     async function walk(current:string,output:string){
       for(const entry of await readdir(current,{withFileTypes:true})){
-        if(entry.name==='node_modules'||entry.name.startsWith('.')||entry.name.endsWith('.map')||entry.name.endsWith('.md')||excludedDirectories.has(entry.name))continue;
+        // Dependencies can ship test files alongside runtime files, not only in test directories.
+        // Keep them out of the model workspace and retain the runner's separate fail-closed check.
+        if(entry.name==='node_modules'||entry.name.startsWith('.')||entry.name.endsWith('.map')||entry.name.endsWith('.md')||excludedDirectories.has(entry.name.toLowerCase())||/\.(test|spec)\.[^/]+$/i.test(entry.name))continue;
         const path=resolve(current,entry.name),child=`${output}/${entry.name}`,stat=await lstat(path);
         if(stat.isSymbolicLink())throw new RepairError('DEPENDENCY_SYMLINK_REJECTED');
         if(stat.isDirectory()){await walk(path,child);continue;}

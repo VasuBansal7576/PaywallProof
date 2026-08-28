@@ -8,6 +8,7 @@ const versions = {
   zod: '4.4.3', standardwebhooks: '1.0.0', 'better-sqlite3': '13.0.2',
   typescript: '5.9.3', '@types/react': '19.2.18', '@types/node': '22.20.1',
 };
+const swcMethods = { transform: 'transformSync', bindings: 'getBindingsSync' } satisfies Record<string, keyof typeof import('next/dist/build/swc')>;
 const tsconfig = {
   compilerOptions: {
     target: 'ES2017', lib: ['dom', 'dom.iterable', 'esnext'], allowJs: true,
@@ -29,6 +30,7 @@ export function createReferenceLauncher(input: { buildId: string; priceId: strin
 const fs = require('node:fs'), path = require('node:path');
 const config = ${JSON.stringify(parsed.data)}, versions = ${JSON.stringify(versions)};
 const root = fs.realpathSync(process.cwd()), appDir = path.join(root, 'apps/demo-saas');
+let phase = 'configuration';
 function regular(name) {
   const full = path.resolve(root, name), relative = path.relative(root, full);
   if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('LAUNCHER_PATH_REJECTED');
@@ -63,11 +65,15 @@ async function main() {
     || fs.lstatSync(expectedBridge).isSymbolicLink() || !fs.lstatSync(expectedBridge).isFile()
     || fs.realpathSync(expectedBridge) !== expectedBridge) throw new Error('LAUNCHER_BRIDGE_REJECTED');
   for (const name of ['apps/demo-saas/app/layout.tsx', 'apps/demo-saas/app/dashboard/page.tsx', 'apps/demo-saas/server.ts', 'apps/demo-saas/next.config.ts']) regular(name);
+  phase = 'dependencies';
   for (const [name, version] of Object.entries(versions)) {
     const metadata = JSON.parse(fs.readFileSync(regular('node_modules/' + name + '/package.json'), 'utf8'));
     if (metadata.name !== name || metadata.version !== version) throw new Error('LAUNCHER_DEPENDENCY_VERSION');
   }
-  for (const file of ['typescript/lib/typescript.js', 'typescript/bin/tsc', '@types/react/index.d.ts', '@types/node/index.d.ts', 'better-sqlite3/build/Release/better_sqlite3.node']) regular('node_modules/' + file);
+  for (const file of ['typescript/lib/typescript.js', 'typescript/bin/tsc', '@types/react/index.d.ts', '@types/node/index.d.ts']) regular('node_modules/' + file);
+  // Pinned better-sqlite3 13 ships platform prebuilds instead of requiring a
+  // node-gyp build/Release output. This runner supports the local macOS sandbox.
+  regular('node_modules/better-sqlite3/prebuilds/' + process.platform + '-' + process.arch + '.node');
   process.env.NODE_ENV = 'development';
   process.env.CI = '1';
   process.env.NEXT_TELEMETRY_DISABLED = '1';
@@ -79,22 +85,28 @@ async function main() {
   process.env.REFERENCE_DATABASE_PATH = path.join(root, 'reference.sqlite');
   generated('package.json', { name: 'paywallproof-repair-reference', version: '0.0.0', private: true, dependencies: versions });
   generated('tsconfig.json', ${JSON.stringify(tsconfig)});
-  // Pinned Next 16.3.3 sync loader has no download fallback. A missing/broken native
-  // binding fails here, before app.prepare() can invoke the async fallback loader.
-  const bindings = require('next/dist/build/swc').loadBindingsSync();
+  // The exported sync transform initializes native bindings without a download
+  // fallback. loadBindingsSync is private in Next 16.3.3, not an exported method.
+  phase = 'native-swc';
+  const swc = require('next/dist/build/swc');
+  swc[${JSON.stringify(swcMethods.transform)}]('const preflight = 1;', { filename: 'preflight.js', jsc: { parser: { syntax: 'ecmascript' } }, swcrc: false });
+  const bindings = swc[${JSON.stringify(swcMethods.bindings)}]();
   if (!bindings || bindings.isWasm !== false) throw new Error('LAUNCHER_NATIVE_SWC_REQUIRED');
+  phase = 'native-sqlite';
   const Database = require('better-sqlite3'), database = new Database(':memory:');
   database.close();
+  phase = 'next-prepare';
   const next = require('next');
   const app = next({ dev: true, webpack: true, dir: appDir, hostname: 'sandbox.invalid', port: 3001 });
   try {
     await app.prepare();
+    phase = 'http-bridge';
     // Resolve relative to the operation workspace, not this _trusted module.
     const { serve } = require(expectedBridge);
     await serve(app.getRequestHandler());
   } finally { await app.close(); }
 }
-main().catch(() => { process.stderr.write('REFERENCE_LAUNCHER_FAILED\n'); process.exitCode = 1; });
+main().catch(() => { process.stderr.write('REFERENCE_LAUNCHER_FAILED\nREFERENCE_LAUNCHER_STAGE=' + phase + '\n'); process.exitCode = 1; });
 `;
   return { file: { path: '_trusted/reference.cjs', bytes: Buffer.from(source), role: 'launcher' }, fixedCommand: { interpreter: 'node', script: '_trusted/reference.cjs' } };
 }
