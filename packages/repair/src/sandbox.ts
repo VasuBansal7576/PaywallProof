@@ -334,12 +334,13 @@ export class RepairSandboxRunner {
       // preview is bounded and excludes support, dependencies and host tests.
       const preview = `
 const previewPaths=${JSON.stringify(operation.files.filter(file => file.role === 'source').map(file => file.path))};
-let previewRemaining=32768;
+let previewRemaining=8192;
 for(const sourcePath of previewPaths){
   if(previewRemaining===0)break;
-  const bytes=fs.readFileSync(path.join(workspace,sourcePath)),limit=Math.min(4096,previewRemaining);
-  const shown=bytes.subarray(0,limit);previewRemaining-=shown.length;
-  process.stdout.write(JSON.stringify({sourcePath,bytes:bytes.length,preview:shown.toString('utf8'),truncated:bytes.length>shown.length})+'\\n');
+  const bytes=fs.readFileSync(path.join(workspace,sourcePath)),shown=bytes.subarray(0,4096);
+  const row=JSON.stringify({sourcePath,bytes:bytes.length,preview:shown.toString('utf8'),truncated:bytes.length>shown.length})+'\\n';
+  const size=Buffer.byteLength(row);if(size>previewRemaining)break;
+  previewRemaining-=size;process.stdout.write(row);
 }`;
       await this.execute(operation, 'stage', this.bootstrap(operation, packed, null, {}, true) + preview);
       // Read bytes before exposing the candidate editing turn.

@@ -79,7 +79,7 @@ Read-only model inspection subsequently identified the installed `qwen3:4b` weig
 
 ## Repair source context
 
-Before the editing turn, the trusted staging command prints previews from source-role files only, at most 4 KiB per file and 32 KiB total. Each preview includes its original byte length and a truncation flag. Support files, dependencies, launchers and host tests are excluded. The model may inspect the remaining allowed source through sandbox exec. The controller provides recorded billing facts without customer, subscription or fixture identifiers. It never supplies evaluator source or a suggested fix.
+Before the editing turn, the trusted staging command prints previews from source-role files only, at most 4 KiB per file and 8 KiB of serialized preview output. JSON escaping counts against this limit. TrueForge 0.1.4 replaces sandbox responses above 6,000 estimated tokens with non-JSON guidance; the smaller output bound preserves the structured exec receipt. Each preview includes its original byte length and a truncation flag. Support files, dependencies, launchers and host tests are excluded. The model may inspect the remaining allowed source through sandbox exec. The controller provides recorded billing facts without customer, subscription or fixture identifiers. It never supplies evaluator source or a suggested fix.
 
 Preparation requires an actual changed source snapshot. A prose-only answer is rejected as `EMPTY_REPAIR_DIFF`; added context does not create a verification receipt or relax the two-attempt limit. Before/after checks retain the same frozen oracle fingerprint.
 

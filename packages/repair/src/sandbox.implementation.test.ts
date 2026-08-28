@@ -253,13 +253,30 @@ describe('repair runner implementation with synthetic SDK, no model/provider', (
     expect(output).not.toContain('PRIVATE_SUPPORT_CANARY');
     const rows = [...events.values()].flat().flatMap(event => {
       if (event.type !== 'tool.response') return [];
+      // TrueForge 0.1.4 replaces sandbox results above 6,000 estimated tokens
+      // with non-JSON guidance. Preserve the original structured exec receipt.
+      expect(event.content.length / 4).toBeLessThan(6000);
       const body = z.object({ response: z.object({ result: z.string() }) }).parse(JSON.parse(event.content));
+      expect(Buffer.byteLength(body.response.result)).toBeLessThan(8300);
       return body.response.result.split('\n').filter(line => line.startsWith('{"sourcePath"')).map(line => z.object({ preview: z.string(), truncated: z.boolean() }).parse(JSON.parse(line)));
     });
-    expect(rows.reduce((total, row) => total + Buffer.byteLength(row.preview), 0)).toBe(32768);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.reduce((total, row) => total + Buffer.byteLength(row.preview), 0)).toBeLessThanOrEqual(8192);
     expect(rows.every(row => row.truncated && Buffer.byteLength(row.preview) <= 4096)).toBe(true);
     expect(result.files).toHaveLength(10);
     expect(result.files.every(file => file.bytes.byteLength === 6000)).toBe(true);
+  });
+  it('counts JSON escaping against the source-preview budget', async () => {
+    const input = request();
+    input.files = input.files.map(file => file.role === 'source' ? { ...file, bytes: Buffer.from('"\\'.repeat(3000)) } : file);
+    const result = await new RepairSandboxRunner().prepare({ ...input, instructions: 'Inspect only.' });
+    for (const event of [...events.values()].flat()) {
+      if (event.type === 'tool.response') {
+        expect(event.content.length / 4).toBeLessThan(6000);
+        expect(() => JSON.parse(event.content)).not.toThrow();
+      }
+    }
+    expect(result.files[0]?.bytes.byteLength).toBe(6000);
   });
   it('does not retry an uncertain create response and retains the pending persistence record', async () => {
     lost = true; const states: SandboxRuntimeState[] = [];
