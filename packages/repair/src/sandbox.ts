@@ -64,6 +64,7 @@ function checkedFiles(input: SandboxOperationInput): SandboxFile[] {
   const files = input.files.map(file => {
     if (!safeTransferPath(file.path) || !(file.bytes instanceof Uint8Array) || !['source', 'support', 'dependency', 'launcher'].includes(file.role)) throw new Error('SANDBOX_FILES_REJECTED');
     if (file.role === 'support' && (!REFERENCE_SUPPORT_PATHS.includes(file.path) || input.allowedPaths.includes(file.path))) throw new Error('SANDBOX_SUPPORT_REJECTED');
+    if (REFERENCE_SUPPORT_PATHS.includes(file.path) && file.role !== 'support') throw new Error('SANDBOX_SUPPORT_REJECTED');
     if (file.role === 'source' && (!input.allowedPaths.includes(file.path) || !pathSchema.safeParse(file.path).success)) throw new Error('SANDBOX_SOURCE_REJECTED');
     if (file.role === 'dependency' && !file.path.startsWith('node_modules/')) throw new Error('SANDBOX_DEPENDENCY_REJECTED');
     if (file.role === 'launcher' && !file.path.startsWith('_trusted/')) throw new Error('SANDBOX_LAUNCHER_REJECTED');
@@ -72,7 +73,7 @@ function checkedFiles(input: SandboxOperationInput): SandboxFile[] {
     seen.add(lower); total += file.bytes.byteLength;
     if (total > MAX_BYTES || file.role === 'source' && file.bytes.byteLength > 1024 * 1024) throw new Error('SANDBOX_BYTES_EXCEEDED');
     const bytes = Buffer.from(file.bytes);
-    if (/(?:sk_(?:live|test)_[A-Za-z0-9]{12,}|github_pat_[A-Za-z0-9_]{12,}|gh[pousr]_[A-Za-z0-9]{20,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)/.test(bytes.toString('latin1'))) throw new Error('SANDBOX_CREDENTIAL_REJECTED');
+    if (/(?:polar_(?:oat|pat|cst)_[A-Za-z0-9_-]{12,}|sk_(?:live|test)_[A-Za-z0-9]{12,}|github_pat_[A-Za-z0-9_]{12,}|gh[pousr]_[A-Za-z0-9]{20,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)/.test(bytes.toString('latin1'))) throw new Error('SANDBOX_CREDENTIAL_REJECTED');
     return { path: file.path, bytes, role: file.role };
   });
   const names = [...seen].sort();

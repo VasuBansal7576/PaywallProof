@@ -2,10 +2,10 @@
 
 ## Product requirements and implementation specification
 
-Version: 2.0  
-Updated: August 28, 2026  
-Owner: Vasu  
-Status: Implementation and verification in progress. Executed results are recorded separately in docs/verification-status.md.  
+Version: 2.0
+Updated: August 28, 2026
+Owner: Vasu
+Status: Implementation and verification in progress. Executed results are recorded separately in docs/verification-status.md.
 Working name: PaywallProof. Name availability has not been checked.
 
 **August 28 provider decision:** Polar replaces Stripe. This version preserves all access scenarios, repair requirements and safety checks, and replaces provider-specific setup, timing, payment evidence and signing contracts. [Migration requirements](docs/billing-provider-migration.md) define the acceptance gate. Account preflight is verified; a complete paid provider lifecycle is not yet verified.

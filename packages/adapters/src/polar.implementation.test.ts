@@ -349,3 +349,62 @@ describe('Polar mutation protocol, implementation-aware synthetic transport',()=
     expect(cleaned).toMatchObject({mode:'polar_sandbox'});
   });
 });
+
+import {createHmac} from 'node:crypto';
+import {createReferenceApp} from '../../reference/src/index.ts';
+const nativeTargets:ReturnType<typeof createReferenceApp>[]=[];
+afterEach(()=>{vi.unstubAllGlobals();for(const target of nativeTargets.splice(0))target.close();});
+async function nativeTarget(){
+  let subscription=nativeSubscription(),failed=false;
+  vi.stubGlobal('fetch',async(url:string)=>{
+    if(failed)return new Response('synthetic unavailable',{status:503});
+    const path=new URL(url).pathname;
+    return response(path.includes('/organizations/')?{id:organizationId}:path.includes('/products/')?product():path.includes('/customers/')?nativeCustomer():path.includes('/subscriptions/')?page([subscription]):page([nativeOrder()]));
+  });
+  const secret='synthetic-polar-webhook-only';
+  const target=createReferenceApp({databasePath:':memory:',stagingEnabled:true,adapterToken:'synthetic-adapter',webhookSecret:secret,replaySecret:'different-replay-secret',priceId,buildId:'synthetic-build',polarToken:config.token,polarOrganizationId:organizationId,polarProductId:productId});nativeTargets.push(target);
+  const headers={authorization:'Bearer synthetic-adapter','content-type':'application/json'};
+  const created=await target.app.request('/staging/users',{method:'POST',headers,body:JSON.stringify({runId,operationId:'create',fixtureMarker:'synthetic-private-marker'})});
+  const user=await created.json();if(!user||typeof user!=='object'||!('principalId'in user)||typeof user.principalId!=='string')throw new Error('Invalid local fixture');
+  expect((await target.app.request(`/staging/users/${user.principalId}/customer`,{method:'POST',headers,body:JSON.stringify({runId,customerId})})).status).toBe(200);
+  const session=await (await target.app.request(`/staging/users/${user.principalId}/session`,{method:'POST',headers,body:JSON.stringify({runId})})).json();
+  if(!session||typeof session!=='object'||!('cookie'in session)||typeof session.cookie!=='string')throw new Error('Invalid local session');
+  const cookie=session.cookie;
+  const access=()=>target.app.request('/api/export',{headers:{cookie}});
+  const send=(deliveryId:string,type='subscription.updated',timestamp=new Date().toISOString(),patch:Record<string,unknown>={})=>{
+    // Body status deliberately lies. Only independently fetched provider state may grant access.
+    const raw=JSON.stringify({type,timestamp,data:{id:subscriptionId,customer_id:customerId,status:'active',...patch}});
+    const signedAt=String(Math.floor(Date.now()/1000));
+    const signature=createHmac('sha256',secret).update(`${deliveryId}.${signedAt}.${raw}`).digest('base64');
+    return target.app.request('/api/polar/webhook',{method:'POST',body:raw,headers:{'content-type':'application/json','webhook-id':deliveryId,'webhook-timestamp':signedAt,'webhook-signature':`v1,${signature}`}});
+  };
+  return {target,send,access,schedule:()=>{subscription={...subscription,cancel_at_period_end:true};},cancel:()=>{subscription={...subscription,status:'canceled'};},fail:(value:boolean)=>{failed=value;}};
+}
+describe('native Polar webhook to real local projection, implementation-aware synthetic provider',()=>{
+  it('reconciles current state through paid, scheduled, canceled and out-of-order deliveries',async()=>{
+    const fixture=await nativeTarget();expect((await fixture.access()).status).toBe(403);
+    expect((await fixture.send('paid','subscription.active')).status).toBe(200);
+    expect((await fixture.access()).status).toBe(200);
+    fixture.schedule();expect((await fixture.send('scheduled','subscription.canceled')).status).toBe(200);
+    expect((await fixture.access()).status).toBe(200);
+    fixture.cancel();expect((await fixture.send('ended','subscription.revoked')).status).toBe(200);
+    expect((await fixture.access()).status).toBe(403);
+    expect((await fixture.send('delayed','subscription.active','2026-01-01T00:00:00Z')).status).toBe(200);
+    expect((await fixture.access()).status).toBe(403);
+  });
+  it('deduplicates exact bytes but rejects a conflicting delivery ID',async()=>{
+    const fixture=await nativeTarget(),time=new Date().toISOString();
+    expect((await fixture.send('same','subscription.active',time)).status).toBe(200);
+    fixture.fail(true);
+    expect(await (await fixture.send('same','subscription.active',time)).json()).toMatchObject({duplicate:true,processed:false});
+    expect((await fixture.send('same','subscription.revoked',time)).status).toBe(409);
+  });
+  it('does not commit a projection or receipt when provider reads fail',async()=>{
+    const fixture=await nativeTarget(),time=new Date().toISOString();fixture.fail(true);
+    expect((await fixture.send('retry','subscription.active',time)).status).toBe(503);
+    expect((await fixture.access()).status).toBe(403);
+    fixture.fail(false);
+    expect(await (await fixture.send('retry','subscription.active',time)).json()).toMatchObject({processed:true,duplicate:false});
+    expect((await fixture.access()).status).toBe(200);
+  });
+});

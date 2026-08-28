@@ -19,6 +19,13 @@ async function proxy(request: Request): Promise<Response> {
       ...(request.method === 'GET' || request.method === 'HEAD' ? {} : { body: await request.arrayBuffer() }),
     });
     const outputHeaders = new Headers({ 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+    if(response.status>=300&&response.status<400){
+      const location=response.headers.get('location');
+      const checkout=location?new URL(location):null;
+      if(request.method!=='GET'||!/^\/api\/runs\/[^/]+\/checkout$/.test(incoming.pathname)||response.status!==303||!checkout||checkout.origin!=='https://sandbox.polar.sh'||checkout.username||checkout.password||!checkout.pathname.startsWith('/checkout/'))throw new Error('WORKER_REDIRECT_REJECTED');
+      outputHeaders.set('location',checkout.href);
+      outputHeaders.set('referrer-policy','no-referrer');
+    }
     for (const name of ['content-type', 'content-disposition', 'content-length']) {
       const value = response.headers.get(name);
       if (value) outputHeaders.set(name, value);

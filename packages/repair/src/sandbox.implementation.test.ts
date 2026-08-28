@@ -89,6 +89,18 @@ describe('repair runner implementation with synthetic SDK, no model/provider', (
     expect(safeRequestHeaders({},'disposable-only')).toEqual({});
     for(const authorization of ['Bearer arbitrary-host-secret','Basic synthetic','Bearer disposable-only\r\nX-Injected: 1'])expect(()=>safeRequestHeaders({authorization},'disposable-only')).toThrow('BRIDGE_HEADERS_REJECTED');
   });
+  it('keeps Polar reader and replay signer outside the repair edit scope',async()=>{
+    for(const path of ['packages/adapters/src/polar.ts','packages/reference/src/replay-signature.ts']){
+      const input=request();input.files.push({path,bytes:Buffer.from('export {};'),role:'source'});input.allowedPaths.push(path);
+      await expect(new RepairSandboxRunner().run(input)).rejects.toThrow('SANDBOX_SUPPORT_REJECTED');
+    }
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
+  it('rejects Polar credential material before any sandbox transfer',async()=>{
+    const input=request();input.files[0]!.bytes=Buffer.from(['polar','oat','synthetic_secret_canary_123456789'].join('_'));
+    await expect(new RepairSandboxRunner().run(input)).rejects.toThrow('SANDBOX_CREDENTIAL_REJECTED');
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
   it('hash binds uploaded and materialized bytes, keeps existing turn chain, and retains exec receipt', async () => {
     const states: SandboxRuntimeState[] = [], input = request(); input.onState = async state => { states.push(state); };
     const result = await new RepairSandboxRunner().run(input);
