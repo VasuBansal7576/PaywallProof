@@ -44,3 +44,7 @@ The runtime, target, UI, public contracts, replay, repair runner, installation c
 - [Sandbox response header implementation](https://github.com/polarsource/polar/blob/main/server/polar/middlewares.py)
 
 These are capability sources, not acceptance receipts. Source branches may change; an accepted provider run must record its API version and actual observations.
+
+## Executed checkpoint
+
+The migrated full local suite passes 1,584 tests. The actual TrueForge local-replay lifecycle passes all twelve assertions and retains four real browser screenshots. Both Polar tokens pass actual read-only preflight again. Real paid provider lifecycle and generated application repair remain separate, incomplete acceptance gates. See [verification status](verification-status.md).

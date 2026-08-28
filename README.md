@@ -2,7 +2,7 @@
 
 Check whether subscription state and access to a paid feature agree. Reproduce failures, collect evidence, and prepare a tested repair for approval.
 
-Implementation is in progress. No completed scan, repair, or provider integration is claimed yet. The full requirements are in [PRD.md](PRD.md).
+The complete local-replay scan passes through TrueForge and the real browser. Real Polar payment lifecycle and generated-repair acceptance remain pending. The full requirements are in [PRD.md](PRD.md).
 
 ## Boundaries
 
@@ -10,7 +10,7 @@ Implementation is in progress. No completed scan, repair, or provider integratio
 - No live billing, automatic merge, or production deployment.
 - Zero external spending. Integrations stay blocked until their no-charge operation is verified.
 - Test fixtures and local replay never count as real provider evidence.
-- Independent tests are authored from requirements and public contracts without implementation access.
+- Existing independent tests were authored from public contracts without implementation access. New migration tests are labeled implementation-aware.
 
 ## Qodo review evidence
 
