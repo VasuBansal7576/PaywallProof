@@ -83,4 +83,6 @@ Before the editing turn, the trusted staging command prints previews from source
 
 Preparation requires an actual changed source snapshot. A prose-only answer is rejected as `EMPTY_REPAIR_DIFF`; added context does not create a verification receipt or relax the two-attempt limit. Before/after checks retain the same frozen oracle fingerprint.
 
+A real Luna preparation turn exposed a separate oversized-output case: an inspection command exceeded TrueForge core's output threshold, which replaced the entire JSON execution receipt with plain-text guidance. The pinned `trueforge-core` patch now preserves the observed exit code for recognized sandbox execution envelopes and truncates only their output. It records an explicit truncation marker, original UTF-8 byte length and SHA-256; missing or malformed envelopes still fail. MCP responses are unchanged. The evaluator and runner's JSON receipt checks are not relaxed. Preparation also names the demonstrated Node interpreter instead of assuming `apply_patch` or a `python` shell executable exists.
+
 TrueForge 0.1.4 implements `listTurns` with `created_at ASC, turn_id ASC` in both SQLite and PostgreSQL. The SDK iterator follows every page. Keeping its final item therefore selects the newest turn; `limit: 1` changes page size, not total iteration count.

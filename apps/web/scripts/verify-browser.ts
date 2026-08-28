@@ -13,6 +13,21 @@ const browser = await chromium.launch({ headless: true });
 const errors: string[] = [];
 const checks: string[] = [];
 const record = (name: string) => { checks.push(name); process.stdout.write(`PASS ${name}\n`); };
+async function modelDisclosure(page: Page, model: string) {
+  await expect(page.getByRole('checkbox', { name: /I approve processing/ })).toHaveAccessibleName(new RegExp(model.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  const disclosure = page.locator('.consent-box');
+  if (model === 'paywallproof-codex/luna') {
+    await expect(disclosure).toContainText('OpenAI receives selected source code');
+    await expect(disclosure).toContainText('included allowance');
+    await expect(disclosure).not.toContainText('OpenRouter receives');
+  } else if (model === 'paywallproof-free/north-mini-code') {
+    await expect(disclosure).toContainText('OpenRouter receives selected source code and sanitized tool results');
+    await expect(disclosure).toContainText('These requests leave your Mac');
+    await expect(disclosure).toContainText('Secrets, host tests and unrelated files are excluded');
+    await expect(disclosure).not.toContainText('OpenAI receives');
+    await expect(disclosure).not.toContainText('included allowance');
+  }
+}
 async function noOverflow(page: Page) {
   const layout = await page.evaluate(() => ({ width: window.innerWidth, scroll: document.documentElement.scrollWidth, overflow: Array.from(document.querySelectorAll('body *')).filter(element => element.getBoundingClientRect().right > window.innerWidth + 1).map(element => ({ tag: element.tagName, class: element.getAttribute('class'), width: element.getBoundingClientRect().width, right: element.getBoundingClientRect().right, position: getComputedStyle(element).position })).slice(0, 12) }));
   if (layout.scroll > layout.width + 1) await page.screenshot({ path: `${output}/overflow-debug.png`, fullPage: true });
@@ -140,12 +155,7 @@ try {
   await expect(page.getByRole('heading', { name: project.name, exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Check prerequisites', exact: true })).toBeDisabled();
   await page.goto(`${origin}/projects/new`);
-  await expect(page.getByRole('checkbox', { name: /I approve processing/ })).toHaveAccessibleName(new RegExp(config.model.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  if (config.model === 'paywallproof-codex/luna') {
-    await expect(page.locator('.consent-box')).toContainText('OpenAI receives selected source code');
-    await expect(page.locator('.consent-box')).toContainText('included allowance');
-    await expect(page.locator('.consent-box')).not.toContainText('OpenRouter receives');
-  }
+  await modelDisclosure(page, config.model);
   await expect(page.getByRole('button', { name: 'Connect project', exact: true })).toBeDisabled();
   await page.getByLabel('Project name', { exact: true }).fill('UI verification, not submitted');
   await page.getByRole('checkbox', { name: /I own or am authorized/ }).check();
@@ -160,6 +170,7 @@ try {
   const fixturePage = await fixtureContext.newPage();
   fixturePage.on('pageerror', error => errors.push(error.message));
   let responseMode: 'empty' | 'stress' | 'unavailable' | 'run-disconnected' | 'run-recovered' = 'empty';
+  let fixtureConfig = config;
   let fixtureMutations = 0;
   const fixtureRuns = Array.from({ length: 300 }, (_, index) => ({ ...run, id: `presentation-only-${index}`, createdAt: index, outcome: index % 2 === 0 ? 'passed' : 'inconclusive' }));
   const hostileProject = { ...project, name: `<script>throw Error('unsafe')</script>${'long project name '.repeat(12)}` };
@@ -170,13 +181,28 @@ try {
     if (path.startsWith(`/api/runs/${run.id}/events`)) { await route.fulfill({ json: { events: [], cursor: 0 } }); return; }
     if (path === `/api/runs/${run.id}`) { await route.fulfill(responseMode === 'run-disconnected' ? { status: 503, json: { error: { code: 'READ_DISCONNECTED', message: 'Presentation test of a disconnected run read.' } } } : { json: detail }); return; }
     if (responseMode === 'unavailable') { await route.fulfill({ status: 503, json: { error: { code: 'WORKER_UNAVAILABLE', message: 'Presentation test of worker read failure.' } } }); return; }
-    const value = path === '/api/config' ? config : path === '/api/projects' ? responseMode === 'stress' ? [hostileProject] : [] : path === '/api/runs' ? responseMode === 'stress' ? fixtureRuns : [] : null;
+    const value = path === '/api/config' ? fixtureConfig : path === '/api/projects' ? responseMode === 'stress' ? [hostileProject] : [] : path === '/api/runs' ? responseMode === 'stress' ? fixtureRuns : [] : null;
     await route.fulfill({ status: value === null ? 404 : 200, json: value ?? { error: { code: 'NOT_FOUND', message: 'Presentation fixture not found.' } } });
   });
   await fixturePage.goto(origin);
   await expect(fixturePage.getByRole('heading', { name: 'No runs recorded', exact: true })).toBeVisible();
   await expect(fixturePage.getByRole('heading', { name: 'No connected projects', exact: true })).toBeVisible();
   await noOverflow(fixturePage);
+  for (const model of ['paywallproof-codex/luna', 'paywallproof-free/north-mini-code']) {
+    fixtureConfig = { ...config, model };
+    await fixturePage.goto(`${origin}/projects/new`);
+    await modelDisclosure(fixturePage, model);
+    await fixturePage.getByLabel('Project name', { exact: true }).fill('Presentation only, never submitted');
+    await fixturePage.getByRole('checkbox', { name: /I own or am authorized/ }).check();
+    await expect(fixturePage.getByRole('button', { name: 'Connect project', exact: true })).toBeDisabled();
+    await fixturePage.getByRole('checkbox', { name: /I approve processing/ }).check();
+    await expect(fixturePage.getByRole('button', { name: 'Connect project', exact: true })).toBeEnabled();
+    await noOverflow(fixturePage);
+  }
+  expect(fixtureMutations).toBe(0);
+  fixtureConfig = config;
+  await fixturePage.goto(origin);
+  record('isolated Luna and OpenRouter disclosures identify the actual recipient and require consent without provider calls');
   responseMode = 'stress'; await fixturePage.reload();
   await expect(fixturePage.locator('[data-run-id]')).toHaveCount(300);
   await expect(fixturePage.getByRole('heading', { name: hostileProject.name, exact: true }).first()).toBeVisible();

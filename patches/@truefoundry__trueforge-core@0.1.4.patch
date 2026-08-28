@@ -1,0 +1,77 @@
+diff --git a/dist/core/capabilities/builtins/LargeToolResponse.js b/dist/core/capabilities/builtins/LargeToolResponse.js
+index 0899901772639aeb7f9d98a57687105589fcc7e4..d01317b1b4a71796d6bcd5545678281553056e15 100644
+--- a/dist/core/capabilities/builtins/LargeToolResponse.js
++++ b/dist/core/capabilities/builtins/LargeToolResponse.js
+@@ -135,6 +135,30 @@ ${preview}`;
+ 
+ Preview:
+ ${preview}`;
++        // PaywallProof: truncate output, never the actual execution envelope.
++        // An unreadable receipt cannot prove which exit status was observed.
++        try {
++          const receipt = JSON.parse(entry.originalContent);
++          if (receipt && receipt.success === true && Object.keys(receipt).length === 2 &&
++              receipt.response && Object.keys(receipt.response).length === 2 &&
++              Number.isSafeInteger(receipt.response.exitCode) && typeof receipt.response.result === "string") {
++            const original = receipt.response.result;
++            const chars = Math.min(1000, this.previewNumberOfCharacters);
++            newContent = JSON.stringify({
++              success: true,
++              response: {
++                exitCode: receipt.response.exitCode,
++                result: createContentPreview(original, chars) + "\n[output truncated by TrueForge; inspect narrower ranges or write output to a file]",
++                outputTruncated: true,
++                originalOutputBytes: Buffer.byteLength(original),
++                originalOutputSha256: require("node:crypto").createHash("sha256").update(original).digest("hex")
++              }
++            });
++          }
++        } catch {
++          // Malformed or unsupported responses retain the original rejection
++          // guidance. Never infer an exit code or turn failure into success.
++        }
+         break;
+       case "mcp":
+         newContent = `${this.createLargeToolResponseGuidance(sandbox)}
+diff --git a/dist/core/capabilities/builtins/LargeToolResponse.mjs b/dist/core/capabilities/builtins/LargeToolResponse.mjs
+index c2916e1544d258039306b148224eb656307969bd..4e90677a03671c82402a804d5bdef3976c2d5877 100644
+--- a/dist/core/capabilities/builtins/LargeToolResponse.mjs
++++ b/dist/core/capabilities/builtins/LargeToolResponse.mjs
+@@ -1,5 +1,6 @@
+ // src/core/capabilities/builtins/LargeToolResponse.ts
+ import dedent from "dedent";
++import { createHash as paywallproofOutputHash } from "node:crypto";
+ import { estimateTokensForString } from "../../llm/usage.mjs";
+ import { createSandboxLargeToolResponseGuidance, SANDBOX_SCHEMA_INFER_TAG } from "../../sandbox/Sandbox.mjs";
+ import { extractErrorLogFields } from "../../util/errorLogFields.mjs";
+@@ -97,6 +98,30 @@ ${preview}`;
+ 
+ Preview:
+ ${preview}`;
++        // PaywallProof: truncate output, never the actual execution envelope.
++        // An unreadable receipt cannot prove which exit status was observed.
++        try {
++          const receipt = JSON.parse(entry.originalContent);
++          if (receipt && receipt.success === true && Object.keys(receipt).length === 2 &&
++              receipt.response && Object.keys(receipt.response).length === 2 &&
++              Number.isSafeInteger(receipt.response.exitCode) && typeof receipt.response.result === "string") {
++            const original = receipt.response.result;
++            const chars = Math.min(1000, this.previewNumberOfCharacters);
++            newContent = JSON.stringify({
++              success: true,
++              response: {
++                exitCode: receipt.response.exitCode,
++                result: createContentPreview(original, chars) + "\n[output truncated by TrueForge; inspect narrower ranges or write output to a file]",
++                outputTruncated: true,
++                originalOutputBytes: Buffer.byteLength(original),
++                originalOutputSha256: paywallproofOutputHash("sha256").update(original).digest("hex")
++              }
++            });
++          }
++        } catch {
++          // Malformed or unsupported responses retain the original rejection
++          // guidance. Never infer an exit code or turn failure into success.
++        }
+         break;
+       case "mcp":
+         newContent = `${this.createLargeToolResponseGuidance(sandbox)}

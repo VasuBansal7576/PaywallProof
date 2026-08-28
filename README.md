@@ -12,11 +12,13 @@ A recorded complete local-replay scan passed through TrueForge and the real brow
 - Test fixtures and local replay never count as real provider evidence.
 - Existing independent tests were authored from public contracts without implementation access. New migration tests are labeled implementation-aware.
 
-## Qodo review evidence
+## Qodo Code Review Evidence
 
 [Implementation PR #1](https://github.com/VasuBansal7576/PaywallProof/pull/1) has received Qodo review. No substantive implementation PR has been merged yet.
 
-The [Qodo review thread](https://github.com/VasuBansal7576/PaywallProof/pull/1#issuecomment-5441252429) identified runtime cancellation races, unsafe path collisions, and stale timestamps after cold browser startup. Follow-up changes address those findings and require another review before merge. Earlier missing-entrypoint, secret-permission and invoice-handling findings were resolved in the implementation.
+The [Qodo review thread](https://github.com/VasuBansal7576/PaywallProof/pull/1#issuecomment-5441252429) identified cancellation races, unsafe path collisions, stale browser timestamps and missing live-gateway checks; those were fixed and received follow-up reviews. Its latest useful finding added browser coverage for OpenRouter consent, while incorrect turn-ordering and artifact-metadata findings were checked against source and executable tests rather than applied blindly.
+
+The organizer requires a representative **merged** reviewed PR. PR #1 is still open, so that submission requirement is not yet satisfied. No merge or deployment is implied by a passing test or completed review.
 
 Current executed checks and remaining acceptance gaps are recorded in [verification status](docs/verification-status.md). Unit test counts and installation probes do not establish a completed product run.
 
@@ -32,7 +34,39 @@ The owner authorized replacing Stripe on August 28. The runtime, target, UI and 
 
 The owner uses Codex for implementation, independent test authoring, and verification. Human review and understanding remain required. Test and integration results will be recorded only after execution.
 
+## How TrueForge is used
+
+TrueForge runs the persistent agent session, invokes the run-scoped MCP tools and pauses fixture creation and publication for approval. The controller binds each operation to a saved policy, target build and run identity. API probes, real browser sessions and application-state reads produce separate observations for free access, paid access, scheduled cancellation and expiry.
+
+For a confirmed failure, TrueForge transfers allowlisted application source into its sandbox and executes the agent's proposed repair commands. A separate host evaluator runs the original and patched application against the same frozen checks; the repair agent cannot edit or read those tests. Publication requires approval of the exact verified diff and destination. The Codex bridge supplies model decisions only: it does not execute the application tools or replace TrueForge's approval and sandbox controls.
+
 ## Run locally
+
+The exercised environment is macOS with Node.js 22.20, pnpm 10.32, Python 3.11+ and Codex CLI 0.147.0 signed in with an entitled ChatGPT account. The local repair sandbox currently requires macOS; do not assume another platform is verified.
+
+```sh
+pnpm install --frozen-lockfile
+pnpm exec playwright install chromium
+mkdir -p .local
+chmod 700 .local
+```
+
+Start TrueForge in one terminal:
+
+```sh
+HOST=127.0.0.1 SQLITE_PATH=.local/trueforge.sqlite pnpm exec trueforge --port 8790
+```
+
+If Python is not discoverable, set `PAYWALLPROOF_LOCAL_PYTHON` to the absolute path of your existing Python 3.11+ executable before starting TrueForge. The committed runtime patch adds only that interpreter prefix to sandbox reads; it does not permit arbitrary host access.
+
+In a second terminal, register the guarded subscription connection and keep its bridge running:
+
+```sh
+pnpm model:codex
+pnpm dev:codex-model
+```
+
+In a third terminal, run `pnpm dev`. Read the operator token from the local file named below and enter it in the workspace sign-in form; never commit or share it. Run `pnpm test:runtime` before starting a workflow on a new machine. No model weights or Ollama installation are needed.
 
 `pnpm dev` starts the operator UI on port 3000, reference target on 3001 and worker on 8787. The operator token is in `.local/operator-token`. TrueForge must already be running on loopback port 8790. Ollama is not required. The selected [Codex subscription connection](docs/codex-subscription.md) uses Luna with included allowance and rejects extra-credit balances. The [free hosted alternative](docs/free-model.md) requires a dedicated $0-capped OpenRouter key. Both have passed actual inference, sandbox and approval-transport checks; these are not full repair or provider-lifecycle acceptance. There is no automatic fallback to a paid or local model.
 
@@ -59,5 +93,7 @@ For Polar runs, configure `POLAR_ACCESS_TOKEN`, `POLAR_REFERENCE_TOKEN`, `POLAR_
 | `pnpm demo:reset` | Stop inventoried runs and clean only their owned fixtures |
 
 Provider audit records are retained honestly. An active or unexpired checkout that cannot be safely removed remains a reported leftover. A retained report never becomes a fresh verification merely because it is still accessible.
+
+The local workflow verifier saves each receipt under `.local/workflow-<run-id>/`, checks all twelve scenario assertions and both fixture deletions, and preserves the previous successful report before updating the repair seed. On failure it requests cancellation and records whether that request was confirmed.
 
 `pnpm test:repair` requires the real `.local/local-workflow-report.json` produced by the local workflow verifier and at least 4 GiB free. It copies committed source into an isolated repository, injects a scheduled-cancellation fault, reproduces it through the real application, then asks the selected no-charge model to repair it. Only the explicit application-source allowlist reaches the model, never this script or the host evaluator. Results remain under `.local/full-repair-*/`; failures are preserved. It makes no billing-provider or publication call and does not modify the working application. The selected connection sends model prompts and sanitized results to OpenAI through Codex, or to OpenRouter when explicitly configured; billing replay stays local.

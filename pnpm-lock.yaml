@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  '@truefoundry/trueforge-core@0.1.4':
+    hash: 587dac5138d1d0094b5cbd6b87552dc4be90b71a4ae3b2e5218a16870eb28d87
+    path: patches/@truefoundry__trueforge-core@0.1.4.patch
   '@truefoundry/trueforge@0.1.4':
     hash: 6d3ea6f05760ff42d99abddba01524c07c8e8a3d9968c29867b96169c444b0a6
     path: patches/@truefoundry__trueforge@0.1.4.patch
@@ -3886,7 +3889,7 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
-  '@truefoundry/trueforge-core@0.1.4(@aws-sdk/credential-provider-node@3.972.81)(@smithy/signature-v4@5.7.3)(hono@4.13.5)(redis@5.12.1(@opentelemetry/api@1.9.1))(undici@7.29.0)':
+  '@truefoundry/trueforge-core@0.1.4(patch_hash=587dac5138d1d0094b5cbd6b87552dc4be90b71a4ae3b2e5218a16870eb28d87)(@aws-sdk/credential-provider-node@3.972.81)(@smithy/signature-v4@5.7.3)(hono@4.13.5)(redis@5.12.1(@opentelemetry/api@1.9.1))(undici@7.29.0)':
     dependencies:
       '@ai-sdk/alibaba': 2.0.37(zod@4.4.3)
       '@ai-sdk/anthropic': 4.0.44(zod@4.4.3)
@@ -3933,7 +3936,7 @@ snapshots:
       '@hono/swagger-ui': 0.2.2(hono@4.13.5)
       '@hono/zod-openapi': 1.6.1(hono@4.13.5)(zod@4.4.3)
       '@modelcontextprotocol/sdk': 1.30.0(zod@4.4.3)
-      '@truefoundry/trueforge-core': 0.1.4(@aws-sdk/credential-provider-node@3.972.81)(@smithy/signature-v4@5.7.3)(hono@4.13.5)(redis@5.12.1(@opentelemetry/api@1.9.1))(undici@7.29.0)
+      '@truefoundry/trueforge-core': 0.1.4(patch_hash=587dac5138d1d0094b5cbd6b87552dc4be90b71a4ae3b2e5218a16870eb28d87)(@aws-sdk/credential-provider-node@3.972.81)(@smithy/signature-v4@5.7.3)(hono@4.13.5)(redis@5.12.1(@opentelemetry/api@1.9.1))(undici@7.29.0)
       better-sqlite3: 13.0.2
       env-paths: 4.0.0
       hono: 4.13.5

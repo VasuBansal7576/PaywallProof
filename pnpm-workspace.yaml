@@ -7,4 +7,5 @@ onlyBuiltDependencies:
   - esbuild
   - sharp
 patchedDependencies:
+  '@truefoundry/trueforge-core@0.1.4': patches/@truefoundry__trueforge-core@0.1.4.patch
   '@truefoundry/trueforge@0.1.4': patches/@truefoundry__trueforge@0.1.4.patch
