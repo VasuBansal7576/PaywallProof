@@ -9,11 +9,13 @@ import {createPolicy,hashValue} from '../../../packages/core/src/index.ts';
 import {observeFeature} from '../../../packages/evidence/src/probe.ts';
 import {TrueForgeAdapter,type RuntimeTurn,type RuntimeApproval} from '../../../packages/adapters/src/trueforge.ts';
 import {patchHash,repairBranch} from '../../../packages/repair/src/index.ts';
-import type {RepairJob} from './repairs.ts';
+import {RepairCoordinator,type RepairJob,type RepairSource} from './repairs.ts';
 import {SECURITY_CONTROLS} from '../../../packages/repair/src/controls.ts';
 import {artifactRetentionFromDays} from './artifacts.ts';
 
 // Implementation-aware failure-injection tests. No provider or runtime evidence.
+const capacityMocks=vi.hoisted(()=>({statfs:vi.fn()}));
+vi.mock('node:fs/promises',async importOriginal=>({...await importOriginal<typeof import('node:fs/promises')>(),statfs:capacityMocks.statfs}));
 const opened:{controller:Controller;directory:string}[]=[];
 const feature={id:'pro_export',method:'GET',path:'/api/export',denialStatuses:[403],browserPath:'/dashboard',actionTestId:'export-button',resultTestId:'export-result'} as const;
 function setup(http=false,overrides:Pick<ControllerConfig,'artifactRetentionMs'>={}) {
@@ -32,6 +34,20 @@ function setup(http=false,overrides:Pick<ControllerConfig,'artifactRetentionMs'>
 }
 afterEach(()=>{vi.useRealTimers();vi.restoreAllMocks();for(const {controller,directory} of opened.splice(0)){controller.close();rmSync(directory,{recursive:true,force:true});}});
 describe('runtime startup failure recovery',()=>{
+  it('rejects insufficient repair capacity without consuming an attempt or invoking a model',async()=>{
+    const {directory}=setup();
+    const put=vi.fn(),inspect=vi.spyOn(TrueForgeAdapter.prototype,'inspectTurn');
+    const disk=capacityMocks.statfs.mockRejectedValue(new Error('synthetic unavailable volume'));
+    const policy=createPolicy({schemaVersion:2,priceId:'price_synthetic',featureId:'pro_export',featureConfigHash:hashValue(feature),cancellation:'allow_until_period_end',requireInitialPaymentConfirmed:true,syncWindowSeconds:5,predicateVersion:'reference-export-v1'});
+    const source:RepairSource={runId:randomUUID(),baseCommit:'a'.repeat(40),policy,oracleHash:'b'.repeat(64),observations:[],runtime:{sessionId:'synthetic-session',turnId:'synthetic-turn'},scenarios:[{id:'SC04',observationIds:[],api:{verdict:'fail',code:'SYNTHETIC_FAILURE'},browser:{verdict:'pass',code:'SYNTHETIC'},state:{verdict:'pass',code:'SYNTHETIC'}}]};
+    const coordinator=new RepairCoordinator({repositoryRoot:directory,repository:'synthetic/repository',databasePath:join(directory,'capacity.sqlite'),artifactDirectory:directory,runtimeUrl:'http://127.0.0.1:39984',model:'synthetic',webOrigin:'http://127.0.0.1:39983',documents:{put,get:()=>null,list:()=>[]},source:async()=>source});
+    try{
+      await expect(coordinator.start(source.runId,{})).rejects.toMatchObject({code:'REPAIR_DISK_CAPACITY_UNKNOWN'});
+      disk.mockResolvedValue({type:1n,bsize:4096n,blocks:1n,bfree:1n,bavail:0n,files:1n,ffree:1n});
+      for(let attempt=0;attempt<3;attempt++)await expect(coordinator.start(source.runId,{})).rejects.toMatchObject({code:'REPAIR_DISK_CAPACITY_INSUFFICIENT'});
+      expect(put).not.toHaveBeenCalled();expect(inspect).not.toHaveBeenCalled();expect(coordinator.jobs(source.runId)).toEqual([]);
+    }finally{coordinator.close();}
+  });
   it.each([undefined,'7','30','60'])('parses an operator retention setting: %s',value=>{
     expect(artifactRetentionFromDays(value)).toBe(Number(value??7)*86400000);
   });

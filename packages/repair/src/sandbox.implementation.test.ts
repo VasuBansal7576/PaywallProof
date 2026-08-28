@@ -8,11 +8,13 @@ import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import type { TrueForgeApi } from '@truefoundry/trueforge-sdk';
 import { RepairSandboxRunner, safeRequestHeaders, type SandboxRunInput, type SandboxRuntimeState } from './sandbox.ts';
+import { assertRepairDiskCapacity, REPAIR_MIN_FREE_BYTES } from './capacity.ts';
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), listTurns: vi.fn(), listEvents: vi.fn(), createTurn: vi.fn(), downloadSandboxFile: vi.fn(), checkConnection: vi.fn(), cancel: vi.fn(), resumeStream: vi.fn(), inspectTurn: vi.fn(), listTurnEvents: vi.fn(), syntheticRoot: '' }));
+const mocks = vi.hoisted(() => ({ statfs: vi.fn(), get: vi.fn(), listTurns: vi.fn(), listEvents: vi.fn(), createTurn: vi.fn(), downloadSandboxFile: vi.fn(), checkConnection: vi.fn(), cancel: vi.fn(), resumeStream: vi.fn(), inspectTurn: vi.fn(), listTurnEvents: vi.fn(), syntheticRoot: '' }));
 vi.mock('node:fs/promises', async importOriginal => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
   return { ...actual,
+    statfs: mocks.statfs,
     lstat: async (path: string) => path === mocks.syntheticRoot ? { isDirectory: () => true, isSymbolicLink: () => false, mode: 0o700, uid: process.getuid?.() } : actual.lstat(path),
     realpath: async (path: string) => path === mocks.syntheticRoot ? path : actual.realpath(path),
   };
@@ -30,6 +32,7 @@ const done = (): TrueForgeApi.TurnStateDone => ({ status: 'done', completedAt: n
 const turn = (id: string): TrueForgeApi.Turn => ({ id, sessionId: 'synthetic-session', previousTurnId: null, createdAt: new Date().toISOString(), state: done() });
 beforeEach(async () => {
   vi.clearAllMocks(); counter = 0; latest = 'previous'; lost = false; alter = false; omitReceipt = false; execExtras = {}; events.clear(); inputs.clear();
+  mocks.statfs.mockReset().mockResolvedValue({ bavail: 16n * 1024n ** 3n, bsize: 1n });
   root = await mkdtemp(join(tmpdir(), 'pp-runner-implementation-'));
   mocks.syntheticRoot = join(homedir(), 'Library', 'Application Support', 'trueforge', 'sandboxes', 'synthetic-session', '00000000000000000000000000');
   await mkdir(join(root, 'uploads'));
@@ -83,6 +86,33 @@ function request(): SandboxRunInput {
 }
 
 describe('repair runner implementation with synthetic SDK, no model/provider', () => {
+  it.each([-1n, 0n, 1n])('checks the exact free-space boundary: %s', async delta => {
+    mocks.statfs.mockResolvedValue({ bavail: REPAIR_MIN_FREE_BYTES + delta, bsize: 1n });
+    const result = assertRepairDiskCapacity(['/synthetic/volume']);
+    if (delta < 0n) await expect(result).rejects.toMatchObject({ code: 'REPAIR_DISK_CAPACITY_INSUFFICIENT' });
+    else await expect(result).resolves.toBeUndefined();
+    expect(mocks.statfs).toHaveBeenCalledWith('/synthetic/volume', { bigint: true });
+  });
+  it('checks every destination and uses available blocks, not reserved free blocks', async () => {
+    mocks.statfs.mockResolvedValueOnce({ bavail: 1024n ** 2n, bsize: 4096n }).mockResolvedValueOnce({ bavail: 0n, bfree: 1024n ** 2n, bsize: 4096n });
+    await expect(assertRepairDiskCapacity(['/synthetic/source', '/synthetic/source', '/synthetic/runtime'])).rejects.toMatchObject({ code: 'REPAIR_DISK_CAPACITY_INSUFFICIENT' });
+    expect(mocks.statfs.mock.calls.map(call => call[0])).toEqual(['/synthetic/source', '/synthetic/runtime']);
+  });
+  it.each([{ bavail: -1n, bsize: 4096n }, { bavail: 1n, bsize: 0n }, { bavail: 1n, bsize: -1n }, { bavail: Infinity, bsize: 1n }, {}])('fails closed on invalid filesystem counters, case %#', async usage => {
+    mocks.statfs.mockResolvedValue(usage);
+    await expect(assertRepairDiskCapacity(['/synthetic/volume'])).rejects.toMatchObject({ code: 'REPAIR_DISK_CAPACITY_UNKNOWN' });
+  });
+  it('fails closed without exposing a private filesystem error', async () => {
+    mocks.statfs.mockRejectedValue(new Error('synthetic private filesystem path'));
+    await expect(assertRepairDiskCapacity(['/synthetic/volume'])).rejects.toThrow(/^REPAIR_DISK_CAPACITY_UNKNOWN$/);
+  });
+  it.each(['low', 'unknown'])('stops a %s-capacity sandbox before upload or execution', async condition => {
+    if (condition === 'low') mocks.statfs.mockResolvedValue({ bavail: 0n, bsize: 4096n });
+    else mocks.statfs.mockRejectedValue(new Error('synthetic failure'));
+    await expect(new RepairSandboxRunner().run(request())).rejects.toMatchObject({ code: condition === 'low' ? 'REPAIR_DISK_CAPACITY_INSUFFICIENT' : 'REPAIR_DISK_CAPACITY_UNKNOWN', runtime: { turnIds: [], execReceipts: [] } });
+    expect(mocks.createTurn).not.toHaveBeenCalled();
+    expect(mocks.cancel).not.toHaveBeenCalled();
+  });
   it('forwards only the disposable token or the fixed negative-test token',()=>{
     expect(safeRequestHeaders({authorization:'Bearer disposable-only'},'disposable-only')).toEqual({authorization:'Bearer disposable-only'});
     expect(safeRequestHeaders({authorization:'Bearer invalid_synthetic_token'},'disposable-only')).toEqual({authorization:'Bearer invalid_synthetic_token'});

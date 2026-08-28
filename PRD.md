@@ -673,12 +673,15 @@ These are initial product limits, not measured performance claims:
 | Retryable read attempts | 3 with bounded backoff |
 | Application synchronization window | 60 seconds, owner-configurable before approval |
 | Repair attempts | 2 maximum |
+| Free space before a full local repair | 4 GiB on each source, artifact and runtime volume |
 | Model calls per run | 30 maximum |
 | Tool operations per run | 100 maximum, excluding bounded internal polling |
 | Approval expiry | 15 minutes |
 | Cleanup deadline | 2 minutes, followed by visible leftovers |
 
 The worker enforces wall time and operation limits regardless of model cooperation. Bound internal polling separately so it cannot bypass the tool-operation limit. Track token usage and estimated provider cost when available. Missing usage is "unknown", not zero.
+
+Check available disk blocks before consuming a repair attempt, loading dependencies or starting model work. Reject insufficient or unreadable capacity with a visible error. Recheck the actual sandbox volume before each phase uploads files. The disk preflight is conservative headroom, not a quota or protection against unrelated concurrent writes. Never delete user files or buy storage to satisfy it automatically.
 
 If the runtime cannot expose model-call counts, enforce a conservative turn/token limit and a watchdog during the initial spike. Record that limitation rather than displaying an unenforced cost ceiling.
 

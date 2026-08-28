@@ -8,8 +8,9 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { TrueForge, type TrueForgeApi } from '@truefoundry/trueforge-sdk';
 import { z } from 'zod';
 import { TrueForgeAdapter } from '../../adapters/src/trueforge.ts';
-import { pathSchema } from './model.ts';
+import { pathSchema, RepairError } from './model.ts';
 import { REFERENCE_SUPPORT_PATHS } from './checkout.ts';
+import { assertRepairDiskCapacity } from './capacity.ts';
 
 const CHUNK_BYTES = 8 * 1024 * 1024;
 const MAX_BYTES = 512 * 1024 * 1024;
@@ -331,10 +332,14 @@ export class RepairSandboxRunner {
       const configured = await this.runtime.checkConnection(), { data: session } = await this.client.sessions.get(input.sessionId);
       if (session.agent.type !== 'inline' || session.agent.spec.model?.name !== configured.model || session.agent.spec.config?.sandbox?.enabled !== true) fail(operation, 'LOCAL_SESSION_REQUIRED');
       await this.assertLatest(operation);
+      // Recheck the actual runtime volume before each phase uploads anything.
+      const payloadBytes = files.reduce((total, file) => total + BigInt(file.bytes.byteLength), 0n);
+      await assertRepairDiskCapacity([await this.sandboxRoot(operation)], 3n * payloadBytes + 128n * 1024n ** 2n);
       return await perform(operation);
     } catch (error) {
       if (operation.dispatched) await this.runtime.cancel({ sessionId: input.sessionId }).catch(() => {});
       if (error instanceof SandboxRunError) throw error;
+      if (error instanceof RepairError) fail(operation, error.code);
       fail(operation, operation.signal.aborted ? 'SANDBOX_CANCELLED' : 'SANDBOX_OPERATION_FAILED');
     } finally { operation.signal.removeEventListener('abort', cancel); }
   }

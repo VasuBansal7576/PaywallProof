@@ -10,7 +10,7 @@ No provider customer, checkout, payment or webhook lifecycle has succeeded. The 
 
 Runtime, reference target, UI, policy/evidence schema v2, replay signing, repair packaging and active contracts have migrated. The Stripe SDK and adapter were removed. Native Polar webhooks use Standard Webhooks; internal replay uses a distinct route, key and header. Private checkout links are available only through the authenticated operator route. Unknown mutations are not blindly retried. Native cancellation waits for the real period boundary and provider state. Provider audit records are retained, not falsely marked deleted.
 
-The full local suite passed **1,584 tests across 23 files, zero failures and zero skips** at `.local/full-suite-polar-migration.json`. TypeScript and ESLint passed. This includes 127 implementation-aware Polar boundary and native-webhook tests and browser bundle-size regressions. Existing independent assertions remain; their mechanical schema/provider migration is disclosed in `tests/independent/README.md`. These are code-test results, not payment or full product acceptance.
+The final local suite passed **1,597 tests across 23 files, zero failures and zero skips** at `.local/full-suite-polar-migration-final.json`. TypeScript and ESLint passed. This includes 127 implementation-aware Polar boundary and native-webhook tests, browser bundle-size regressions, and thirteen added disk-capacity checks. Existing independent assertions remain; their mechanical schema/provider migration is disclosed in `tests/independent/README.md`. These are code-test results, not payment or full product acceptance.
 
 Two real Next development JS bundles exceeded the browser transport's previous 1 MiB limit. Only static JS/CSS GET responses now permit up to 4 MiB; API bodies keep 1 MiB. A further actual comparison isolated Next 16.3.3's development React debug channel, which waited on a websocket blocked by the verifier. Disabling only that debug channel fixed hydration under the unchanged network restrictions.
 
@@ -22,11 +22,17 @@ The preceding run `90a5d8ad-f8dc-4bf6-ab2c-b5ac5673d778` remains inconclusive, w
 
 The actual repair-runner installation check also passed with the supported local model. TrueForge materialized hash-checked files, executed the trusted launcher, served two real sandbox HTTP responses through the reverse bridge and returned a successful exec receipt. `.local/final-runner-smoke-3.json` explicitly identifies this as installation evidence, not a generated application repair.
 
+The embedded operator browser also needed the development React debug channel disabled. After that fix, actual token sign-in succeeded and the run's Scenarios and Report tabs displayed twelve passes, zero failures and the local-replay limitation. No network restriction was relaxed.
+
+The new disk-capacity preflight ran against the actual source, artifact and runtime locations. Each had 408,768,512 available bytes, below the full-repair requirement of 4,294,967,296 bytes. It returned `REPAIR_DISK_CAPACITY_INSUFFICIENT` without starting a model or uploading files. `.local/repair-capacity-preflight.json` records this rejection. Tests cover exact thresholds, reserved blocks, separate volumes, invalid counters and repeated rejected requests without consuming repair attempts. This is a preflight, not a disk quota.
+
+Qodo's posted review is bound to `04ffb22` and retains two earlier findings. The screenshot finding is addressed by `artifactDownloadMetadata` at the controller lookup boundary, with authenticated before/after download, malformed provenance and corruption regressions. The missing-entrypoint finding is contradicted by the committed entrypoints and actual running development services. A fresh review was requested; its separate progress comment remains pending. Neither finding was dismissed solely because a test count increased.
+
 ## Remaining acceptance gates
 
 - The real Polar paid checkout, actual webhook delivery and complete provider-backed SC01–SC04 remain unverified. Sending a private email alias needs the specific authorization required by the execution guard. No rejected transfer was bypassed.
 - A full generated application repair and its before/after regression run remain unverified. The installed repair dependency set is 285,845,229 bytes before archives and Next build output; the current three-phase workflow materializes it repeatedly. The filesystem has roughly 400 MiB available after safe cleanup of obsolete project-generated files. A Git checkpoint actually failed with `No space left on device` before cleanup. No unrelated user files or model weights were deleted. Do not fill the volume to force a repair run.
-- Qodo has reviewed the previous public foundation commit. Review of the Polar migration and browser fix is pending. No implementation merge or deployment has occurred.
+- Qodo's updated review cites the migration commit; the requested fresh pass and review of the final disk/UI follow-up remain pending. No implementation merge or deployment has occurred.
 
 ## Earlier checkpoints and remaining work
 

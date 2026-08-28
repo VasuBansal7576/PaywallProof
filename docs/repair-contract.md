@@ -4,6 +4,8 @@ This is the public contract for `packages/repair/src/index.ts`. Independent test
 
 ## Proposal and verification
 
+The worker requires 4 GiB of available disk space on the source, artifact and TrueForge sandbox volumes before accepting a full repair. `REPAIR_DISK_CAPACITY_INSUFFICIENT` and `REPAIR_DISK_CAPACITY_UNKNOWN` reject the request before an attempt is consumed or a model turn begins. The runner rechecks its validated sandbox volume before each phase, budgeting three times the transferred payload plus 128 MiB. These checks do not reserve disk space or prevent unrelated writes.
+
 `openRepairStore({path,repository,allowedPaths,requiredRegressionChecks?,clock?})` opens durable SQLite storage. `repository` is an exact `owner/name`; `allowedPaths` is a nonempty list of exact repository-relative file paths, never glob patterns. `requiredRegressionChecks` defaults to `SC01`, `SC02`, `SC03`, `SC04`. `clock` defaults to Unix milliseconds. `close()` closes the database.
 
 `store.propose(input)` accepts `{runId,findingId,attempt,baseCommit,baseBranch,repository,branch,policyHash,oracleHash,allowedPaths,changes,diffHash,verificationMode,failureCode,summary,reportUrl}`. Attempt is 1 or 2, unique per run/finding; attempt 2 requires attempt 1 to exist. Repeating identical input returns the same proposal; changing an existing attempt throws `REPAIR_CONFLICT`. Proposal IDs are generated. No receipts exist at this point and state is `proposed`.

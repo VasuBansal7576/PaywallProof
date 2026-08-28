@@ -1,6 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
+import {homedir} from 'node:os';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {z} from 'zod';
@@ -15,6 +16,7 @@ import {createReferenceLauncher} from '../../../packages/repair/src/launcher.ts'
 import {oracleFingerprint,createRepairReplayPlan,CORE_SCENARIOS} from '../../../packages/repair/src/oracle.ts';
 import {runRepairOracleProcess} from '../../../packages/repair/src/oracle-process.ts';
 import {SECURITY_CONTROLS} from '../../../packages/repair/src/controls.ts';
+import {assertRepairDiskCapacity} from '../../../packages/repair/src/capacity.ts';
 
 const execute=promisify(execFile);
 type ScenarioId=typeof CORE_SCENARIOS[number];
@@ -68,6 +70,8 @@ export class RepairCoordinator {
     const failures=source.scenarios.flatMap(scenario=>(['api','browser','state'] as const).filter(channel=>scenario[channel].verdict==='fail').map(channel=>({id:`${scenario.id}:${channel}`,scenarioId:scenario.id,channel,code:scenario[channel].code})));
     const finding=request.findingId?failures.find(item=>item.id===request.findingId):failures[0];
     if(!finding)throw new RepairError('REPAIR_REQUIRES_CONFIRMED_FAILURE');
+    // Reject before consuming an attempt, loading dependencies or starting a turn.
+    await assertRepairDiskCapacity([this.config.repositoryRoot,this.config.artifactDirectory,resolve(homedir(),'Library','Application Support','trueforge','sandboxes')]);
     await this.checkOracle(source.oracleHash);
     const latest=jobs.sort((a,b)=>b.createdAt-a.createdAt)[0];
     const runtime=latest?{sessionId:latest.sessionId,turnId:latest.turnId}:source.runtime;
