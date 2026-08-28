@@ -2,6 +2,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { Overview } from '../components/overview';
+import { ProjectView } from '../components/project';
+import { ApiSession } from './api';
 import { configSchema, projectSchema, runSchema, type Run } from './contracts';
 import { adjacentTab, needsAttention, newestRuns, parseRunTab, runTabs, visibleRuns } from './workspace-presentation';
 
@@ -45,6 +47,16 @@ describe('workspace presentation', () => {
     expect(html).toContain('No connected projects');
     expect(html).not.toContain('/report?format=json');
     expect(html).toContain('No test has run yet.');
+  });
+  it('explains a changed configuration without rebinding saved projects or approvals', () => {
+    const html = renderToStaticMarkup(createElement(ProjectView, { config: { ...config, defaultRef: 'new-commit' }, project, api: new ApiSession('presentation-only'), runs: [], onRun: async () => {} }));
+    expect(html).toContain('This project uses an earlier configuration');
+    expect(html).toContain('Existing approvals cannot authorize a different build.');
+    expect(html).toContain('new-commit');
+    expect(html).toContain('Connect current configuration');
+    expect(html).toContain('href="/projects/new"');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Review run approval/);
+    expect(project.ref).toBe('main');
   });
   it('escapes untrusted names and preserves exact run bindings in links and machine-readable data', () => {
     const run = fixture('run/<untrusted>');

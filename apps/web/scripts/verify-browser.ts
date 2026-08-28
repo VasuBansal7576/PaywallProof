@@ -121,8 +121,20 @@ try {
   await expect(page.getByRole('heading', { name: project.name, exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Check prerequisites', exact: true })).toBeDisabled();
   await page.getByRole('radio').first().check();
+  const preflightResponse = page.waitForResponse(response => response.url().endsWith(`/api/projects/${project.id}/preflight`) && response.request().method() === 'POST');
   await page.getByRole('button', { name: 'Check prerequisites', exact: true }).click();
-  await expect(page.locator('.check-row')).toHaveCount(3, { timeout: 30_000 });
+  const preflightReply = await preflightResponse;
+  if (project.ref !== config.defaultRef || project.repository !== config.repository) {
+    expect(preflightReply.status()).toBe(422);
+    expect(await preflightReply.json()).toMatchObject({ error: { code: 'PROJECT_CONFIG_CHANGED' } });
+    await expect(page.getByRole('status', { name: 'Project configuration changed' })).toContainText(config.defaultRef);
+    await expect(page.getByRole('link', { name: 'Connect current configuration' })).toHaveAttribute('href', '/projects/new');
+    await expect(page.getByRole('button', { name: 'Review run approval', exact: true })).toBeDisabled();
+    await expect(page.locator('.check-row')).toHaveCount(0);
+  } else {
+    expect(preflightReply.ok()).toBe(true);
+    await expect(page.locator('.check-row')).toHaveCount(3, { timeout: 30_000 });
+  }
   await page.screenshot({ path: `${output}/project-policy.png`, fullPage: true });
   await page.reload();
   await expect(page.getByRole('heading', { name: project.name, exact: true })).toBeVisible();
@@ -135,7 +147,7 @@ try {
   await page.getByRole('checkbox', { name: /I approve processing/ }).check();
   await expect(page.getByRole('button', { name: 'Connect project', exact: true })).toBeEnabled();
   await page.screenshot({ path: `${output}/connect-project.png`, fullPage: true });
-  record('real read-only local preflight, explicit mode reset, ownership and model-consent gates');
+  record(`real read-only local preflight ${project.ref !== config.defaultRef || project.repository !== config.repository ? 'rejects changed configuration' : 'returns capability checks'}, explicit mode reset, ownership and model-consent gates`);
 
   // This separate context cannot send API requests to the live worker.
   const fixtureContext = await browser.newContext({ viewport: { width: 390, height: 844 } });

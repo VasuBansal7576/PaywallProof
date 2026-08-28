@@ -2,6 +2,16 @@
 
 This is a record of observed progress, not an acceptance certificate.
 
+## Latest UI and repair checks
+
+The rebuilt operator workspace passes eight actual browser check groups, including exact report/clipboard bindings, keyboard tabs and history, 320/390/768-pixel layouts, connection recovery and isolated hostile presentation fixtures. The latest run also verifies `PROJECT_CONFIG_CHANGED` after restarting on a newer commit. The UI offers a new connection without rewriting earlier project, run or approval bindings. No UI verification project, run or provider object was created. The receipt is `apps/web/.local/verification.json`.
+
+The full suite passed **1,653 tests across 24 files, zero failures/skips**, recorded in `.local/full-suite-source-preview.json`. TypeScript and ESLint passed. New tests remain implementation-aware; independent business assertions were not weakened.
+
+The actual fault baseline in `.local/full-repair-48595c1f-e583-49d2-94e5-ba21576bc39f/` again reproduced only the scheduled-cancellation API/browser failure, with the other scenarios and all fourteen security controls passing. Its first generated-repair attempt returned prose without editing source, and was correctly rejected as `EMPTY_REPAIR_DIFF`. The next preparation supplies bounded previews of actual source plus recorded billing facts without fixture identities. Host tests and evaluator source remain unavailable to the model. Attempt two uses the same frozen oracle; it is not yet a recorded pass.
+
+Qodo's `fae5ee7` review confirmed the browser-budget and first-install fixes. Its new turn-ordering warning conflicts with both installed TrueForge database implementations, which explicitly use `created_at ASC, turn_id ASC`. SDK pagination consumes all pages, so the final item is the latest turn. The code was not reversed in response to that finding.
+
 ## August 28 provider migration
 
 Polar's isolated sandbox replaces Stripe. GitHub sign-in and sandbox organization creation completed. Separate worker and read-only reference tokens expire November 26, 2026. A private USD 10 monthly sandbox product was created. Both tokens passed actual organization/product/price preflight with API version `2026-04` and `X-Polar-Sandbox: 1`. Private receipts are under `.local/polar-sandbox-setup/`; no credentials or customer email are published.

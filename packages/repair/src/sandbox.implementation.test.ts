@@ -235,6 +235,31 @@ describe('repair runner implementation with synthetic SDK, no model/provider', (
     const instructions = [...inputs.values()].find(value => value.includes('sanitized checkout'));
     expect(instructions).toContain(JSON.stringify([`${result.workspace}/src/value.cjs`]));
     expect(instructions).toContain(`Set cwd to ${JSON.stringify(result.workspace)}`);
+    expect(result.execReceipts[0]?.output).toContain('module.exports=40;');
+    expect(result.execReceipts[0]?.output).not.toContain('module.exports=41;');
+  });
+  it('bounds source previews and never includes support or dependency bytes', async () => {
+    const input = request();
+    input.files = input.files.filter(file => file.role !== 'source');
+    input.allowedPaths = [];
+    for (let index = 0; index < 10; index++) {
+      const path = `src/preview-${index}.cjs`;
+      input.allowedPaths.push(path);
+      input.files.push({ path, role: 'source', bytes: Buffer.from('x'.repeat(6000)) });
+    }
+    input.files.push({ path: 'packages/reference/src/replay-signature.ts', role: 'support', bytes: Buffer.from('PRIVATE_SUPPORT_CANARY') });
+    const result = await new RepairSandboxRunner().prepare({ ...input, instructions: 'Inspect only.' });
+    const output = [...events.values()].flat().filter(event => event.type === 'tool.response').map(event => event.content).join('\n');
+    expect(output).not.toContain('PRIVATE_SUPPORT_CANARY');
+    const rows = [...events.values()].flat().flatMap(event => {
+      if (event.type !== 'tool.response') return [];
+      const body = z.object({ response: z.object({ result: z.string() }) }).parse(JSON.parse(event.content));
+      return body.response.result.split('\n').filter(line => line.startsWith('{"sourcePath"')).map(line => z.object({ preview: z.string(), truncated: z.boolean() }).parse(JSON.parse(line)));
+    });
+    expect(rows.reduce((total, row) => total + Buffer.byteLength(row.preview), 0)).toBe(32768);
+    expect(rows.every(row => row.truncated && Buffer.byteLength(row.preview) <= 4096)).toBe(true);
+    expect(result.files).toHaveLength(10);
+    expect(result.files.every(file => file.bytes.byteLength === 6000)).toBe(true);
   });
   it('does not retry an uncertain create response and retains the pending persistence record', async () => {
     lost = true; const states: SandboxRuntimeState[] = [];

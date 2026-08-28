@@ -20,6 +20,8 @@ Errors are JSON `{error:{code,message}}`; non-2xx must be displayed, never conve
 
 Initial UI must show honest empty states, distinct Untested/Inconclusive/Blocked, sidebar project/run navigation, local-replay warning, and accessible keyboard controls. No fake projects, stats, results, findings or repair diffs. The complete required screens remain in PRD; implement controls for actual endpoints only and disclose blocked operations.
 
+When the configured repository or commit differs from a saved project, the UI explains the mismatch and links to connecting the current configuration. Saved projects, reports and approvals retain their original bindings. The server rejects preflight with `PROJECT_CONFIG_CHANGED`; the UI does not silently migrate or reapprove the project.
+
 The workspace searches and filters every returned run without truncating history. Ordering is descending `createdAt`, with ID as a stable tie-breaker. Run tabs use URL fragments and do not issue mutations when selected, reloaded or navigated with browser history. Copy controls expose exact saved IDs or JSON; report links use the authenticated routes above. Mobile navigation keeps the same projects and runs available.
 
 Handled preflight errors are persisted by the existing idempotency middleware after Hono's error handler returns. Repeating the same request ID and body returns the recorded status/body without dispatching another preflight. Regression tests exercise invalid JSON, invalid mode, missing project and a thrown read failure. These known failures are distinct from a genuinely uncertain interrupted mutation, whose pending record must still block blind redispatch.

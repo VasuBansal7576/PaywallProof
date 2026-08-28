@@ -330,10 +330,21 @@ export class RepairSandboxRunner {
     if (typeof input.instructions !== 'string' || !input.instructions.trim() || input.instructions.length > 20_000) throw new Error('REPAIR_INSTRUCTIONS_REJECTED');
     return this.operation(input, async operation => {
       const packed = await this.transfer(operation, []);
-      await this.execute(operation, 'stage', this.bootstrap(operation, packed, null, {}, true));
+      // Give the model actual application bytes before asking for an edit. The
+      // preview is bounded and excludes support, dependencies and host tests.
+      const preview = `
+const previewPaths=${JSON.stringify(operation.files.filter(file => file.role === 'source').map(file => file.path))};
+let previewRemaining=32768;
+for(const sourcePath of previewPaths){
+  if(previewRemaining===0)break;
+  const bytes=fs.readFileSync(path.join(workspace,sourcePath)),limit=Math.min(4096,previewRemaining);
+  const shown=bytes.subarray(0,limit);previewRemaining-=shown.length;
+  process.stdout.write(JSON.stringify({sourcePath,bytes:bytes.length,preview:shown.toString('utf8'),truncated:bytes.length>shown.length})+'\\n');
+}`;
+      await this.execute(operation, 'stage', this.bootstrap(operation, packed, null, {}, true) + preview);
       // Read bytes before exposing the candidate editing turn.
       await this.result(operation, false, null);
-      await this.turn(operation, 'prepare', `The sanitized checkout is in ${operation.workspace}. Exec starts at the sandbox session root, NOT inside the checkout. Set cwd to ${JSON.stringify(operation.workspace)} on every inspection/edit exec call, or use these exact session-root-relative source paths: ${JSON.stringify(operation.files.filter(f => f.role === 'source').map(f => `${operation.workspace}/${f.path}`))}. Bare paths such as packages/ or apps/ do not exist at the session root. Inspect and edit the actual files in this checkout; a prose suggestion does not modify them. Never change dependencies, launchers, tests, oracle, auth settings, environment files or lockfiles. Never install dependencies or use network access. Your answer is a candidate, not a verified repair.\n\n${input.instructions}`, []);
+      await this.turn(operation, 'prepare', `The sanitized checkout is in ${operation.workspace}. The preceding exec output contains bounded previews of the actual application source, not a proposed solution. Your next action must call exec to inspect relevant source or edit it. Continue using exec until your candidate change is written to disk; do not answer with a proposed change alone. Exec starts at the sandbox session root, NOT inside the checkout. Set cwd to ${JSON.stringify(operation.workspace)} on every inspection/edit exec call, or use these exact session-root-relative source paths: ${JSON.stringify(operation.files.filter(f => f.role === 'source').map(f => `${operation.workspace}/${f.path}`))}. Bare paths such as packages/ or apps/ do not exist at the session root. Inspect and edit the actual files in this checkout; a prose suggestion does not modify them. Never change dependencies, launchers, tests, oracle, auth settings, environment files or lockfiles. Never install dependencies or use network access. Your answer is a candidate, not a verified repair.\n\n${input.instructions}`, []);
       await this.execute(operation, 'snapshot', this.bootstrap(operation, packed, null, {}, false));
       return this.result(operation, true, null);
     });
