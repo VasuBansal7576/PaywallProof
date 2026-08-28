@@ -2,6 +2,16 @@
 
 This is a record of observed progress, not an acceptance certificate.
 
+## Current result, August 29 IST
+
+The full generated-repair acceptance passed with Luna and TrueForge. The unchanged before build reproduced SC03's API/browser denial; the model's patch passed all twelve scenario assertions and fourteen security controls. Both verification executions deleted their two owned users. The oracle hash stayed `6c999f00e816d7e9fbfdbdcba59a1bad7d74a31bb9f94a247bb9cd9d5954b590`. Actual receipt: `.local/full-repair-f5d47c8e-2a64-489f-b262-04f98837f928/acceptance.json`; sanitized projection: [recorded repair](../examples/recorded-repair.json). This used an isolated injected fault, not a production finding or Polar payment. No generated repair was published.
+
+The complete suite after the final Qodo fixes passes **1,871 tests across 28 files**, zero failures/skips, recorded in `.local/full-suite-qodo-final.json`. TypeScript and ESLint pass. The operator production build and all ten real-browser check groups passed. Existing independent assertions and the repair evaluator were not changed.
+
+The real workspace walkthrough is recorded at `.local/submission/2026-08-28T20-18-14.495Z/paywallproof-walkthrough.mp4`. FFprobe reports 180.003 seconds, 1440×1000 H.264 video and a default subtitle track. The recording had no browser errors; sampled beginning, middle and ending frames were inspected for rendering and credential exposure. It shows the recorded local scan and explicitly excludes provider acceptance. It has not been uploaded.
+
+The Polar checkout/native-webhook lifecycle remains blocked on specific permission to send the existing account's mailbox alias to the sandbox. PR #1 remains open; previous push permission did not authorize merge or deployment. No paid API, model download, billing change or credit purchase was used.
+
 ## August 29 IST (August 28 UTC): Codex subscription selected
 
 The owner selected `gpt-5.6-luna` through the existing ChatGPT subscription. Official CLI `0.147.0` reports managed ChatGPT sign-in, Pro, available included quota, and zero extra credits. The bridge pins Luna, disables provider fallback and rejects paid/API-key modes, extra-credit balances and unknown quota state. It makes no purchase or account-billing changes. OpenRouter remains an explicit alternative; its idle gateway was stopped. No Ollama process or weights are used.
@@ -105,8 +115,8 @@ Qodo reviewed the rebuilt UI at `1e5cc72`. Its new first-install capacity findin
 ## Remaining acceptance gates
 
 - The real Polar paid checkout, actual webhook delivery and complete provider-backed SC01–SC04 remain unverified. Sending a private email alias needs the specific authorization required by the execution guard. No rejected transfer was bypassed.
-- A full generated application repair and its before/after regression run remain unverified. The free hosted runtime is activated and passes actual execution and approval checks. Its full repair attempt failed because the model called tools during transfer; the stronger free endpoint returned HTTP 429. Preserve those failures and the unchanged evaluator. Do not restore Ollama, substitute a paid provider, increase the $0 cap or relabel a failed attempt.
-- Qodo reviewed the latest implementation at `ed4cdd9` and confirmed the stale-preflight UI fix. No implementation merge or deployment has occurred.
+- Full generated-repair acceptance is now passed with Luna. Earlier failed attempts remain unchanged. Do not restore Ollama, substitute a paid provider, increase the $0 cap or relabel a failed attempt.
+- Qodo reviewed `81093cd`. Its blank-output finding was valid: a completed empty string now enters the same single-replacement path; malformed nonempty JSON still fails. Its native retry-count finding was also accepted: the original cancellation signal bounds retries, with no additional turn submission. Four regression cases failed before these fixes; all 95 gateway cases pass afterward. The five repeated historical claims retain the contrary source and executable evidence below. Final follow-up review is pending. No implementation merge or deployment has occurred.
 
 ## Earlier checkpoints and remaining work
 

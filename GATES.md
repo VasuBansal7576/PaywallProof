@@ -4,10 +4,10 @@ Scope: Complete and document the remaining real workflow, repair, provider and r
 
 Prerequisites: Node.js, pnpm, Git, authenticated GitHub CLI and the existing local services. Model checks use only the guarded Codex subscription bridge.
 
-- [ ] G1: A generated repair reproduces the fault, fixes it and passes the same frozen evaluator and security controls.
+- [x] G1: A generated repair reproduces the fault, fixes it and passes the same frozen evaluator and security controls.
   CHECK: pnpm test:repair
   EXPECT: /"status":"passed"/
-  EVIDENCE: pending
+  EVIDENCE: pnpm test:repair exited 0 with status passed for .local/full-repair-f5d47c8e-2a64-489f-b262-04f98837f928/acceptance.json, using implementation 81093cd and an isolated fault fixture. Before exit 1 reproduced SC03; after exit 0 passed 12 assertions and 14 security controls. Both verification phases deleted two owned users. Oracle hash 6c999f00e816d7e9fbfdbdcba59a1bad7d74a31bb9f94a247bb9cd9d5954b590 remained unchanged. No provider call or publication.
 
 - [x] G2: The current Luna runtime completes all four scenarios through the full local controller workflow and cleans up its fixtures.
   CHECK: pnpm exec tsx scripts/verify-local-workflow.ts
@@ -26,5 +26,5 @@ Prerequisites: Node.js, pnpm, Git, authenticated GitHub CLI and the existing loc
 - [ ] G6: Final Qodo feedback is checked and the spec and submission evidence accurately distinguish passed checks from unresolved requirements.
   EVIDENCE: pending; inspect the completed review for the final published commit and reconcile each finding with source or reproduced behavior.
 
-- [ ] G7: Submission materials include the required approximately three-minute recording, reproducible instructions and Qodo evidence without exposing private data or claiming unfinished provider acceptance.
-  EVIDENCE: pending; the recording depends on the remaining real workflow evidence. Existing README and PR review are available.
+- [x] G7: Submission materials include the required approximately three-minute recording, reproducible instructions and Qodo evidence without exposing private data or claiming unfinished provider acceptance.
+  EVIDENCE: pnpm exec tsx scripts/record-local-walkthrough.ts exited 0. .local/submission/2026-08-28T20-18-14.495Z/paywallproof-walkthrough.mp4 is 180.003 seconds with subtitles, no browser errors, and inspected frames at 15/90/165 seconds. docs/submission.md and README contain reproduction instructions, architecture and Qodo links. No video upload, PR merge or provider acceptance is claimed.

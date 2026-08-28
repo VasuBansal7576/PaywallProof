@@ -72,6 +72,7 @@ export function codexDecisionPrompt(request: Completion) {
 
 export function parseCodexDecision(result: CodexGeneration, request: Completion) {
   if (Buffer.byteLength(result.text) > 256 * 1024) throw new CodexSubscriptionError('CODEX_DECISION_TOO_LARGE');
+  if (!result.text.trim()) throw new CodexSubscriptionError('CODEX_EMPTY_DECISION');
   const generated = generatedDecisionSchema.parse(JSON.parse(result.text));
   const parsed = decisionSchema.safeParse({ ...generated, tool_calls: generated.tool_calls.map(call => {
     if (typeof call.arguments === 'string') return call;

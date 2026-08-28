@@ -2,9 +2,11 @@
 
 Check whether subscription state and access to a paid feature agree. Reproduce failures, collect evidence, and prepare a tested repair for approval.
 
-A recorded complete local-replay scan passed through TrueForge and the real browser. Real Polar payment lifecycle and generated-repair acceptance remain pending. The full requirements are in [PRD.md](PRD.md).
+A complete local-replay scan and a generated application repair passed through TrueForge and the real browser. The repair reproduced the original failure, then passed all twelve scenario assertions and fourteen security controls under the same frozen evaluator. Real Polar payment lifecycle acceptance remains pending. The full requirements are in [PRD.md](PRD.md).
 
 [Recorded local-replay sample](examples/recorded-local-replay.json) contains an explicitly reduced projection of the actual Luna run, including scenario outcomes, screenshot hashes, cleanup and the source receipt hash. It is not a Polar transaction or a fabricated demonstration report.
+
+[Recorded repair acceptance](examples/recorded-repair.json) preserves the actual before/after outcomes and cleanup for an isolated injected fault. It is not a discovered production bug, provider payment or published repair PR.
 
 ## Boundaries
 
@@ -23,6 +25,8 @@ The [Qodo review thread](https://github.com/VasuBansal7576/PaywallProof/pull/1#i
 The organizer requires a representative **merged** reviewed PR. PR #1 is still open, so that submission requirement is not yet satisfied. No merge or deployment is implied by a passing test or completed review.
 
 Current executed checks and remaining acceptance gaps are recorded in [verification status](docs/verification-status.md). Unit test counts and installation probes do not establish a completed product run.
+
+[Submission material](docs/submission.md) includes the architecture, a reproducible recording command and the remaining merge and upload requirements. Original project code uses the [MIT license](LICENSE); dependencies retain their own licenses.
 
 The [judging access notes](docs/judging-access.md) distinguish the 60-day local evidence window from provider access. Polar sandbox tokens expire November 26, 2026. No paid hosting is used.
 

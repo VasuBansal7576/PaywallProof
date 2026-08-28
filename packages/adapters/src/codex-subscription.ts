@@ -96,7 +96,7 @@ export class CodexClient implements CodexRpc {
   private buffer = '';
   private bytes = 0;
   private failure: Error | undefined;
-  private output: { threadId: string; turnId?: string; retries: number; text: string[]; usage?: z.infer<typeof tokenCounts>; resolve(value: CodexGeneratedOutput): void; reject(error: Error): void } | undefined;
+  private output: { threadId: string; turnId?: string; text: string[]; usage?: z.infer<typeof tokenCounts>; resolve(value: CodexGeneratedOutput): void; reject(error: Error): void } | undefined;
   private readonly abort: () => void;
 
   constructor(private readonly directory: string, private readonly signal: AbortSignal) {
@@ -143,15 +143,15 @@ export class CodexClient implements CodexRpc {
       if (message.method === 'error') {
         const retry = retryingError.safeParse(message.params);
         if (!retry.success || !this.output || retry.data.threadId !== this.output.threadId
-          || (this.output.turnId && retry.data.turnId !== this.output.turnId) || this.output.retries >= 3) return this.fail('CODEX_TURN_FAILED');
+          || (this.output.turnId && retry.data.turnId !== this.output.turnId)) return this.fail('CODEX_TURN_FAILED');
         const info = retry.data.error.codexErrorInfo;
         const status = 'responseStreamDisconnected' in info ? info.responseStreamDisconnected.httpStatusCode
           : 'responseStreamConnectionFailed' in info ? info.responseStreamConnectionFailed.httpStatusCode : info.httpConnectionFailed.httpStatusCode;
         if (status !== null && status !== undefined && status !== 408 && (status < 500 || status > 599)) return this.fail('CODEX_TURN_FAILED');
         // This is an in-progress notification, not a terminal failure. Do not
-        // issue another request: the official client owns the bounded retry.
+        // issue another request: the official client owns the retry and the
+        // original abort signal still bounds the entire generation.
         this.output.turnId = retry.data.turnId;
-        this.output.retries++;
         this.output.text = [];
         this.output.usage = undefined;
         return;
@@ -203,7 +203,7 @@ export class CodexClient implements CodexRpc {
       config: { ...disabledMcp, project_doc_max_bytes: 0, web_search: 'disabled', model_reasoning_effort: 'medium',
         ...Object.fromEntries(codexDisabledFeatures.map(name => [`features.${name}`, false])) },
     }));
-    const done = new Promise<CodexGeneratedOutput>((resolve, reject) => { this.output = { threadId: started.thread.id, retries: 0, text: [], resolve, reject }; });
+    const done = new Promise<CodexGeneratedOutput>((resolve, reject) => { this.output = { threadId: started.thread.id, text: [], resolve, reject }; });
     // Attach a handler immediately: a protocol failure can arrive before turn/start responds.
     void done.catch(() => {});
     try {

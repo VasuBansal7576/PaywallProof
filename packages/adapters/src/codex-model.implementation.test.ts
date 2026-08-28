@@ -88,7 +88,7 @@ describe('Codex included subscription guard', () => {
 });
 
 describe('Codex official-client protocol boundaries, synthetic subprocess', () => {
-  function processFixture(mode: 'success' | 'usage' | 'tool' | 'wrong-model' | 'failed-turn' | 'credential-change' | 'malformed', notifications: unknown[] = []) {
+  function processFixture(mode: 'success' | 'usage' | 'tool' | 'wrong-model' | 'failed-turn' | 'credential-change' | 'malformed' | 'retry-wait', notifications: unknown[] = [], onWait?: () => void) {
     const child = Object.assign(new ChildProcess(), { stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough() });
     let stopped = false;
     child.kill = vi.fn(() => { if (!stopped) { stopped = true; queueMicrotask(() => { Object.defineProperty(child, 'exitCode', { value: 0 }); child.emit('exit', 0); }); } return true; });
@@ -112,6 +112,7 @@ describe('Codex official-client protocol boundaries, synthetic subprocess', () =
           if (mode === 'malformed') { child.stdout.write('not-json\n'); return; }
           if (mode === 'tool') { emit({ id: 500, method: 'item/tool/call', params: {} }); return; }
           for (const params of notifications) emit({ method: 'error', params });
+          if (mode === 'retry-wait') { onWait?.(); return; }
           emit({ method: 'item/completed', params: { threadId: 'test-thread', turnId: 'test-turn', item: { type: 'agentMessage', phase: 'commentary', text: 'Synthetic interim commentary is not the JSON answer.' } } });
           emit({ method: 'item/completed', params: { threadId: 'test-thread', turnId: 'test-turn', item: { type: 'agentMessage', phase: 'final_answer', text: '{"synthetic":true}' } } });
           if (mode === 'usage') emit({ method: 'thread/tokenUsage/updated', params: { threadId: 'test-thread', turnId: 'test-turn', tokenUsage: { last: { inputTokens: 10, outputTokens: 3, totalTokens: 13 } } } });
@@ -164,10 +165,16 @@ describe('Codex official-client protocol boundaries, synthetic subprocess', () =
     await expect(withCodexClient(AbortSignal.timeout(2000),client=>client.generate('Synthetic input',{}))).rejects.toThrow(/CODEX_/);
     expect(f.requests.filter(r=>r.method==='turn/start')).toHaveLength(1);
   });
-  it('bounds native retry notifications and never starts another turn',async()=>{
+  it('lets the official client recover after four native reconnects without another turn',async()=>{
     const f=processFixture('success',Array.from({length:4},retryingStream));
-    await expect(withCodexClient(AbortSignal.timeout(2000),client=>client.generate('Synthetic input',{}))).rejects.toThrow('CODEX_TURN_FAILED');
+    await expect(withCodexClient(AbortSignal.timeout(2000),client=>client.generate('Synthetic input',{}))).resolves.toMatchObject({text:'{"synthetic":true}'});
     expect(f.requests.filter(r=>r.method==='turn/start')).toHaveLength(1);
+  });
+  it('cancels a retrying stream within the original signal bound',async()=>{
+    const cancellation=new AbortController();
+    const f=processFixture('retry-wait',Array.from({length:4},retryingStream),()=>cancellation.abort());
+    await expect(withCodexClient(cancellation.signal,client=>client.generate('Synthetic input',{}))).rejects.toThrow('CODEX_INTERRUPTED');
+    expect(f.child.kill).toHaveBeenCalled();expect(f.requests.filter(r=>r.method==='turn/start')).toHaveLength(1);
   });
   it('rejects cancellation before launching a subprocess', async () => {
     const signal = AbortSignal.abort();
@@ -335,6 +342,15 @@ describe('Codex decision protocol gateway', () => {
   it('fails after two empty decisions without inventing an acknowledgment',async()=>{
     const f=fixture(async()=>({text:'{"content":null,"tool_calls":[]}',threadId:'t',turnId:'u'}));
     const response=await f.post();expect(response.status).toBe(503);expect(await response.text()).toContain('CODEX_EMPTY_DECISION');expect(f.model.generate).toHaveBeenCalledTimes(2);
+  });
+  it.each(['',' \n\t'])('requests one replacement for a completed blank output %j',async blank=>{
+    let calls=0;const f=fixture(async()=>({text:++calls===1?blank:'{"content":"Recorded replacement","tool_calls":[]}',threadId:'t',turnId:'u'}));
+    const response=await f.post();expect(response.status).toBe(200);expect(f.model.generate).toHaveBeenCalledTimes(2);
+    expect((await response.json()).choices[0].message.content).toBe('Recorded replacement');
+  });
+  it('does not retry malformed nonempty JSON',async()=>{
+    const f=fixture(async()=>({text:'{"content":',threadId:'t',turnId:'u'}));
+    expect((await f.post()).status).toBe(503);expect(f.model.generate).toHaveBeenCalledOnce();
   });
   it('omits combined usage when one generation provides no usage receipt',async()=>{
     let calls=0;const f=fixture(async()=>++calls===1?{text:'{"content":null,"tool_calls":[]}',threadId:'t1',turnId:'u1'}:{text:'{"content":"Actual replacement","tool_calls":[]}',threadId:'t2',turnId:'u2',usage:{inputTokens:10,outputTokens:3,totalTokens:13}});
