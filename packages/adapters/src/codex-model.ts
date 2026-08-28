@@ -53,7 +53,7 @@ export function decisionOutputSchema(request: Completion) {
   // The model still produces the decision. Constrain the trusted controller's
   // exact operation instead of accepting a guessed command and rejecting it
   // only after TrueForge has already executed it.
-  return z.toJSONSchema(z.strictObject({ content: z.string().nullable(), tool_calls: contract.completed
+  return z.toJSONSchema(z.strictObject({ content: contract.completed ? z.string().min(1) : z.string().nullable(), tool_calls: contract.completed
     ? decisionSchema.shape.tool_calls.max(0)
     : z.array(z.strictObject({ name: z.literal('exec'), arguments: z.strictObject({ intent: z.literal('Execute the single controller-authorized command.'), command: z.literal(contract.command) }) })).length(1) }));
 }

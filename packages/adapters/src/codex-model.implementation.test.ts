@@ -228,6 +228,18 @@ describe('Codex decision protocol gateway', () => {
       expect((await f.post({ ...body(), tools, messages: [{ role: 'user', content: instruction }, { role: 'assistant', content: null, tool_calls: calls }, { role: 'tool', tool_call_id: 'synthetic-call', content: JSON.stringify({ success: true, response: { exitCode } }) }] })).status).toBe(503);
     }
   });
+  it('requires a nonempty actual acknowledgment after an exact command, without synthesizing one', async () => {
+    const f = fixture(async (_prompt, schema) => {
+      expect(schema.properties).toMatchObject({ content: { type: 'string', minLength: 1 } });
+      return { text: '{"content":null,"tool_calls":[]}', threadId: 't', turnId: 'u' };
+    });
+    const response = await f.post({ ...body(), tools, messages: [
+      { role: 'user', content: instruction },
+      { role: 'assistant', content: null, tool_calls: [{ id: 'synthetic-call', type: 'function', function: { name: 'exec', arguments: JSON.stringify({ intent: 'synthetic', command: exact }) } }] },
+      { role: 'tool', tool_call_id: 'synthetic-call', content: '{"success":true,"response":{"exitCode":0,"result":"synthetic"}}' },
+    ] });
+    expect(response.status).toBe(503); expect(await response.text()).toContain('CODEX_EMPTY_DECISION');
+  });
   it('translates a proposal without executing it, including buffered SSE', async () => {
     const f = fixture(async () => ({ text: JSON.stringify({ content: null, tool_calls: [{ name: 'exec', arguments: '{"command":"synthetic-only"}' }] }), threadId: 't', turnId: 'u' }));
     const response = await f.post({ ...body(), tools, stream: true });

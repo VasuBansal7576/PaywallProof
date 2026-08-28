@@ -140,6 +140,12 @@ try {
   await expect(page.getByRole('heading', { name: project.name, exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Check prerequisites', exact: true })).toBeDisabled();
   await page.goto(`${origin}/projects/new`);
+  await expect(page.getByRole('checkbox', { name: /I approve processing/ })).toHaveAccessibleName(new RegExp(config.model.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  if (config.model === 'paywallproof-codex/luna') {
+    await expect(page.locator('.consent-box')).toContainText('OpenAI receives selected source code');
+    await expect(page.locator('.consent-box')).toContainText('included allowance');
+    await expect(page.locator('.consent-box')).not.toContainText('OpenRouter receives');
+  }
   await expect(page.getByRole('button', { name: 'Connect project', exact: true })).toBeDisabled();
   await page.getByLabel('Project name', { exact: true }).fill('UI verification, not submitted');
   await page.getByRole('checkbox', { name: /I own or am authorized/ }).check();
