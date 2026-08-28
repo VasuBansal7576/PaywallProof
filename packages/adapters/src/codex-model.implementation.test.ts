@@ -88,7 +88,7 @@ describe('Codex included subscription guard', () => {
 });
 
 describe('Codex official-client protocol boundaries, synthetic subprocess', () => {
-  function processFixture(mode: 'success' | 'usage' | 'tool' | 'wrong-model' | 'failed-turn' | 'credential-change' | 'malformed') {
+  function processFixture(mode: 'success' | 'usage' | 'tool' | 'wrong-model' | 'failed-turn' | 'credential-change' | 'malformed', notifications: unknown[] = []) {
     const child = Object.assign(new ChildProcess(), { stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough() });
     let stopped = false;
     child.kill = vi.fn(() => { if (!stopped) { stopped = true; queueMicrotask(() => { Object.defineProperty(child, 'exitCode', { value: 0 }); child.emit('exit', 0); }); } return true; });
@@ -111,6 +111,7 @@ describe('Codex official-client protocol boundaries, synthetic subprocess', () =
         queueMicrotask(() => {
           if (mode === 'malformed') { child.stdout.write('not-json\n'); return; }
           if (mode === 'tool') { emit({ id: 500, method: 'item/tool/call', params: {} }); return; }
+          for (const params of notifications) emit({ method: 'error', params });
           emit({ method: 'item/completed', params: { threadId: 'test-thread', turnId: 'test-turn', item: { type: 'agentMessage', phase: 'commentary', text: 'Synthetic interim commentary is not the JSON answer.' } } });
           emit({ method: 'item/completed', params: { threadId: 'test-thread', turnId: 'test-turn', item: { type: 'agentMessage', phase: 'final_answer', text: '{"synthetic":true}' } } });
           if (mode === 'usage') emit({ method: 'thread/tokenUsage/updated', params: { threadId: 'test-thread', turnId: 'test-turn', tokenUsage: { last: { inputTokens: 10, outputTokens: 3, totalTokens: 13 } } } });
@@ -140,6 +141,33 @@ describe('Codex official-client protocol boundaries, synthetic subprocess', () =
     processFixture('usage');
     const result = await withCodexClient(AbortSignal.timeout(2000), client => client.generate('Synthetic input', {}));
     expect(result).toEqual({ text: '{"synthetic":true}', threadId: 'test-thread', turnId: 'test-turn', usage: { inputTokens: 10, outputTokens: 3, totalTokens: 13 } });
+  });
+  const retryingStream = () => ({ threadId:'test-thread',turnId:'test-turn',willRetry:true,error:{message:'Synthetic private details must not escape.',codexErrorInfo:{responseStreamDisconnected:{httpStatusCode:null}}} });
+  it('lets Codex finish its own retryable stream notification without resubmitting the turn',async()=>{
+    const f=processFixture('usage',[retryingStream()]);
+    const result=await withCodexClient(AbortSignal.timeout(2000),client=>client.generate('Synthetic input',{}));
+    expect(result.text).toBe('{"synthetic":true}');expect(result.usage?.totalTokens).toBe(13);
+    expect(f.requests.filter(r=>r.method==='turn/start')).toHaveLength(1);
+    expect(f.requests.at(-3)?.method).toBe('account/read');
+  });
+  it.each([
+    {...retryingStream(),willRetry:false},
+    {...retryingStream(),threadId:'other-thread'},
+    {...retryingStream(),willRetry:'true'},
+    {...retryingStream(),error:{codexErrorInfo:'usageLimitExceeded'}},
+    {...retryingStream(),error:{codexErrorInfo:'unauthorized'}},
+    {...retryingStream(),error:{codexErrorInfo:'unknown'}},
+    {...retryingStream(),error:{codexErrorInfo:{responseStreamDisconnected:{httpStatusCode:401}}}},
+    {...retryingStream(),error:{codexErrorInfo:{responseStreamDisconnected:{httpStatusCode:429}}}},
+  ])('rejects terminal, unrelated, malformed and billing-related error notifications: %j',async notification=>{
+    const f=processFixture('success',[notification]);
+    await expect(withCodexClient(AbortSignal.timeout(2000),client=>client.generate('Synthetic input',{}))).rejects.toThrow(/CODEX_/);
+    expect(f.requests.filter(r=>r.method==='turn/start')).toHaveLength(1);
+  });
+  it('bounds native retry notifications and never starts another turn',async()=>{
+    const f=processFixture('success',Array.from({length:4},retryingStream));
+    await expect(withCodexClient(AbortSignal.timeout(2000),client=>client.generate('Synthetic input',{}))).rejects.toThrow('CODEX_TURN_FAILED');
+    expect(f.requests.filter(r=>r.method==='turn/start')).toHaveLength(1);
   });
   it('rejects cancellation before launching a subprocess', async () => {
     const signal = AbortSignal.abort();

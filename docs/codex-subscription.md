@@ -33,6 +33,8 @@ Ordinary decisions require nonempty content in the requested schema. If a comple
 
 Sandbox `exec` proposals use structured command arguments, including an explicit working directory or null. The bridge serializes them once for TrueForge and omits a null directory. This avoids the malformed nested JSON escaping reproduced in a real Luna response. Other tools retain their existing argument format. Exact single-command operations must stop after their recorded result; multi-step source repairs may continue inspecting and editing until the requested work is complete.
 
+Codex can announce a temporary connection failure while its existing turn is still retrying. The bridge accepts at most three `willRetry: true` connection/stream notifications for the same thread and turn, within the original 180-second limit. It never resubmits the turn. Terminal errors, unknown error types, mismatched identities and authentication or quota HTTP statuses still stop execution. A completed result and the final subscription check remain required; partial output is discarded.
+
 Preflight contacts the authenticated gateway health endpoint; a saved TrueForge registration alone cannot establish readiness. TrueForge masks credentials in its provider listing, so this probe reads the separate owned, private local capability file, not an API key or Codex authentication file.
 
 ## Verification

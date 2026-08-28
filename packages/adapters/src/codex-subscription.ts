@@ -67,6 +67,14 @@ export function codexProcessArguments() {
 const rpcMessage = z.object({ id: z.union([z.string(), z.number()]).optional(), method: z.string().optional(), params: z.unknown().optional(), result: z.unknown().optional(), error: z.unknown().optional() });
 const completedItem = z.object({ threadId: z.string(), turnId: z.string(), item: z.object({ type: z.string(), text: z.string().optional(), phase: z.enum(['commentary', 'final_answer']).nullable().optional() }) });
 const completedTurn = z.object({ threadId: z.string(), turn: z.object({ id: z.string(), status: z.string(), error: z.unknown().nullable() }) });
+const transientHttp = z.object({ httpStatusCode: z.number().int().nullable().optional() });
+const retryingError = z.object({ threadId: z.string(), turnId: z.string(), willRetry: z.literal(true), error: z.object({
+  codexErrorInfo: z.union([
+    z.strictObject({ responseStreamDisconnected: transientHttp }),
+    z.strictObject({ responseStreamConnectionFailed: transientHttp }),
+    z.strictObject({ httpConnectionFailed: transientHttp }),
+  ]),
+}) });
 const safeItems = new Set(['userMessage', 'agentMessage', 'reasoning', 'contextCompaction']);
 const maxProtocolBytes = 8 * 1024 * 1024;
 const tokenCounts = z.object({ inputTokens: z.number().int().nonnegative(), outputTokens: z.number().int().nonnegative(), totalTokens: z.number().int().nonnegative() });
@@ -88,7 +96,7 @@ export class CodexClient implements CodexRpc {
   private buffer = '';
   private bytes = 0;
   private failure: Error | undefined;
-  private output: { threadId: string; turnId?: string; text: string[]; usage?: z.infer<typeof tokenCounts>; resolve(value: CodexGeneratedOutput): void; reject(error: Error): void } | undefined;
+  private output: { threadId: string; turnId?: string; retries: number; text: string[]; usage?: z.infer<typeof tokenCounts>; resolve(value: CodexGeneratedOutput): void; reject(error: Error): void } | undefined;
   private readonly abort: () => void;
 
   constructor(private readonly directory: string, private readonly signal: AbortSignal) {
@@ -132,7 +140,22 @@ export class CodexClient implements CodexRpc {
         if (message.error !== undefined) { request.reject(new CodexSubscriptionError('CODEX_REQUEST_FAILED')); return; }
         request.resolve(message.result); return;
       }
-      if (message.method === 'error') return this.fail('CODEX_TURN_FAILED');
+      if (message.method === 'error') {
+        const retry = retryingError.safeParse(message.params);
+        if (!retry.success || !this.output || retry.data.threadId !== this.output.threadId
+          || (this.output.turnId && retry.data.turnId !== this.output.turnId) || this.output.retries >= 3) return this.fail('CODEX_TURN_FAILED');
+        const info = retry.data.error.codexErrorInfo;
+        const status = 'responseStreamDisconnected' in info ? info.responseStreamDisconnected.httpStatusCode
+          : 'responseStreamConnectionFailed' in info ? info.responseStreamConnectionFailed.httpStatusCode : info.httpConnectionFailed.httpStatusCode;
+        if (status !== null && status !== undefined && status !== 408 && (status < 500 || status > 599)) return this.fail('CODEX_TURN_FAILED');
+        // This is an in-progress notification, not a terminal failure. Do not
+        // issue another request: the official client owns the bounded retry.
+        this.output.turnId = retry.data.turnId;
+        this.output.retries++;
+        this.output.text = [];
+        this.output.usage = undefined;
+        return;
+      }
       if (!this.output) return;
       if (message.method === 'thread/tokenUsage/updated') {
         const event = z.object({ threadId: z.string(), turnId: z.string(), tokenUsage: z.object({ last: tokenCounts }) }).parse(message.params);
@@ -180,7 +203,7 @@ export class CodexClient implements CodexRpc {
       config: { ...disabledMcp, project_doc_max_bytes: 0, web_search: 'disabled', model_reasoning_effort: 'medium',
         ...Object.fromEntries(codexDisabledFeatures.map(name => [`features.${name}`, false])) },
     }));
-    const done = new Promise<CodexGeneratedOutput>((resolve, reject) => { this.output = { threadId: started.thread.id, text: [], resolve, reject }; });
+    const done = new Promise<CodexGeneratedOutput>((resolve, reject) => { this.output = { threadId: started.thread.id, retries: 0, text: [], resolve, reject }; });
     // Attach a handler immediately: a protocol failure can arrive before turn/start responds.
     void done.catch(() => {});
     try {
