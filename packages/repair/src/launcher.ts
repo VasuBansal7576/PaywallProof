@@ -79,6 +79,9 @@ async function main() {
   process.env.NEXT_TELEMETRY_DISABLED = '1';
   process.env.NEXT_DISABLE_SWC_WASM = '1';
   process.env.NEXT_IGNORE_INCORRECT_LOCKFILE = '1';
+  // Fixed snapshots do not need one native watcher per file. Polling avoids
+  // exhausting the sandbox's descriptor limit during Next's route discovery.
+  process.env.WATCHPACK_POLLING = '1000';
   process.env.STAGING_ENABLED = 'true';
   process.env.BILLING_PRICE_ID = config.priceId;
   process.env.TARGET_BUILD_ID = config.buildId;
@@ -106,7 +109,13 @@ async function main() {
     await serve(app.getRequestHandler());
   } finally { await app.close(); }
 }
-main().catch(() => { process.stderr.write('REFERENCE_LAUNCHER_FAILED\nREFERENCE_LAUNCHER_STAGE=' + phase + '\n'); process.exitCode = 1; });
+// This is a foreground command, not a reusable server. After the bridge has
+// finished and app.close() has settled, idle dependency timers must not keep it
+// alive until the outer command deadline. Flush the selected exit diagnostic.
+main().then(
+  () => process.stdout.write('', () => process.exit(0)),
+  () => process.stderr.write('REFERENCE_LAUNCHER_FAILED\nREFERENCE_LAUNCHER_STAGE=' + phase + '\n', () => process.exit(1)),
+);
 `;
   return { file: { path: '_trusted/reference.cjs', bytes: Buffer.from(source), role: 'launcher' }, fixedCommand: { interpreter: 'node', script: '_trusted/reference.cjs' } };
 }

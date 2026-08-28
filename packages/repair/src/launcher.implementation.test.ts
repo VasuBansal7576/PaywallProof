@@ -102,6 +102,13 @@ describe('trusted reference launcher factory (synthetic implementation checks)',
     const events: { kind: string }[] = JSON.parse(await readFile(join(root, 'observed.json'), 'utf8'));
     expect(events.at(-1)?.kind).toBe('close');
   });
+  it('exits only after awaited server cleanup even when a dependency retains idle timers', async () => {
+    const file = join(root, 'node_modules/next/dist/server/next.js');
+    await put(file, "setInterval(()=>{},1000);" + await readFile(file, 'utf8'));
+    await run();
+    const events: { kind: string }[] = JSON.parse(await readFile(join(root, 'observed.json'), 'utf8'));
+    expect(events.at(-1)?.kind).toBe('close');
+  }, 10_000);
   it('rejects a bridge from another operation or a symlink before loading dependencies', async () => {
     await expect(run({ NODE_ENV: 'development', PP_REPAIR_BRIDGE_MODULE: '../uploads/pp_111111111111111111111111_bridge.cjs' })).rejects.toMatchObject({ code: 1 });
     const file = join(parent, 'uploads/pp_000000000000000000000000_bridge.cjs');

@@ -10,11 +10,12 @@ import { z } from 'zod';
 import { TrueForgeAdapter } from '../../adapters/src/trueforge.ts';
 import { pathSchema, RepairError } from './model.ts';
 import { REFERENCE_SUPPORT_PATHS } from './checkout.ts';
-import { assertRepairDiskCapacity } from './capacity.ts';
+import { assertRepairDestinationCapacity, assertRepairDiskCapacity } from './capacity.ts';
 
 const CHUNK_BYTES = 8 * 1024 * 1024;
 const MAX_BYTES = 512 * 1024 * 1024;
 const MAX_HTTP_BYTES = 4 * 1024 * 1024;
+const MAX_STATIC_BYTES = 16 * 1024 * 1024;
 const MAX_FILES = 20_000;
 const idSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,150}$/);
 const commandSchema = z.strictObject({ interpreter: z.enum(['node', 'python']), script: z.string(), args: z.array(z.string().max(2000).refine(s => !s.includes('\0'))).max(50).optional() });
@@ -105,7 +106,14 @@ exports.serve = async function serve(listener) {
         socket.write(process.env.PP_REPAIR_BRIDGE_TOKEN + '\n');
         server.emit('connection', socket);
       });
-      socket.once('error', () => { stopped = true; clearTimeout(deadline); if (everConnected) resolve(); else reject(new Error('BRIDGE_CONNECT_FAILED')); });
+      socket.once('error', error => {
+        // Rejecting one oversized HTTP response can reset this accepted stream.
+        // Its close handler reconnects; that is not a host-shutdown signal.
+        if (connected) return;
+        stopped = true; clearTimeout(deadline);
+        if (everConnected && (error.code === 'ENOENT' || error.code === 'ECONNREFUSED')) resolve();
+        else reject(new Error('BRIDGE_CONNECT_FAILED'));
+      });
       socket.once('close', () => {
         if (stopped) return;
         if (!connected) { stopped = true; clearTimeout(deadline); resolve(); return; }
@@ -123,12 +131,13 @@ exports.serve = async function serve(listener) {
 const HOST_BRIDGE = String.raw`
 const net = require('node:net'), http = require('node:http'), crypto = require('node:crypto');
 const sockets = new Set(); let available = [], pending = [], busy = false, ready = false;
-const token = Buffer.from(process.env.PP_TOKEN), limit = 4194304;
+const token = Buffer.from(process.env.PP_TOKEN);
 function send(value) { if (process.connected) process.send(value); }
 function pump() {
   if (busy || !available.length || !pending.length) return;
   busy = true;
   const socket = available.shift(), message = pending.shift();
+  const limit = message.maximumBytes === 16777216 ? 16777216 : 4194304;
   const agent = new http.Agent({ keepAlive: false }); agent.createConnection = () => socket;
   let finished = false;
   function done(value) { if (finished) return; finished = true; busy = false; agent.destroy(); socket.destroy(); send({ kind:'response', id:message.id, ...value }); pump(); }
@@ -167,7 +176,7 @@ if (!Number.isInteger(lifetime) || lifetime < 1000 || lifetime > 600000) throw n
 setTimeout(() => { for (const socket of sockets) socket.destroy(); server.close(); process.exit(1); }, lifetime).unref();
 `;
 
-const bridgeResponseSchema = z.object({ kind: z.literal('response'), id: z.string(), status: z.number().int().min(100).max(599).optional(), headers: z.record(z.string(), z.union([z.string(), z.array(z.string())])).optional(), body: z.string().max(Math.ceil(MAX_HTTP_BYTES / 3) * 4).optional(), error: z.string().optional() });
+const bridgeResponseSchema = z.object({ kind: z.literal('response'), id: z.string(), status: z.number().int().min(100).max(599).optional(), headers: z.record(z.string(), z.union([z.string(), z.array(z.string())])).optional(), body: z.string().max(Math.ceil(MAX_STATIC_BYTES / 3) * 4).optional(), error: z.string().optional() });
 type BridgeResponse = z.infer<typeof bridgeResponseSchema>;
 export function safeRequestHeaders(headers: IncomingHttpHeaders, adapterToken: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -195,6 +204,13 @@ function safeResponseHeaders(headers: Record<string, string | string[]>): Record
   return out;
 }
 type Bridge = { environment: Record<string, string>; observation: Promise<unknown>; close: () => Promise<void> };
+export function isRepairStaticRequest(method: string | undefined, url: string | undefined): boolean {
+  // The pinned Webpack development server adds a decimal cache-busting version.
+  // Admit only that suffix, never arbitrary query data or normalized traversal.
+  return method === 'GET' && typeof url === 'string'
+    && /^\/_next\/static\/[A-Za-z0-9_./-]+(?:\?v=[0-9]{1,16})?$/.test(url)
+    && !url.includes('..') && !url.includes('//');
+}
 async function openBridge(input: { root: string; workspace: string; operationId: string; target: SandboxTarget; nodeExecutable: string; signal: AbortSignal; commandTimeoutMs: number }): Promise<Bridge> {
   input.signal.throwIfAborted();
   const routes = z.array(routeSchema).min(1).max(5000).parse(input.target.routes);
@@ -238,8 +254,9 @@ async function openBridge(input: { root: string; workspace: string; operationId:
   try { await listening; } catch (error) { clearTimeout(timer); await close(); throw error; }
   server.on('request', async (request, response) => {
     try {
-      const nextStatic = input.target.allowNextStatic && request.method === 'GET' && /^\/_next\/static\/[A-Za-z0-9_./-]+$/.test(request.url ?? '') && !request.url?.includes('..') && !request.url?.includes('//');
+      const nextStatic = input.target.allowNextStatic && isRepairStaticRequest(request.method, request.url);
       if (!nextStatic && !routes.some(r => r.path === request.url && r.method === request.method) || request.headers.upgrade || request.headers['proxy-authorization']) throw new Error('BRIDGE_ROUTE_REJECTED');
+      const maximumBytes = nextStatic && /\.(js|css)(?:\?v=[0-9]{1,16})?$/.test(request.url ?? '') ? MAX_STATIC_BYTES : MAX_HTTP_BYTES;
       const headers = safeRequestHeaders(request.headers, credentials.adapterToken), chunks: Buffer[] = []; let size = 0;
       for await (const chunk of request) { if (!Buffer.isBuffer(chunk)) throw new Error('BRIDGE_BODY_REJECTED'); size += chunk.length; if (size > MAX_HTTP_BYTES) throw new Error('BRIDGE_BODY_REJECTED'); chunks.push(chunk); }
       const id = randomBytes(12).toString('hex');
@@ -247,7 +264,7 @@ async function openBridge(input: { root: string; workspace: string; operationId:
         const requestTimer = setTimeout(() => { pending.delete(id); rej(new Error('BRIDGE_REQUEST_DEADLINE')); }, 15_000);
         pending.set(id, { resolve: res, reject: rej, timer: requestTimer });
         if (!child.connected) { clearTimeout(requestTimer); pending.delete(id); rej(new Error('BRIDGE_CLOSED')); return; }
-        child.send({ kind: 'request', id, method: request.method, path: request.url, headers, body: Buffer.concat(chunks).toString('base64') });
+        child.send({ kind: 'request', id, method: request.method, path: request.url, headers, body: Buffer.concat(chunks).toString('base64'), maximumBytes });
       });
       if (result.error || result.status === undefined || result.body === undefined || result.status >= 300 && result.status < 400) throw new Error('BRIDGE_RESPONSE_REJECTED');
       response.writeHead(result.status, safeResponseHeaders(result.headers ?? {})); response.end(Buffer.from(result.body, 'base64'));
@@ -504,7 +521,7 @@ process.stdout.write('SANDBOX_COMMAND_FINISHED\\n');
       // Check the configured volume before that one-byte initialization, then
       // require the actual event and validate its root before uploading source.
       const payloadBytes = operation.files.reduce((total, file) => total + BigInt(file.bytes.byteLength), 0n);
-      await assertRepairDiskCapacity([join(homedir(), 'Library', 'Application Support', 'trueforge', 'sandboxes')], 3n * payloadBytes + 128n * 1024n ** 2n);
+      await assertRepairDestinationCapacity(join(homedir(), 'Library', 'Application Support', 'trueforge', 'sandboxes'), 3n * payloadBytes + 128n * 1024n ** 2n);
       const bytes = Buffer.from('0');
       await this.turn(operation, 'transfer', 'Store this initialization attachment. Reply STORED. Do not call tools or execute anything.', [{ name: `pp_${operation.id}_init.txt`, bytes, hash: hash(bytes) }]);
       return this.sandboxRoot(operation);

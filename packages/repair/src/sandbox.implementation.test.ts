@@ -2,13 +2,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import type { TrueForgeApi } from '@truefoundry/trueforge-sdk';
-import { RepairSandboxRunner, safeRequestHeaders, type SandboxRunInput, type SandboxRuntimeState } from './sandbox.ts';
-import { assertRepairDiskCapacity, REPAIR_MIN_FREE_BYTES } from './capacity.ts';
+import { isRepairStaticRequest, RepairSandboxRunner, safeRequestHeaders, type SandboxRunInput, type SandboxRuntimeState } from './sandbox.ts';
+import { assertRepairDestinationCapacity, assertRepairDiskCapacity, REPAIR_MIN_FREE_BYTES } from './capacity.ts';
 
 const mocks = vi.hoisted(() => ({ statfs: vi.fn(), get: vi.fn(), listTurns: vi.fn(), listEvents: vi.fn(), createTurn: vi.fn(), downloadSandboxFile: vi.fn(), checkConnection: vi.fn(), cancel: vi.fn(), resumeStream: vi.fn(), inspectTurn: vi.fn(), listTurnEvents: vi.fn(), syntheticRoot: '' }));
 vi.mock('node:fs/promises', async importOriginal => {
@@ -117,6 +117,25 @@ describe('repair runner implementation with synthetic SDK, no model/provider', (
     await expect(new RepairSandboxRunner().run(request())).rejects.toMatchObject({ code: 'REPAIR_DISK_CAPACITY_INSUFFICIENT' });
     expect(mocks.createTurn).not.toHaveBeenCalled();
   });
+  it('checks the existing destination ancestor before the first sandbox directory exists', async () => {
+    const existing = await realpath(root);
+    await assertRepairDestinationCapacity(join(existing, 'new-runtime', 'sandboxes'), 1024n);
+    expect(mocks.statfs).toHaveBeenCalledExactlyOnceWith(existing, { bigint: true });
+  });
+  it('does not substitute another volume when a destination capacity probe fails', async () => {
+    mocks.statfs.mockRejectedValue(Object.assign(new Error('private capacity failure'), { code: 'EACCES' }));
+    await expect(assertRepairDestinationCapacity(join(await realpath(root), 'missing'), 1024n)).rejects.toThrow(/^REPAIR_DISK_CAPACITY_UNKNOWN$/);
+    expect(mocks.statfs).toHaveBeenCalledTimes(1);
+  });
+  it('rejects a symlink ancestor and a non-directory destination before measuring capacity', async () => {
+    const existing = await realpath(root);
+    await symlink(join(existing, 'uploads'), join(existing, 'redirect'));
+    await writeFile(join(existing, 'file'), 'fixture');
+    for (const target of [join(existing, 'redirect', 'missing'), join(existing, 'file', 'missing')]) {
+      await expect(assertRepairDestinationCapacity(target, 1024n)).rejects.toThrow(/^REPAIR_DISK_CAPACITY_UNKNOWN$/);
+    }
+    expect(mocks.statfs).not.toHaveBeenCalled();
+  });
   it.each([-1n, 0n, 1n])('checks the exact free-space boundary: %s', async delta => {
     mocks.statfs.mockResolvedValue({ bavail: REPAIR_MIN_FREE_BYTES + delta, bsize: 1n });
     const result = assertRepairDiskCapacity(['/synthetic/volume']);
@@ -149,6 +168,15 @@ describe('repair runner implementation with synthetic SDK, no model/provider', (
     expect(safeRequestHeaders({authorization:'Bearer invalid_synthetic_token'},'disposable-only')).toEqual({authorization:'Bearer invalid_synthetic_token'});
     expect(safeRequestHeaders({},'disposable-only')).toEqual({});
     for(const authorization of ['Bearer arbitrary-host-secret','Basic synthetic','Bearer disposable-only\r\nX-Injected: 1'])expect(()=>safeRequestHeaders({authorization},'disposable-only')).toThrow('BRIDGE_HEADERS_REJECTED');
+  });
+  it.each(['/_next/static/css/app/layout.css?v=1787930477649', '/_next/static/chunks/main-app.js?v=1787930477649', '/_next/static/chunks/app/dashboard/page.js'])('allows the pinned Next static asset URL %s', url => {
+    expect(isRepairStaticRequest('GET', url)).toBe(true);
+  });
+  it.each(['/_next/static/../server.js', '/_next/static//secret', '/_next/static/%2e%2e/secret', '/_next/static/chunk.js?v=1&secret=2', '/_next/static/chunk.js?v=', '/_next/static/chunk.js?v=1#fragment', '/api/export?v=1', '//outside/_next/static/chunk.js', 'http://outside/_next/static/chunk.js'])('rejects static-route escape or arbitrary query %s', url => {
+    expect(isRepairStaticRequest('GET', url)).toBe(false);
+  });
+  it('never admits a static asset mutation', () => {
+    expect(isRepairStaticRequest('POST', '/_next/static/chunks/main-app.js?v=1787930477649')).toBe(false);
   });
   it('keeps Polar reader and replay signer outside the repair edit scope',async()=>{
     for(const path of ['packages/adapters/src/polar.ts','packages/reference/src/replay-signature.ts']){
@@ -262,12 +290,20 @@ describe('actual local Node reverse bridge, installation mechanism only', () => 
     const host = spawn(process.execPath, ['-e', hostCode], { cwd: root, env: { NODE_ENV: 'development', PP_SOCKET: 's', PP_TOKEN: 'disposable-test-only' }, stdio: ['ignore', 'ignore', 'pipe', 'ipc'] }); children.push(host);
     const messages: unknown[] = []; host.on('message', message => messages.push(message));
     await expect.poll(() => messages.some(m => z.object({ kind: z.literal('listening') }).safeParse(m).success)).toBe(true);
-    const sandbox = spawn(process.execPath, ['-e', "require('./bridge.cjs').serve((req,res)=>{res.writeHead(200,{'content-type':'application/octet-stream'});res.end(Buffer.from([0,42,255]));}).catch(()=>{process.exitCode=1;});"], { cwd: root, env: { NODE_ENV: 'development', PP_REPAIR_BRIDGE_SOCKET: 's', PP_REPAIR_BRIDGE_TOKEN: 'disposable-test-only' }, stdio: ['ignore', 'ignore', 'pipe'] }); children.push(sandbox);
+    const sandbox = spawn(process.execPath, ['-e', "require('./bridge.cjs').serve((req,res)=>{res.writeHead(200,{'content-type':'application/octet-stream'});res.end(req.url==='/large'?Buffer.alloc(12*1024*1024,42):Buffer.from([0,42,255]));}).catch(()=>{process.exitCode=1;});"], { cwd: root, env: { NODE_ENV: 'development', PP_REPAIR_BRIDGE_SOCKET: 's', PP_REPAIR_BRIDGE_TOKEN: 'disposable-test-only' }, stdio: ['ignore', 'ignore', 'pipe'] }); children.push(sandbox);
     await expect.poll(() => messages.some(m => z.object({ kind: z.literal('ready') }).safeParse(m).success)).toBe(true);
     for (const id of ['first', 'second']) {
       host.send({ kind: 'request', id, method: 'GET', path: '/', headers: {}, body: '' });
       await expect.poll(() => messages.find(m => z.object({ kind: z.literal('response'), id: z.literal(id) }).safeParse(m).success)).toMatchObject({ status: 200, body: 'ACr/' });
     }
+    host.send({ kind: 'request', id: 'large-api-rejected', method: 'GET', path: '/large', headers: {}, body: '' });
+    await expect.poll(() => messages.find(m => z.object({ id: z.literal('large-api-rejected') }).safeParse(m).success)).toMatchObject({ error: 'RESPONSE_TOO_LARGE' });
+    host.send({ kind: 'request', id: 'large-static', method: 'GET', path: '/large', headers: {}, body: '', maximumBytes: 16 * 1024 * 1024 });
+    await expect.poll(() => messages.find(m => z.object({ id: z.literal('large-static'), status: z.literal(200) }).safeParse(m).success), { timeout: 5000 }).toBeDefined();
+    const large = z.object({ body: z.string() }).parse(messages.find(m => z.object({ id: z.literal('large-static') }).safeParse(m).success));
+    expect(Buffer.from(large.body, 'base64').equals(Buffer.alloc(12 * 1024 * 1024, 42))).toBe(true);
+    host.send({ kind: 'request', id: 'after-rejection', method: 'GET', path: '/', headers: {}, body: '' });
+    await expect.poll(() => messages.find(m => z.object({ id: z.literal('after-rejection') }).safeParse(m).success)).toMatchObject({ status: 200, body: 'ACr/' });
     host.send({ kind: 'close' });
     await expect.poll(() => sandbox.exitCode).toBe(0);
     await expect.poll(() => host.exitCode).toBe(0);

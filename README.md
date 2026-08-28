@@ -38,6 +38,8 @@ The owner uses Codex for implementation, independent test authoring, and verific
 
 Local replay needs no provider account. It exercises the actual application and browser using explicitly synthetic billing events. New schema-v2 runs use `control-v2.sqlite` and `reference-v2.sqlite`; old databases and evidence are preserved without relabeling.
 
+The operator workspace provides searchable run history, an attention queue, responsive navigation and keyboard-accessible report tabs. Humans can inspect each recorded assertion and screenshot; agents can use the authenticated structured reports, exact identifiers and policy hashes. The UI never substitutes presentation fixtures for saved evidence.
+
 For Polar runs, configure `POLAR_ACCESS_TOKEN`, `POLAR_REFERENCE_TOKEN`, `POLAR_ORGANIZATION_ID`, `POLAR_PRODUCT_ID`, `BILLING_PRICE_ID`, `POLAR_WEBHOOK_SECRET` and an explicitly authorized `POLAR_TEST_CUSTOMER_EMAIL` in the server environment. The test mailbox is used with a unique run alias and sent to Polar. It is not inferred from account sign-in. Configure real webhook delivery to `/api/polar/webhook`. Only sandbox checkout URLs are permitted; use official test payment details, never a real card. The authenticated run page exposes the private checkout link while the runner waits for payment confirmation.
 
 | Command | What it checks |

@@ -33,8 +33,8 @@ describe('browser probe failure lifetime, implementation-aware',()=>{
 });
 
 describe('bounded Next bundle transport, implementation-aware',()=>{
-  it('loads a large static bundle without expanding API or POST response limits',async()=>{
-    const bytes=Buffer.alloc(1_048_577,32);
+  it.each([1_048_577, 12 * 1024 * 1024])('loads a %i-byte static bundle without expanding API or POST response limits',async size=>{
+    const bytes=Buffer.alloc(size,32);
     const server=createServer((_request,response)=>{response.writeHead(200);response.end(bytes);});
     try{
       await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
@@ -49,8 +49,8 @@ describe('bounded Next bundle transport, implementation-aware',()=>{
       if(server.listening)await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
     }
   });
-  it('still rejects static bundles larger than 4 MiB',async()=>{
-    const server=createServer((_request,response)=>{response.writeHead(200);response.end(Buffer.alloc(4*1024*1024+1));});
+  it('still rejects static bundles larger than 16 MiB',async()=>{
+    const server=createServer((_request,response)=>{response.writeHead(200);response.end(Buffer.alloc(16*1024*1024+1));});
     try{
       await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
       const address=server.address();if(!address||typeof address==='string')throw new Error('No test listener');
