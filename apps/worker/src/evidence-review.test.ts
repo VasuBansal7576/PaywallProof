@@ -224,6 +224,42 @@ describe('skill-backed evidence review', () => {
     expect(coordinator.view(runId)).toEqual(recorded);
   });
 
+  it('rejects an observation cited under a different scenario', async () => {
+    const secondObservationId = 'observation-2';
+    const { coordinator } = fixture({
+      ...report,
+      scenarios: [
+        ...report.scenarios,
+        {
+          id: 'SC02',
+          api: { verdict: 'pass', code: 'ALLOWED' },
+          browser: { verdict: 'pass', code: 'VISIBLE' },
+          state: { verdict: 'pass', code: 'PAID' },
+          observationIds: [secondObservationId],
+        },
+      ],
+      observations: [...report.observations, { id: secondObservationId, runId }],
+    });
+    await coordinator.start(runId);
+
+    await expect(
+      coordinator.tool(runId, 'record_evidence_review', {
+        ...completedReview,
+        reviewers: completedReview.reviewers.map((reviewer) =>
+          reviewer.role === 'binding'
+            ? {
+                ...reviewer,
+                findings: reviewer.findings.map((finding) => ({
+                  ...finding,
+                  observationIds: [secondObservationId],
+                })),
+              }
+            : reviewer,
+        ),
+      }),
+    ).rejects.toThrow('EVIDENCE_REVIEW_OBSERVATION_SCENARIO_MISMATCH');
+  });
+
   it('preserves canceled-provider audit retention without treating it as a cleanup leftover', async () => {
     const retained = {
       resourceId: 'synthetic-polar-subscription',

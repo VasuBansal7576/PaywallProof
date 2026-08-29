@@ -534,7 +534,8 @@ export class EvidenceReviewCoordinator {
     const state = this.view(boundRunId);
     if (!state || (state.status !== 'running' && state.status !== 'completed'))
       throw new EvidenceReviewError('EVIDENCE_REVIEW_NOT_ACTIVE');
-    const report = this.boundReport(boundRunId);
+    const sourceReport = parseJson(this.options.report(boundRunId));
+    const report = dataOnlyReviewReport(sourceReport);
     if (hashValue(report) !== state.reportHash)
       throw new EvidenceReviewError('EVIDENCE_REVIEW_REPORT_CHANGED');
     if (name === 'read_run_report') return { report, reportHash: state.reportHash };
@@ -558,7 +559,7 @@ export class EvidenceReviewCoordinator {
         return state;
       throw new EvidenceReviewError('EVIDENCE_REVIEW_ALREADY_RECORDED');
     }
-    this.assertGrounded(report, review);
+    this.assertGrounded(sourceReport, review);
     const completed = completedStateSchema.parse({
       ...state,
       status: 'completed',
@@ -595,19 +596,22 @@ export class EvidenceReviewCoordinator {
     report: ReturnType<typeof parseJson>,
     request: z.infer<typeof recordEvidenceReviewSchema>,
   ) {
-    const parsed = z
-      .object({
-        scenarios: z.array(z.object({ id: z.string() })),
-        observationBindings: z.object({ ids: z.array(z.string()) }),
-      })
-      .parse(report);
+    const parsed = reviewSourceSchema.parse(report);
     const scenarioIds = new Set(parsed.scenarios.map((scenario) => scenario.id));
-    const observationIds = new Set(parsed.observationBindings.ids);
+    const observationIds = new Set(parsed.observations.map((observation) => observation.id));
+    const observationsByScenario = new Map(
+      parsed.scenarios.map((scenario) => [scenario.id, new Set(scenario.observationIds)]),
+    );
     for (const finding of request.reviewers.flatMap((reviewer) => reviewer.findings)) {
       if (finding.scenarioId && !scenarioIds.has(finding.scenarioId))
         throw new EvidenceReviewError('EVIDENCE_REVIEW_SCENARIO_UNKNOWN');
       if (finding.observationIds.some((id) => !observationIds.has(id)))
         throw new EvidenceReviewError('EVIDENCE_REVIEW_OBSERVATION_UNKNOWN');
+      if (finding.scenarioId) {
+        const scenarioObservationIds = observationsByScenario.get(finding.scenarioId);
+        if (finding.observationIds.some((id) => !scenarioObservationIds?.has(id)))
+          throw new EvidenceReviewError('EVIDENCE_REVIEW_OBSERVATION_SCENARIO_MISMATCH');
+      }
     }
   }
 

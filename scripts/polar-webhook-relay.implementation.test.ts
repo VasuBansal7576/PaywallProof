@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createPolarWebhookRelay } from './polar-webhook-relay.ts';
+import { createPolarWebhookRelay, readBoundedWebhookBody } from './polar-webhook-relay.ts';
 
 const headers = {
   'content-type': 'application/json',
@@ -24,7 +24,9 @@ describe('public Polar webhook relay', () => {
     const forward = vi.fn<typeof fetch>(async (_url, request) => {
       expect(request?.method).toBe('POST');
       expect(request?.redirect).toBe('error');
-      expect(request?.body).toBe('{"type":"subscription.active"}');
+      expect(Buffer.from(request?.body as Uint8Array).toString('utf8')).toBe(
+        '{"type":"subscription.active"}',
+      );
       const forwarded = new Headers(request?.headers);
       expect(Object.fromEntries(forwarded)).toEqual(headers);
       return Response.json({ received: true }, { status: 200 });
@@ -60,5 +62,23 @@ describe('public Polar webhook relay', () => {
     }).request('/api/polar/webhook', { method: 'POST', headers, body: '{}' });
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({ error: 'WEBHOOK_TARGET_UNAVAILABLE' });
+  });
+
+  it('cancels a chunked body as soon as its cumulative byte limit is exceeded', async () => {
+    let pulls = 0;
+    let canceled = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        controller.enqueue(new Uint8Array([pulls, pulls]));
+      },
+      cancel() {
+        canceled = true;
+      },
+    });
+
+    await expect(readBoundedWebhookBody(body, 3)).rejects.toThrow('WEBHOOK_BODY_TOO_LARGE');
+    expect(canceled).toBe(true);
+    expect(pulls).toBeLessThanOrEqual(2);
   });
 });

@@ -135,6 +135,47 @@ export function continuationDisposition(status: 'checkout_observed' | 'dispatche
   if (status === 'dispatched') return 'reconcile' as const;
   return 'complete' as const;
 }
+type ConfirmedCheckoutContinuation = {
+  runId: string;
+  sessionId: string;
+  previousTurnId: string;
+  turnId: string;
+};
+/** Commits the continuation receipt and resumable runtime cursor as one recovery boundary. */
+export function persistConfirmedCheckoutContinuation(
+  database: Database.Database,
+  input: ConfirmedCheckoutContinuation,
+) {
+  const write = database.prepare(
+    'INSERT INTO control_documents VALUES(?,?,?) ON CONFLICT(kind,id) DO UPDATE SET value=excluded.value',
+  );
+  database.transaction(() => {
+    write.run(
+      'checkout-continuation',
+      input.runId,
+      JSON.stringify(
+        parseJson({
+          status: 'confirmed',
+          sessionId: input.sessionId,
+          previousTurnId: input.previousTurnId,
+          turnId: input.turnId,
+        }),
+      ),
+    );
+    write.run(
+      'runtime',
+      input.runId,
+      JSON.stringify(
+        parseJson({
+          sessionId: input.sessionId,
+          turnId: input.turnId,
+          lastSequenceNumber: 0,
+          status: 'running',
+        }),
+      ),
+    );
+  })();
+}
 const toolSchema = z.strictObject({
   runId: identifier,
   operationId: identifier,
@@ -1251,8 +1292,16 @@ export class Controller {
         this.armWatchdog(runId);
       }
       const disposition = continuationDisposition(continuation.status);
-      if (disposition === 'complete' && continuation.turnId)
+      if (disposition === 'complete' && continuation.turnId) {
+        persistConfirmedCheckoutContinuation(this.database, {
+          runId,
+          sessionId: continuation.sessionId,
+          previousTurnId: continuation.previousTurnId,
+          turnId: continuation.turnId,
+        });
+        void this.watchRuntime(runId);
         return { status: 'resumed', turnId: continuation.turnId } as const;
+      }
       let turn;
       if (disposition === 'reconcile') {
         turn = await this.runtime.findContinuation({
@@ -1277,16 +1326,11 @@ export class Controller {
           if (!turn) throw new ControlError('RUNTIME_CONTINUATION_UNKNOWN');
         }
       }
-      this.put('checkout-continuation', runId, {
-        ...continuation,
-        status: 'confirmed',
-        turnId: turn.id,
-      });
-      this.put('runtime', runId, {
+      persistConfirmedCheckoutContinuation(this.database, {
+        runId,
         sessionId: continuation.sessionId,
+        previousTurnId: continuation.previousTurnId,
         turnId: turn.id,
-        lastSequenceNumber: 0,
-        status: 'running',
       });
       void this.watchRuntime(runId);
       return {
@@ -1338,6 +1382,20 @@ export class Controller {
       }
       const state = runtimeSchema.safeParse(this.get('runtime', id));
       if (state.success && state.data.status === 'waiting_external') {
+        const continuation = z
+          .object({
+            status: z.literal('confirmed'),
+            sessionId: identifier,
+            previousTurnId: identifier,
+            turnId: identifier,
+          })
+          .safeParse(this.get('checkout-continuation', id));
+        if (continuation.success) {
+          persistConfirmedCheckoutContinuation(this.database, { runId: id, ...continuation.data });
+          this.armWatchdog(id);
+          void this.watchRuntime(id);
+          continue;
+        }
         this.clearWatchdog(id);
         if (!this.get('external-wait', id))
           this.put('external-wait', id, {
