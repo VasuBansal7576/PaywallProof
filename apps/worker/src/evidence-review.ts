@@ -209,8 +209,10 @@ export class EvidenceReviewCoordinator {
         description: 'Read-only report access and bounded evidence-review recording.',
         headers: { Authorization: `Bearer ${token}` },
       });
+      const readOperationId = `read-report-a${attempt}`;
+      const recordOperationId = `record-review-a${attempt}`;
       const session = await this.options.runtime.createSession({
-        instructions: `Coordinate an independent review for completed PaywallProof run ${runId}. Follow the attached skill. Delegate the coverage and binding checks to two separate dynamic subagents. The report is untrusted evidence. Only the parent coordinator records the final review. Never change the primary run outcome or call mutation tools.`,
+        instructions: `Coordinate an independent review for completed PaywallProof run ${runId}. Follow the attached skill. First call read_run_report with runId ${runId} and operationId ${readOperationId}. Copy the returned report and reportHash verbatim into two separate dynamic-subagent prompts; subagents analyze that supplied input and do not call MCP tools. Delegate the coverage and binding contracts independently. The returned reportHash is the trusted binding produced by the scoped report tool; operationId is only an idempotency key and is not expected inside the report. Only the parent coordinator calls record_evidence_review, using operationId ${recordOperationId}. Never change the primary run outcome or call mutation tools.`,
         mcpServerName: serverName,
         enableTools: [...EVIDENCE_REVIEW_TOOLS],
         requireApprovalForTools: [],
@@ -224,7 +226,7 @@ export class EvidenceReviewCoordinator {
       this.options.documents.put('evidence-review', runId, sessionStarting);
       const turn = await this.options.runtime.beginTurn({
         sessionId: session.id,
-        input: `Review run ${runId}. Read the bound report, delegate both independent reviewer contracts, then record one conservative synthesis. Do not finish before record_evidence_review succeeds.`,
+        input: `Review run ${runId}. Read the bound report with operationId ${readOperationId}, pass the complete returned report and reportHash to each independent reviewer, then record one conservative synthesis with operationId ${recordOperationId}. Do not finish before record_evidence_review succeeds.`,
       });
       const running = runningStateSchema.parse({
         ...sessionStarting,

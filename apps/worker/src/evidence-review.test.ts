@@ -117,12 +117,16 @@ describe('skill-backed evidence review', () => {
     );
     expect(runtime.createSession).toHaveBeenCalledWith(
       expect.objectContaining({
+        instructions: expect.stringContaining('read-report-a1'),
         enableTools: ['read_run_report', 'record_evidence_review'],
         requireApprovalForTools: [],
         skills: ['paywallproof-evidence-review'],
         dynamicSubAgents: true,
         sandbox: true,
       }),
+    );
+    expect(runtime.beginTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ input: expect.stringContaining('record-review-a1') }),
     );
   });
 

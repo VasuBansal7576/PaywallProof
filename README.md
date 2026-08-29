@@ -127,7 +127,7 @@ The local workflow verifier saves each receipt under `.local/workflow-<run-id>/`
 - [x] A reusable repository skill is registered from Git and attached to the review session.
 - [x] Dynamic subagents perform two independent report reviews in a separate session.
 - [x] The review session exposes only report read and bounded review-recording tools.
-- [ ] Run the new evidence-review path against the final committed ref on the local TrueForge stack and retain its receipt.
+- [x] Run the evidence-review path on the local TrueForge stack and retain its report-hash-bound, two-reviewer receipt. The recorded `needs_attention` verdict is preserved honestly in local evidence.
 
 ### Qodo
 

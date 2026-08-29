@@ -12,7 +12,7 @@ Prerequisites: Node.js, pnpm, Git, the local TrueForge stack for live-runtime ch
 - [x] G2: A completed run can enter an independent evidence-review stage whose coordinator is skill-backed, enables TrueForge dynamic subagents, exposes only review-scoped MCP tools, and persists the resulting verdict in the run report.
       CHECK: pnpm test:evidence-review
       EXPECT: /evidence-review contract passed/
-      EVIDENCE: Passed locally on 2026-08-29; the contract covers Git skill registration, dynamic subagents, exact tool scope, grounded persistence, and single-watcher recovery.
+      EVIDENCE: Passed locally on 2026-08-29; the contract covers Git skill registration, dynamic subagents, exact tool scope, grounded persistence, and single-watcher recovery. Live run `8610985b-3a86-4235-957d-e95e33ebb870` retained two reviewer roles against report hash `f25e665bf33fc1d1da47673221d66484952fac0be2069fbef1ff22df1cfbdb97`; its conservative verdict was `needs_attention`.
 
 - [x] G3: The repository has one legible source tree, no bundled third-party source/patch dumps, no obsolete model paths, no raw machine-specific output, and a validated reusable review skill.
       CHECK: pnpm check:repository
