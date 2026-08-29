@@ -148,10 +148,19 @@ export function RunReport({
             ) : detail.evidenceReview ? (
               <>
                 <p>
-                  Status: {detail.evidenceReview.status}. The primary report remains available while
-                  the isolated review session finishes.
+                  Status: {detail.evidenceReview.status}, attempt {detail.evidenceReview.attempt}.
+                  The primary report remains available while the isolated review session finishes.
                 </p>
                 {detail.evidenceReview.error && <code>{detail.evidenceReview.error}</code>}
+                {detail.evidenceReview.status === 'error' && (
+                  <button
+                    className="button secondary small"
+                    disabled={reviewing || !onReview}
+                    onClick={onReview}
+                  >
+                    {reviewing ? 'Retrying review…' : 'Retry independent review'}
+                  </button>
+                )}
               </>
             ) : (
               <>

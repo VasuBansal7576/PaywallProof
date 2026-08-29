@@ -70,6 +70,7 @@ export const scenarioSchema = z.object({
 export type Scenario = z.infer<typeof scenarioSchema>;
 const evidenceReviewSchema = z.object({
   runId: z.string(),
+  attempt: z.number().int().positive().default(1),
   status: z.enum(['starting', 'running', 'completed', 'error']),
   reportHash: z.string(),
   createdAt: z.number(),

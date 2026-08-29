@@ -238,7 +238,6 @@ export class Controller {
       report: (runId) => this.reviewSource(runId),
       workerOrigin: config.workerOrigin,
       repository: config.repository,
-      ref: config.defaultRef,
     });
   }
   put(kind: string, id: string, value: unknown) {

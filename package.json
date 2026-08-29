@@ -33,6 +33,7 @@
     "check:skill": "node scripts/validate-review-skill.mjs",
     "test:turn-selection": "node scripts/run-contract.mjs turn-selection",
     "test:evidence-review": "node scripts/run-contract.mjs evidence-review",
+    "test:evidence-review:live": "tsx scripts/verify-evidence-review.ts",
     "verify:ci": "node scripts/verify-repository.mjs",
     "verify": "node scripts/verify-repository.mjs --live",
     "test": "vitest run",

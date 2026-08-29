@@ -57,6 +57,7 @@ const skillBindingSchema = z.strictObject({
 });
 const stateFields = {
   runId: identifier,
+  attempt: z.number().int().positive().default(1),
   reportHash: z.string().regex(/^[a-f0-9]{64}$/),
   skill: skillBindingSchema,
   createdAt: z.number().int().nonnegative(),
@@ -120,7 +121,6 @@ export class EvidenceReviewCoordinator {
       report(runId: string): Report;
       workerOrigin: string;
       repository: string;
-      ref: string;
     },
   ) {}
 
@@ -132,12 +132,13 @@ export class EvidenceReviewCoordinator {
   authorize(runId: string, token: string): boolean {
     if (!token) return false;
     const binding = z
-      .object({ runId: identifier })
+      .object({ runId: identifier, attempt: z.number().int().positive() })
       .safeParse(this.options.documents.get('evidence-review-token', hashValue(token)));
     const state = this.view(runId);
     return (
       binding.success &&
       binding.data.runId === runId &&
+      binding.data.attempt === state?.attempt &&
       (state?.status === 'running' || state?.status === 'completed')
     );
   }
@@ -151,25 +152,37 @@ export class EvidenceReviewCoordinator {
       existing?.status === 'starting'
     )
       return existing;
-    if (existing?.status === 'error')
-      throw new EvidenceReviewError('EVIDENCE_REVIEW_RETRY_REQUIRES_NEW_RUN');
     if (this.starts.has(runId)) throw new EvidenceReviewError('EVIDENCE_REVIEW_IN_FLIGHT');
     this.starts.add(runId);
     try {
       const report = this.boundReport(runId);
       const parsed = z
-        .object({ run: z.object({ id: z.literal(runId), status: z.literal('completed') }) })
+        .object({
+          run: z.object({
+            id: z.literal(runId),
+            status: z.literal('completed'),
+            targetBuild: z.string().regex(/^[a-f0-9]{40}$/),
+          }),
+        })
         .parse(report);
-      void parsed;
+      const attempt = existing?.status === 'error' ? existing.attempt + 1 : 1;
+      if (existing?.status === 'error') {
+        this.options.documents.put(
+          'evidence-review-attempt',
+          `${runId}:${existing.attempt}`,
+          existing,
+        );
+      }
       const createdAt = Date.now();
       const skill = {
         name: EVIDENCE_REVIEW_SKILL,
-        ref: this.options.ref,
+        ref: parsed.run.targetBuild,
         path: 'skills/paywallproof-evidence-review' as const,
         dynamicSubAgents: true as const,
       };
       const starting = startingStateSchema.parse({
         runId,
+        attempt,
         status: 'starting',
         reportHash: hashValue(report),
         skill,
@@ -180,13 +193,13 @@ export class EvidenceReviewCoordinator {
       });
       this.options.documents.put('evidence-review', runId, starting);
       const token = randomUUID() + randomUUID();
-      this.options.documents.put('evidence-review-token', hashValue(token), { runId });
-      const serverName = `paywallproof_review_${runId.replaceAll('-', '')}`;
+      this.options.documents.put('evidence-review-token', hashValue(token), { runId, attempt });
+      const serverName = `paywallproof_review_${runId.replaceAll('-', '')}_a${attempt}`;
       await this.options.runtime.registerSkill({
         name: EVIDENCE_REVIEW_SKILL,
         description: 'Independently audit a completed PaywallProof run report.',
         repositoryUrl: `https://github.com/${this.options.repository}.git`,
-        ref: this.options.ref,
+        ref: skill.ref,
         path: skill.path,
       });
       await this.options.runtime.registerMcpServer({

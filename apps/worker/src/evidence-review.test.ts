@@ -57,9 +57,8 @@ function fixture() {
     },
     workerOrigin: 'http://127.0.0.1:8787',
     repository: 'example/paywallproof',
-    ref: 'a'.repeat(40),
   });
-  return { coordinator, runtime };
+  return { coordinator, runtime, documents };
 }
 
 describe('skill-backed evidence review', () => {
@@ -70,6 +69,7 @@ describe('skill-backed evidence review', () => {
     expect(state).toMatchObject({
       runId,
       status: 'running',
+      attempt: 1,
       sessionId: 'review-session',
       turnId: 'review-turn',
       skill: {
@@ -150,5 +150,36 @@ describe('skill-backed evidence review', () => {
     await coordinator.recover();
 
     expect(runtime.resumeStream).toHaveBeenCalledTimes(1);
+  });
+
+  it('archives a failed attempt, revokes its token, and retries the same bound report', async () => {
+    const { coordinator, runtime, documents } = fixture();
+    const first = await coordinator.start(runId);
+    const firstRegistration = runtime.registerMcpServer.mock.calls[0]?.[0];
+    const firstToken = new Headers(firstRegistration?.headers)
+      .get('authorization')
+      ?.replace(/^Bearer /, '');
+    documents.put('evidence-review', runId, {
+      ...first,
+      status: 'error',
+      error: 'CODEX_SUBSCRIPTION_UNAVAILABLE',
+    });
+
+    const second = await coordinator.start(runId);
+    const secondRegistration = runtime.registerMcpServer.mock.calls[1]?.[0];
+    const secondToken = new Headers(secondRegistration?.headers)
+      .get('authorization')
+      ?.replace(/^Bearer /, '');
+
+    expect(second).toMatchObject({ status: 'running', attempt: 2 });
+    expect(documents.get('evidence-review-attempt', `${runId}:1`)).toMatchObject({
+      status: 'error',
+      attempt: 1,
+    });
+    expect(coordinator.authorize(runId, firstToken ?? '')).toBe(false);
+    expect(coordinator.authorize(runId, secondToken ?? '')).toBe(true);
+    expect(runtime.registerSkill).toHaveBeenLastCalledWith(
+      expect.objectContaining({ ref: report.run.targetBuild }),
+    );
   });
 });
