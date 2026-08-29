@@ -79,6 +79,12 @@ const eventSchema = z.object({
   payload: z.unknown(),
   occurredAt: milliseconds,
 });
+const externalWaitSchema = z.strictObject({
+  runId: identifier,
+  waitId: identifier,
+  startedAt: milliseconds,
+  endedAt: milliseconds,
+});
 export const RUN_LIMITS = Object.freeze({
   users: 2,
   customers: 1,
@@ -87,6 +93,7 @@ export const RUN_LIMITS = Object.freeze({
   operations: 100,
   activeMilliseconds: 900000,
   approvalMilliseconds: 900000,
+  externalWaitMilliseconds: 24 * 60 * 60 * 1000,
 });
 
 function boundary<T>(action: () => T): T {
@@ -115,6 +122,7 @@ export function openRunStore(options: { path: string; clock?: () => number }) {
     CREATE TABLE IF NOT EXISTS operations(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,record TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS operations_run ON operations(run_id);
     CREATE TABLE IF NOT EXISTS run_events(sequence INTEGER PRIMARY KEY AUTOINCREMENT,run_id TEXT NOT NULL,type TEXT NOT NULL,payload TEXT NOT NULL,occurred_at INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS external_wait_credits(run_id TEXT NOT NULL,wait_id TEXT NOT NULL,started_at INTEGER NOT NULL,ended_at INTEGER NOT NULL,PRIMARY KEY(run_id,wait_id));
   `);
   const now = () => milliseconds.parse(clock());
   function loadRun(id: unknown): RunRecord {
@@ -220,6 +228,45 @@ export function openRunStore(options: { path: string; clock?: () => number }) {
         event(run.id, 'plan.decided', {
           decision: decision.decision,
           bindingHash: decision.bindingHash,
+        });
+        return run;
+      });
+    },
+    creditExternalWait(input: unknown): RunRecord {
+      return transactional(() => {
+        const request = externalWaitSchema.parse(parseJson(input));
+        const run = loadRun(request.runId);
+        const previous = database
+          .prepare(
+            'SELECT started_at AS startedAt,ended_at AS endedAt FROM external_wait_credits WHERE run_id=? AND wait_id=?',
+          )
+          .get(request.runId, request.waitId);
+        if (previous) {
+          const credited = z
+            .object({ startedAt: milliseconds, endedAt: milliseconds })
+            .parse(previous);
+          if (credited.startedAt !== request.startedAt || credited.endedAt !== request.endedAt)
+            throw new ControlError('OPERATION_CONFLICT');
+          return run;
+        }
+        if (
+          run.status !== 'running' ||
+          run.approval.decision !== 'allow' ||
+          run.startedAt === null ||
+          request.startedAt < run.startedAt ||
+          request.endedAt < request.startedAt ||
+          request.endedAt > now() ||
+          request.endedAt - request.startedAt > RUN_LIMITS.externalWaitMilliseconds
+        )
+          throw new ControlError('INVALID_TRANSITION');
+        run.startedAt += request.endedAt - request.startedAt;
+        database
+          .prepare('INSERT INTO external_wait_credits VALUES(?,?,?,?)')
+          .run(request.runId, request.waitId, request.startedAt, request.endedAt);
+        saveRun(run);
+        event(run.id, 'run.external_wait_credited', {
+          waitId: request.waitId,
+          durationMs: request.endedAt - request.startedAt,
         });
         return run;
       });

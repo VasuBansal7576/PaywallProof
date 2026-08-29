@@ -47,6 +47,10 @@ const eventBatchSchema = z.object({
   events: z.array(eventSchema),
   cursor: z.number().int().nonnegative(),
 });
+const checkoutContinuationSchema = z.object({
+  status: z.literal('resumed'),
+  turnId: z.string(),
+});
 
 export function RunView({
   id,
@@ -264,18 +268,43 @@ export function RunView({
         <section className="panel">
           <h2>Sandbox checkout</h2>
           <p>
-            The runner waits for the sandbox checkout to succeed before testing paid access. Use
-            only Polar's documented test payment details. Never enter a real card. This link is
-            available after the checkout has been created.
+            Complete checkout with only Polar&apos;s documented test payment details. Never enter a
+            real card. The run pauses durably while checkout is open, so no orchestration request
+            has to remain connected while you pay.
           </p>
-          <a
-            className="button secondary"
-            href={`/api/runs/${encodeURIComponent(run.id)}/checkout`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Open sandbox checkout
-          </a>
+          <div className="heading-actions">
+            <a
+              className="button secondary"
+              href={`/api/runs/${encodeURIComponent(run.id)}/checkout`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open sandbox checkout
+            </a>
+            {detail.runtime?.status === 'waiting_external' && (
+              <button
+                className="button primary"
+                disabled={!!busy}
+                onClick={() =>
+                  void action('checkout', () =>
+                    api.mutate(
+                      `/runs/${encodeURIComponent(run.id)}/checkout/continue`,
+                      {},
+                      checkoutContinuationSchema,
+                    ),
+                  )
+                }
+              >
+                {busy === 'checkout' ? 'Verifying with Polar…' : 'I completed sandbox checkout'}
+              </button>
+            )}
+          </div>
+          {detail.runtime?.status === 'waiting_external' && (
+            <p className="muted">
+              This does not trust the browser result. PaywallProof resumes only after an owned, paid
+              Polar sandbox subscription is independently confirmed.
+            </p>
+          )}
         </section>
       )}
       <div className="run-summary">

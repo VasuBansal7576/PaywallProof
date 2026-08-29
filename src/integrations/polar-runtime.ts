@@ -38,9 +38,12 @@ export type PolarMutationKind =
   | 'create_checkout'
   | 'set_period_end'
   | 'schedule_cancellation'
-  | 'cleanup';
+  | 'cleanup'
+  | 'external_wait';
 const delay = (milliseconds: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+const verificationPeriodSeconds = 120;
+const cancellationConfirmationGraceMs = 60_000;
 
 /** Mutations stay on the sandbox host. A dispatched request is never blindly retried. */
 export class PolarSandboxAdapter {
@@ -64,7 +67,7 @@ export class PolarSandboxAdapter {
     this.#reader = new PolarSandboxReader({ token, organizationId, productId, priceId }, transport);
     this.#database = new Database(config.data.databasePath);
     this.#database.exec(
-      'CREATE TABLE IF NOT EXISTS polar_resources(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,kind TEXT NOT NULL,receipt TEXT NOT NULL,UNIQUE(run_id,kind)); CREATE TABLE IF NOT EXISTS polar_intents(operation_id TEXT PRIMARY KEY,run_id TEXT NOT NULL,kind TEXT NOT NULL,args_hash TEXT NOT NULL,response TEXT,UNIQUE(run_id,kind));',
+      'CREATE TABLE IF NOT EXISTS polar_resources(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,kind TEXT NOT NULL,receipt TEXT NOT NULL,UNIQUE(run_id,kind)); CREATE TABLE IF NOT EXISTS polar_intents(operation_id TEXT PRIMARY KEY,run_id TEXT NOT NULL,kind TEXT NOT NULL,args_hash TEXT NOT NULL,response TEXT,UNIQUE(run_id,kind)); CREATE TABLE IF NOT EXISTS polar_periods(run_id TEXT PRIMARY KEY,period_end INTEGER NOT NULL);',
     );
   }
   async preflight() {
@@ -159,7 +162,6 @@ export class PolarSandboxAdapter {
     const body = {
       email,
       type: 'individual',
-      organization_id: this.#config.organizationId,
       external_id: `paywallproof:${runId}`,
       metadata: { runId, purpose: 'paywallproof_sandbox_verification' },
     };
@@ -213,7 +215,8 @@ export class PolarSandboxAdapter {
       ? this.#checkout(JSON.parse(resource.receipt), runId, this.#require(runId, 'customer').id).url
       : null;
   }
-  async createSubscription(runId: string, operationId: string) {
+  /** Creates the owned checkout and returns before a human is asked to complete it. */
+  async beginSubscriptionCheckout(runId: string, operationId: string) {
     const customer = this.#require(runId, 'customer');
     await this.#reader.customer({ runId, customerId: customer.id });
     const checkout = this.#checkout(
@@ -235,64 +238,67 @@ export class PolarSandboxAdapter {
       customer.id,
     );
     this.#record(runId, 'checkout', checkout.id, checkout);
-    const deadline = Date.now() + 10 * 60 * 1000;
-    for (;;) {
-      this.#guard(runId, 'poll');
-      const current = this.#checkout(
-        await this.#api.request('GET', `/checkouts/${checkout.id}`),
-        runId,
-        customer.id,
-      );
-      if (['expired', 'failed'].includes(current.status))
-        throw new PolarError('POLAR_CHECKOUT_NOT_COMPLETED');
-      if (current.status === 'succeeded') {
-        const subscriptionId = await this.#reader.findSubscription({
-          runId,
-          customerId: customer.id,
-        });
-        if (subscriptionId) {
-          this.#record(runId, 'subscription', subscriptionId, { id: subscriptionId });
-          const facts = await this.#reader.observe({
-            runId,
-            customerId: customer.id,
-            subscriptionId,
-          });
-          if (
-            !facts.initialPaymentConfirmed ||
-            facts.subscription.checkout_id !== checkout.id ||
-            facts.subscription.status !== 'active' ||
-            facts.subscription.cancel_at_period_end
-          )
-            throw new PolarError('POLAR_INITIAL_PAYMENT_UNCONFIRMED');
-          // Choose the real shortened period once, before SC02 freezes its identity.
-          // Persist it before dispatch so a restart cannot select a different boundary.
-          const key = `${operationId}:period`;
-          const intent = this.#database
-            .prepare('SELECT response FROM polar_intents WHERE operation_id=?')
-            .get(key);
-          if (intent) throw new PolarError('POLAR_RECONCILIATION_REQUIRED');
-          const periodEnd = Math.floor(Date.now() / 1000) + 300;
-          await this.#mutate(
-            runId,
-            key,
-            'set_period_end',
-            'PATCH',
-            `/subscriptions/${subscriptionId}`,
-            { current_billing_period_end: new Date(periodEnd * 1000).toISOString() },
-          );
-          const confirmed = await this.#reader.observe({
-            runId,
-            customerId: customer.id,
-            subscriptionId,
-          });
-          if (confirmed.periodEnd !== periodEnd)
-            throw new PolarError('POLAR_PERIOD_UPDATE_UNCONFIRMED');
-          return { subscriptionId, checkoutId: checkout.id, periodEnd, mode: 'polar_sandbox' };
-        }
-      }
-      if (Date.now() >= deadline) throw new PolarError('POLAR_CHECKOUT_PENDING');
-      await delay(5000);
-    }
+    return { checkoutId: checkout.id, status: 'checkout_required', mode: 'polar_sandbox' } as const;
+  }
+  async #currentCheckout(runId: string, guardKind: 'poll' | 'external_wait' = 'poll') {
+    this.#ready();
+    this.#guard(runId, guardKind);
+    const customer = this.#require(runId, 'customer');
+    return this.#checkout(
+      await this.#api.request('GET', `/checkouts/${this.#require(runId, 'checkout').id}`),
+      runId,
+      customer.id,
+    );
+  }
+  /** One provider read used to decide whether a persisted TrueForge turn may resume. */
+  async checkoutCompleted(runId: string) {
+    const checkout = await this.#currentCheckout(runId, 'external_wait');
+    if (['expired', 'failed'].includes(checkout.status))
+      throw new PolarError('POLAR_CHECKOUT_NOT_COMPLETED');
+    return checkout.status === 'succeeded';
+  }
+  /** Provider-read continuation for a previously recorded checkout; never waits on a person. */
+  async completeSubscriptionCheckout(runId: string) {
+    const customer = this.#require(runId, 'customer');
+    const checkout = await this.#currentCheckout(runId);
+    if (['expired', 'failed'].includes(checkout.status))
+      throw new PolarError('POLAR_CHECKOUT_NOT_COMPLETED');
+    if (checkout.status !== 'succeeded') return null;
+    const subscriptionId = await this.#reader.findSubscription({ runId, customerId: customer.id });
+    if (!subscriptionId) return null;
+    this.#record(runId, 'subscription', subscriptionId, { id: subscriptionId });
+    const facts = await this.#reader.observe({ runId, customerId: customer.id, subscriptionId });
+    if (
+      !facts.initialPaymentConfirmed ||
+      facts.subscription.checkout_id !== checkout.id ||
+      facts.subscription.status !== 'active' ||
+      facts.subscription.cancel_at_period_end
+    )
+      throw new PolarError('POLAR_INITIAL_PAYMENT_UNCONFIRMED');
+    const existing = this.#database
+      .prepare('SELECT period_end FROM polar_periods WHERE run_id=?')
+      .get(runId);
+    const periodEnd = existing
+      ? z.object({ period_end: z.number().int().positive() }).parse(existing).period_end
+      : Math.floor(Date.now() / 1000) + verificationPeriodSeconds;
+    this.#database
+      .prepare('INSERT INTO polar_periods VALUES(?,?) ON CONFLICT(run_id) DO NOTHING')
+      .run(runId, periodEnd);
+    await this.#mutate(
+      runId,
+      `checkout-confirm:${runId}:period`,
+      'set_period_end',
+      'PATCH',
+      `/subscriptions/${subscriptionId}`,
+      { current_billing_period_end: new Date(periodEnd * 1000).toISOString() },
+    );
+    const confirmed = await this.#reader.observe({
+      runId,
+      customerId: customer.id,
+      subscriptionId,
+    });
+    if (confirmed.periodEnd !== periodEnd) throw new PolarError('POLAR_PERIOD_UPDATE_UNCONFIRMED');
+    return { subscriptionId, checkoutId: checkout.id, periodEnd, mode: 'polar_sandbox' } as const;
   }
   async observe(runId: string): Promise<Billing> {
     this.#ready();
@@ -350,7 +356,8 @@ export class PolarSandboxAdapter {
     if (!before?.cancelAtPeriodEnd) throw new PolarError('POLAR_CANCELLATION_REQUIRED');
     if (before.periodEnd - Math.floor(Date.now() / 1000) > 600)
       throw new PolarError('POLAR_PERIOD_WAIT_BOUND');
-    const deadline = Math.max(Date.now(), before.periodEnd * 1000) + 90_000;
+    const remainingUntilPeriodEnd = Math.max(0, before.periodEnd * 1000 - Date.now());
+    const deadline = performance.now() + remainingUntilPeriodEnd + cancellationConfirmationGraceMs;
     for (;;) {
       this.#guard(runId, 'poll');
       const subscription = (await this.observe(runId)).subscription;
@@ -366,7 +373,7 @@ export class PolarSandboxAdapter {
           billingTime: subscription.billingTime,
           mode: 'polar_sandbox',
         };
-      if (Date.now() >= deadline) throw new PolarError('POLAR_PERIOD_END_UNCONFIRMED');
+      if (performance.now() >= deadline) throw new PolarError('POLAR_PERIOD_END_UNCONFIRMED');
       await delay(5000);
     }
   }

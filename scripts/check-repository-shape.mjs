@@ -7,12 +7,7 @@ const failures = [];
 const forbidden = [
   'packages',
   'docs/free-model.md',
-  'docs/real-world/public-fieldlasso',
-  'docs/real-world/programflow/paywallproof-full-suite.json',
-  'docs/real-world/programflow/paywallproof-report.json',
-  'docs/real-world/programflow/paywallproof-target.ts.txt',
-  'docs/real-world/programflow/programflow-commerce-test.json',
-  'docs/real-world/programflow/programflow-postgres-date-fix.patch',
+  'docs/real-world',
   'scripts/configure-free-model.ts',
   'scripts/configure-local-model.ts',
   'scripts/inspect-local-run.ts',
@@ -21,12 +16,6 @@ const forbidden = [
 ];
 for (const path of forbidden)
   if (existsSync(join(root, path))) failures.push(`forbidden path: ${path}`);
-
-const allowedProgramFlow = new Set(['README.md', 'receipt.json', 'sc02-paid-allowed.png']);
-const programFlow = join(root, 'docs/real-world/programflow');
-for (const name of readdirSync(programFlow)) {
-  if (!allowedProgramFlow.has(name)) failures.push(`unexpected ProgramFlow artifact: ${name}`);
-}
 
 const sourceExtensions = new Set(['.ts', '.tsx', '.js', '.mjs']);
 function walk(directory) {

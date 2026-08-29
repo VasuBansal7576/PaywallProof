@@ -637,7 +637,9 @@ describe('Polar mutation protocol, implementation-aware synthetic transport', ()
     await adapter.preflight();
     expect(await adapter.createCustomer(runId, 'create')).toEqual({ customerId });
     expect(await adapter.createCustomer(runId, 'create')).toEqual({ customerId });
-    expect(requests.filter((request) => request.method === 'POST')).toHaveLength(1);
+    const mutations = requests.filter((request) => request.method === 'POST');
+    expect(mutations).toHaveLength(1);
+    expect(mutations[0]?.body).not.toHaveProperty('organization_id');
     expect(JSON.stringify(adapter.listOwned(runId))).not.toContain('@');
   });
   it.each([
@@ -658,7 +660,7 @@ describe('Polar mutation protocol, implementation-aware synthetic transport', ()
     const { adapter, requests } = runtimeFixture({ checkoutPatch });
     await adapter.preflight();
     await adapter.createCustomer(runId, 'create');
-    await expect(adapter.createSubscription(runId, 'subscribe')).rejects.toThrow();
+    await expect(adapter.beginSubscriptionCheckout(runId, 'subscribe')).rejects.toThrow();
     expect(requests.filter((request) => request.method === 'PATCH')).toEqual([]);
     expect(adapter.checkoutUrl(runId)).toBeNull();
   });
@@ -668,8 +670,14 @@ describe('Polar mutation protocol, implementation-aware synthetic transport', ()
     const fixture = runtimeFixture();
     await fixture.adapter.preflight();
     await fixture.adapter.createCustomer(runId, 'create');
-    const created = await fixture.adapter.createSubscription(runId, 'subscribe');
-    expect(created.periodEnd).toBe(Math.floor(Date.now() / 1000) + 300);
+    const checkout = await fixture.adapter.beginSubscriptionCheckout(runId, 'subscribe');
+    expect(checkout).toMatchObject({ checkoutId, status: 'checkout_required' });
+    expect(fixture.requests.filter((request) => request.method === 'PATCH')).toEqual([]);
+    await expect(fixture.adapter.checkoutCompleted(runId)).resolves.toBe(true);
+    const created = await fixture.adapter.completeSubscriptionCheckout(runId);
+    expect(created).not.toBeNull();
+    if (!created) throw new Error('Synthetic checkout should be complete');
+    expect(created.periodEnd).toBe(Math.floor(Date.now() / 1000) + 120);
     expect(await fixture.adapter.observe(runId)).toMatchObject({
       subscription: { status: 'active', initialPaymentConfirmed: true, cancelAtPeriodEnd: false },
     });
@@ -687,7 +695,7 @@ describe('Polar mutation protocol, implementation-aware synthetic transport', ()
     void waiting.then(() => {
       completed = true;
     });
-    await vi.advanceTimersByTimeAsync(300_000);
+    await vi.advanceTimersByTimeAsync(120_000);
     expect(completed).toBe(false); // Time alone is not a cancellation receipt.
     fixture.cancel();
     await vi.advanceTimersByTimeAsync(5000);
@@ -698,6 +706,19 @@ describe('Polar mutation protocol, implementation-aware synthetic transport', ()
         { resourceId: subscriptionId, status: 'retained', code: 'POLAR_CANCELED_AUDIT_RETAINED' },
       ]),
     );
+  });
+  it('returns promptly while an externally completed checkout is still pending', async () => {
+    const fixture = runtimeFixture({ checkoutPatch: { status: 'open' } });
+    await fixture.adapter.preflight();
+    await fixture.adapter.createCustomer(runId, 'create');
+    await expect(fixture.adapter.beginSubscriptionCheckout(runId, 'subscribe')).resolves.toEqual({
+      checkoutId,
+      status: 'checkout_required',
+      mode: 'polar_sandbox',
+    });
+    await expect(fixture.adapter.checkoutCompleted(runId)).resolves.toBe(false);
+    await expect(fixture.adapter.completeSubscriptionCheckout(runId)).resolves.toBeNull();
+    expect(fixture.requests.filter((request) => request.method === 'PATCH')).toEqual([]);
   });
   it('redacts Polar credentials, mailboxes and private checkout links without erasing the mode label', () => {
     const token = ['polar', 'oat', 'SYNTHETIC_ONLY_123456789'].join('_');

@@ -1,3 +1,3 @@
 import { verifyWorkflow } from './workflow-runner.ts';
 
-await verifyWorkflow('local_replay');
+await verifyWorkflow('polar_sandbox');
