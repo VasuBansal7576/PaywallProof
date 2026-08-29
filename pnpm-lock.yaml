@@ -9,7 +9,7 @@ patchedDependencies:
     hash: 587dac5138d1d0094b5cbd6b87552dc4be90b71a4ae3b2e5218a16870eb28d87
     path: patches/@truefoundry__trueforge-core@0.1.4.patch
   '@truefoundry/trueforge@0.1.4':
-    hash: cbda57d1df5e8cbc21f001a3b60a977cb1b7a7e0de8d9bfa6e27e2cb5408970a
+    hash: aecafd5de20edf4680ced779d2e3eb2bfbc2f32f87fd57cb9cf3b0d92ad051f5
     path: patches/@truefoundry__trueforge@0.1.4.patch
 
 importers:
@@ -58,7 +58,7 @@ importers:
         version: 1.62.1
       '@truefoundry/trueforge':
         specifier: 0.1.4
-        version: 0.1.4(patch_hash=cbda57d1df5e8cbc21f001a3b60a977cb1b7a7e0de8d9bfa6e27e2cb5408970a)(@aws-sdk/credential-provider-node@3.972.81)(@opentelemetry/api@1.9.1)(@smithy/signature-v4@5.7.3)(undici@7.29.0)
+        version: 0.1.4(patch_hash=aecafd5de20edf4680ced779d2e3eb2bfbc2f32f87fd57cb9cf3b0d92ad051f5)(@aws-sdk/credential-provider-node@3.972.81)(@opentelemetry/api@1.9.1)(@smithy/signature-v4@5.7.3)(undici@7.29.0)
       '@types/better-sqlite3':
         specifier: ^7.6.13
         version: 7.6.13
@@ -3936,7 +3936,7 @@ snapshots:
 
   '@truefoundry/trueforge-sdk@0.1.3': {}
 
-  '@truefoundry/trueforge@0.1.4(patch_hash=cbda57d1df5e8cbc21f001a3b60a977cb1b7a7e0de8d9bfa6e27e2cb5408970a)(@aws-sdk/credential-provider-node@3.972.81)(@opentelemetry/api@1.9.1)(@smithy/signature-v4@5.7.3)(undici@7.29.0)':
+  '@truefoundry/trueforge@0.1.4(patch_hash=aecafd5de20edf4680ced779d2e3eb2bfbc2f32f87fd57cb9cf3b0d92ad051f5)(@aws-sdk/credential-provider-node@3.972.81)(@opentelemetry/api@1.9.1)(@smithy/signature-v4@5.7.3)(undici@7.29.0)':
     dependencies:
       '@anthropic-ai/sandbox-runtime': 0.0.71
       '@daytona/sdk': 0.204.1
