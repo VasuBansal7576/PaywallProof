@@ -13,7 +13,23 @@ const safeDataIdentifier = z
   .max(200)
   .regex(/^[A-Za-z0-9][A-Za-z0-9_.:-]*$/);
 const digestSchema = z.string().regex(/^[a-f0-9]{64}$/);
-const buildSchema = z.string().regex(/^[a-f0-9]{40}$/);
+const sourceIdentifier = z
+  .string()
+  .min(1)
+  .max(255)
+  .refine((value) => value.trim() === value);
+const repositoryRef = sourceIdentifier
+  .refine((value) => !/[\s~^:?*\\[\]]/.test(value))
+  .refine((value) => !value.includes('..') && !value.includes('@{'))
+  .refine(
+    (value) =>
+      value !== '@' &&
+      !value.startsWith('/') &&
+      !value.endsWith('/') &&
+      !value.endsWith('.') &&
+      !value.endsWith('.lock') &&
+      !value.includes('//'),
+  );
 const safeTime = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const scenarioIdSchema = z.enum(['SC01', 'SC02', 'SC03', 'SC04']);
 const assertionSchema = z.object({
@@ -26,7 +42,7 @@ const reviewSourceSchema = z.object({
     projectId: z.string().optional(),
     status: z.literal('completed'),
     outcome: z.enum(['passed', 'failed', 'inconclusive']),
-    targetBuild: buildSchema,
+    targetBuild: sourceIdentifier,
     featureConfigHash: digestSchema.optional(),
     projectConfigHash: digestSchema.optional(),
     mode: z.enum(['polar_sandbox', 'local_replay']).optional(),
@@ -66,7 +82,7 @@ const reviewSourceSchema = z.object({
         subjectId: z.string().optional(),
         source: z.enum(['billing_provider', 'application', 'api_probe', 'browser']).optional(),
         policyHash: digestSchema.optional(),
-        targetBuild: buildSchema.optional(),
+        targetBuild: sourceIdentifier.optional(),
         observedAt: safeTime.optional(),
         billingTime: safeTime.nullable().optional(),
         mode: z.enum(['polar_sandbox', 'local_replay']).optional(),
@@ -100,6 +116,14 @@ const reviewSourceSchema = z.object({
     .max(100)
     .default([]),
   coverageLimits: z.array(z.string().max(10_000)).max(100).default([]),
+  coverageLimitCodes: z.array(
+    z.enum([
+      'SINGLE_TARGET_SINGLE_PRICE_SINGLE_FEATURE',
+      'PRODUCTION_BILLING_VARIANTS_NOT_TESTED',
+      'LOCAL_REPLAY_NOT_NATIVE_PROVIDER_DELIVERY',
+      'BUILD_SCOPED_NOT_SECURITY_CERTIFICATE',
+    ]),
+  ),
   oracle: z
     .object({
       hash: digestSchema,
@@ -130,7 +154,7 @@ function dataOnlyReviewReport(value: ReturnType<typeof parseJson>) {
       id: source.run.id,
       status: source.run.status,
       outcome: source.run.outcome,
-      targetBuild: source.run.targetBuild,
+      targetBuildHash: hashValue(source.run.targetBuild),
       policyHash: source.run.policy.hash,
       featureConfigHash: source.run.featureConfigHash ?? null,
       projectConfigHash: source.run.projectConfigHash ?? null,
@@ -156,7 +180,7 @@ function dataOnlyReviewReport(value: ReturnType<typeof parseJson>) {
       subjectHash: observation.subjectId ? hashValue(observation.subjectId) : null,
       source: observation.source ?? null,
       policyHash: observation.policyHash ?? null,
-      targetBuild: observation.targetBuild ?? null,
+      targetBuildHash: observation.targetBuild ? hashValue(observation.targetBuild) : null,
       observedAt: observation.observedAt ?? null,
       billingTime: observation.billingTime ?? null,
       mode: observation.mode ?? null,
@@ -173,6 +197,7 @@ function dataOnlyReviewReport(value: ReturnType<typeof parseJson>) {
       codeHash: item.code ? hashValue(item.code) : null,
     })),
     coverageLimitHashes: source.coverageLimits.map((limit) => hashValue(limit)),
+    coverageLimitCodes: source.coverageLimitCodes,
     oracle: source.oracle
       ? { hash: source.oracle.hash, fileHashes: source.oracle.files.map((file) => file.sha256) }
       : null,
@@ -305,6 +330,7 @@ export class EvidenceReviewCoordinator {
       report(runId: string): Report;
       workerOrigin: string;
       repository: string;
+      skillRef: string;
     },
   ) {}
 
@@ -340,15 +366,9 @@ export class EvidenceReviewCoordinator {
     this.starts.add(runId);
     try {
       const report = this.boundReport(runId);
-      const parsed = z
-        .object({
-          run: z.object({
-            id: z.literal(runId),
-            status: z.literal('completed'),
-            targetBuild: z.string().regex(/^[a-f0-9]{40}$/),
-          }),
-        })
-        .parse(report);
+      z.object({
+        run: z.object({ id: z.literal(runId), status: z.literal('completed') }),
+      }).parse(report);
       const attempt = existing?.status === 'error' ? existing.attempt + 1 : 1;
       if (existing?.status === 'error') {
         this.options.documents.put(
@@ -360,7 +380,7 @@ export class EvidenceReviewCoordinator {
       const createdAt = Date.now();
       const skill = {
         name: EVIDENCE_REVIEW_SKILL,
-        ref: parsed.run.targetBuild,
+        ref: repositoryRef.parse(this.options.skillRef),
         path: 'skills/paywallproof-evidence-review' as const,
         dynamicSubAgents: true as const,
       };

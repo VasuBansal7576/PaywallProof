@@ -10,7 +10,11 @@ const sourceReport = z
       id: z.string().uuid(),
       status: z.literal('completed'),
       outcome: z.literal('passed'),
-      targetBuild: z.string().regex(/^[a-f0-9]{40}$/),
+      targetBuild: z
+        .string()
+        .min(1)
+        .max(255)
+        .refine((value) => value.trim() === value),
     }),
   })
   .parse(JSON.parse(await readFile('.local/local-workflow-report.json', 'utf8')));
@@ -48,7 +52,7 @@ const completedReview = z.object({
   reviewers: z.array(reviewer).length(2),
   skill: z.object({
     name: z.literal('paywallproof-evidence-review'),
-    ref: z.literal(sourceReport.run.targetBuild),
+    ref: z.string().min(1),
     path: z.literal('skills/paywallproof-evidence-review'),
     dynamicSubAgents: z.literal(true),
   }),

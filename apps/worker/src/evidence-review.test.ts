@@ -22,6 +22,12 @@ const report = {
   observations: [{ id: 'observation-1', runId }],
   cleanup: [],
   coverageLimits: ['Synthetic contract fixture.'],
+  coverageLimitCodes: [
+    'SINGLE_TARGET_SINGLE_PRICE_SINGLE_FEATURE',
+    'PRODUCTION_BILLING_VARIANTS_NOT_TESTED',
+    'LOCAL_REPLAY_NOT_NATIVE_PROVIDER_DELIVERY',
+    'BUILD_SCOPED_NOT_SECURITY_CERTIFICATE',
+  ],
 };
 const completedReview = {
   runId,
@@ -52,7 +58,7 @@ const completedReview = {
   ],
 };
 
-function fixture(sourceReport: unknown = report) {
+function fixture(sourceReport: unknown = report, skillRef = report.run.targetBuild) {
   const values = new Map<string, unknown>();
   const documents = {
     put: (kind: string, id: string, value: unknown) => values.set(`${kind}:${id}`, value),
@@ -87,6 +93,7 @@ function fixture(sourceReport: unknown = report) {
     },
     workerOrigin: 'http://127.0.0.1:8787',
     repository: 'example/paywallproof',
+    skillRef,
   });
   return { coordinator, runtime, documents };
 }
@@ -167,12 +174,13 @@ describe('skill-backed evidence review', () => {
           id: runId,
           status: 'completed',
           outcome: 'passed',
-          targetBuild: report.run.targetBuild,
+          targetBuildHash: expect.stringMatching(/^[a-f0-9]{64}$/),
           policyHash: report.run.policy.hash,
         },
         scenarios: report.scenarios,
         observations: [{ id: 'observation-1', runId, payloadHash: null, subjectHash: null }],
         coverageLimitHashes: [expect.stringMatching(/^[a-f0-9]{64}$/)],
+        coverageLimitCodes: report.coverageLimitCodes,
       },
       reportHash: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
@@ -180,6 +188,23 @@ describe('skill-backed evidence review', () => {
     const recorded = await coordinator.tool(runId, 'record_evidence_review', completedReview);
     expect(recorded).toMatchObject({ runId, status: 'completed', verdict: 'confirmed' });
     expect(coordinator.view(runId)).toEqual(recorded);
+  });
+
+  it('reviews non-SHA build identifiers while mounting the controller skill ref', async () => {
+    const { coordinator, runtime } = fixture(
+      { ...report, run: { ...report.run, targetBuild: 'Release/2026.08' } },
+      'refs/tags/reviewer-v1',
+    );
+
+    await expect(coordinator.start(runId)).resolves.toMatchObject({ status: 'running' });
+    expect(runtime.registerSkill).toHaveBeenCalledWith(
+      expect.objectContaining({ ref: 'refs/tags/reviewer-v1' }),
+    );
+    const projected = await coordinator.tool(runId, 'read_run_report', {
+      runId,
+      operationId: 'read-report-a1',
+    });
+    expect(JSON.stringify(projected)).not.toContain('Release/2026.08');
   });
 
   it('removes instruction-bearing report text before either reviewer can receive it', async () => {
