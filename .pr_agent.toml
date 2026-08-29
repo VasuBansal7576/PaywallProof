@@ -1,0 +1,11 @@
+[github_app]
+pr_commands = [
+  "/agentic_describe",
+  "/agentic_review",
+]
+
+[review_agent]
+comments_location_policy = "both"
+inline_comments_severity_threshold = 2
+issues_user_guidelines = "Prioritize correctness, security boundaries, idempotency, TrueForge session and paginator behavior, evidence integrity, and unsupported claims. Treat generated or third-party artifacts as repository hygiene concerns."
+compliance_user_guidelines = "Require tests for valid findings. Keep primary run verdicts separate from model-generated evidence-review opinions."

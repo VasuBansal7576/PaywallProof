@@ -1,0 +1,157 @@
+{
+  "sampleKind": "projection-of-recorded-local-replay",
+  "sourceReceiptSha256": "31c7ea5dfd28de9f501d95549b0f324926d9d331cd770756fdb881300ddfdeb0",
+  "omitted": [
+    "operator approval and capability data",
+    "project configuration",
+    "raw observations",
+    "local artifact paths"
+  ],
+  "run": {
+    "id": "99c255aa-7a0d-47e3-898e-65c1d966ee3c",
+    "mode": "local_replay",
+    "status": "completed",
+    "outcome": "passed",
+    "targetBuild": "db98f94fa13a785a3a3aeeaf281fbec8f55cca89",
+    "policyHash": "563cf5a54a04c489386cb3e532dae23e41ac816a06799dfbb34300d56cd97ec2",
+    "createdAt": 1787945839977,
+    "startedAt": 1787945850051
+  },
+  "scenarios": [
+    {
+      "id": "SC01",
+      "api": {
+        "verdict": "pass",
+        "code": "ACCESS_DENIED"
+      },
+      "browser": {
+        "verdict": "pass",
+        "code": "ACCESS_DENIED"
+      },
+      "state": {
+        "verdict": "pass",
+        "code": "STATE_MATCHES"
+      },
+      "observationIds": [
+        "9b2f5a30-fdc2-44ce-a5f0-9806ef28048f",
+        "47056902-c265-48ae-b521-56c7ba119122",
+        "8f13c07a-4f53-4192-9e26-c84ad1bab1c2",
+        "9e520fae-5bd2-402b-9ecd-4261dccfab83"
+      ]
+    },
+    {
+      "id": "SC02",
+      "api": {
+        "verdict": "pass",
+        "code": "ACCESS_ALLOWED"
+      },
+      "browser": {
+        "verdict": "pass",
+        "code": "ACCESS_ALLOWED"
+      },
+      "state": {
+        "verdict": "pass",
+        "code": "STATE_MATCHES"
+      },
+      "observationIds": [
+        "8e7e091f-9647-4ea4-9f7c-cb00597d4432",
+        "53e56bd0-ba4e-40db-aeb2-04b68fa5703e",
+        "3d8ce238-032c-4a9e-b9c2-1043d9e61a00",
+        "41ddd138-40d0-4f97-8b8b-eba4459bfcfc"
+      ]
+    },
+    {
+      "id": "SC03",
+      "api": {
+        "verdict": "pass",
+        "code": "ACCESS_ALLOWED"
+      },
+      "browser": {
+        "verdict": "pass",
+        "code": "ACCESS_ALLOWED"
+      },
+      "state": {
+        "verdict": "pass",
+        "code": "STATE_MATCHES"
+      },
+      "observationIds": [
+        "237b0fa9-a293-4b7a-867e-9f6a0600e2b3",
+        "05cab0fc-9487-4768-a553-a98b0be4cc58",
+        "a3a29789-793a-4333-bb8c-f93aa29b0c6d",
+        "a5b2402d-faf8-4145-ac0c-ad21d4b0a12a"
+      ]
+    },
+    {
+      "id": "SC04",
+      "api": {
+        "verdict": "pass",
+        "code": "ACCESS_DENIED"
+      },
+      "browser": {
+        "verdict": "pass",
+        "code": "ACCESS_DENIED"
+      },
+      "state": {
+        "verdict": "pass",
+        "code": "STATE_MATCHES"
+      },
+      "observationIds": [
+        "23b29b74-f555-43a7-9ab7-d35828a59867",
+        "088de171-12d1-4369-976d-865af1696b67",
+        "69ff9f71-1b7b-45b3-8bdf-85db5d99f698",
+        "4409ba1b-0cfa-4280-9ef5-6c1669784bb8"
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "602303a0-a815-4213-8caf-5e86d22e411f.png",
+      "sha256": "d115f5c8ecb0785260aede06231a2e3a89e8f658517424fb48bc690ce64f504a",
+      "contentType": "image/png",
+      "collectedAt": "2026-08-28T19:38:35.100Z",
+      "runId": "99c255aa-7a0d-47e3-898e-65c1d966ee3c",
+      "observationId": "4409ba1b-0cfa-4280-9ef5-6c1669784bb8"
+    },
+    {
+      "id": "542bb0e0-0186-45b8-8f5c-0bb8f472417c.png",
+      "sha256": "61617bf520fbefa43950f82f7f8d1093c71d3d108fa93e44ddf3832f269f3138",
+      "contentType": "image/png",
+      "collectedAt": "2026-08-28T19:38:16.034Z",
+      "runId": "99c255aa-7a0d-47e3-898e-65c1d966ee3c",
+      "observationId": "a5b2402d-faf8-4145-ac0c-ad21d4b0a12a"
+    },
+    {
+      "id": "12db4d47-feef-4971-bc9d-163fdf4769fe.png",
+      "sha256": "c22e5bcad02714e4829674684273fe19d6dde0f784c19d6534c04122948fc0a8",
+      "contentType": "image/png",
+      "collectedAt": "2026-08-28T19:37:58.821Z",
+      "runId": "99c255aa-7a0d-47e3-898e-65c1d966ee3c",
+      "observationId": "41ddd138-40d0-4f97-8b8b-eba4459bfcfc"
+    },
+    {
+      "id": "f8412c0a-70d0-4cb1-aa35-baa33d14d898.png",
+      "sha256": "3193246651a6f32305cf3539c383ca6f6bd45f2cba6cd0fd0c63b424b9bf904a",
+      "contentType": "image/png",
+      "collectedAt": "2026-08-28T19:37:41.309Z",
+      "runId": "99c255aa-7a0d-47e3-898e-65c1d966ee3c",
+      "observationId": "9e520fae-5bd2-402b-9ecd-4261dccfab83"
+    }
+  ],
+  "cleanup": [
+    {
+      "resourceId": "usr_cfc10480-947b-4387-bd38-ef547fc58fd5",
+      "status": "deleted"
+    },
+    {
+      "resourceId": "usr_04692df8-f03d-4e42-a807-d032a3fd7004",
+      "status": "deleted"
+    }
+  ],
+  "coverageLimits": [
+    "One configured staging target, one monthly price, one API-backed export feature.",
+    "Production payments, trials, failed-payment grace periods, discounts and multiple subscriptions are not tested.",
+    "Local replay uses explicitly synthetic signed billing events. It does not verify Polar delivery or integration.",
+    "A passing report covers only the listed scenarios and target build. It is not a security certificate."
+  ],
+  "generatedAt": "2026-08-28T19:38:52.522Z"
+}

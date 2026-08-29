@@ -1,0 +1,4 @@
+interface:
+  display_name: 'PaywallProof Evidence Review'
+  short_description: 'Independently audit a completed PaywallProof run report.'
+  default_prompt: 'Review a completed PaywallProof report using two independent perspectives, then record one bounded verdict.'

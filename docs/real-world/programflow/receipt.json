@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "application": "ProgramFlow (Kill My SaaS)",
+  "repository": "VasuBansal7576/kill-my-saas-vault",
+  "runId": "1320a925-a06e-4ae9-9e8a-370fff3e15a3",
+  "mode": "local_replay",
+  "outcome": "passed",
+  "targetBuild": "programflow-65fdb7c-9e39aa1ce303d5b768695f585413ba6647826b1a82dcf37a795358f1fe669ad8",
+  "sourceFilesHashed": 693,
+  "database": "PostgreSQL 17 in a local Docker container",
+  "protectedResource": "purchaser-scoped immutable invoice PDF",
+  "scenarioAssertions": {
+    "total": 12,
+    "passed": 12,
+    "failed": 0,
+    "skipped": 0
+  },
+  "applicationStates": {
+    "SC01": {
+      "registration": "pending_payment",
+      "order": "pending_payment",
+      "paymentAttempt": "provider_pending",
+      "tickets": 0,
+      "invoice": false,
+      "expectedAccess": "deny"
+    },
+    "SC02": {
+      "registration": "confirmed",
+      "order": "paid",
+      "paymentAttempt": "succeeded",
+      "tickets": 1,
+      "ticketStatus": "issued",
+      "invoice": true,
+      "invoiceHistory": ["issued", "paid"],
+      "expectedAccess": "allow"
+    },
+    "SC03": {
+      "registration": "confirmed",
+      "order": "paid",
+      "paymentAttempt": "succeeded",
+      "refund": "provider_pending",
+      "tickets": 1,
+      "ticketStatus": "issued",
+      "invoice": true,
+      "invoiceHistory": ["issued", "paid"],
+      "expectedAccess": "allow"
+    },
+    "SC04": {
+      "registration": "cancelled",
+      "order": "refunded",
+      "paymentAttempt": "succeeded",
+      "tickets": 1,
+      "ticketStatus": "cancelled",
+      "invoice": true,
+      "invoiceHistory": ["issued", "paid", "refunded"],
+      "expectedAccess": "deny"
+    }
+  },
+  "cleanup": {
+    "controllerFixtureReceipts": 2,
+    "controllerFixturesDeleted": 2,
+    "postCleanupRowCounts": {
+      "registrations": 0,
+      "orders": 0,
+      "paymentAttempts": 0,
+      "providerEvents": 0,
+      "refunds": 0,
+      "tickets": 0,
+      "invoices": 0,
+      "adapterOrganizations": 1,
+      "adapterEvents": 1
+    }
+  },
+  "provider": {
+    "kind": "explicit local test port",
+    "signedReplay": true,
+    "externalCalls": 0,
+    "nativeProviderLifecycleVerified": false
+  },
+  "model": {
+    "orchestrator": "TrueForge 0.1.4",
+    "connection": "paywallproof-codex/luna",
+    "paidApiFallbackAllowed": false,
+    "extraCreditsAllowed": false
+  },
+  "cost": {
+    "charged": false,
+    "externalPaidServicesUsed": []
+  },
+  "bugFound": {
+    "area": "ProgramFlow inventory capacity",
+    "cause": "raw Date values interpolated into SQL fragments",
+    "before": "focused PostgreSQL commerce integration failed",
+    "after": "focused PostgreSQL commerce integration passed"
+  },
+  "verification": {
+    "programFlow": {
+      "focusedPostgreSQLCommerceTests": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "typecheck": "passed",
+      "eslint": "passed"
+    },
+    "paywallProof": {
+      "testFiles": 104,
+      "tests": 1871,
+      "passed": 1871,
+      "failed": 0,
+      "skipped": 0,
+      "typecheck": "passed",
+      "eslint": "passed"
+    }
+  }
+}

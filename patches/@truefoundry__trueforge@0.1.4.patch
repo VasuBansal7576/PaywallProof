@@ -1,0 +1,76 @@
+diff --git a/dist/main.js b/dist/main.js
+index ef38f43d24c3d95115a63f3f8a807b858cc02e08..afccd84ed05ca22ddb409fb7c3a9966556bb0ef0 100644
+--- a/dist/main.js
++++ b/dist/main.js
+@@ -993,7 +993,44 @@ function denySharedDefaultWritePaths() {
+   return getDefaultWritePaths().filter((path7) => !path7.startsWith("/dev/"));
+ }
+ function platformAllowRead(platform) {
+-  return [...ALLOW_READ_BY_PLATFORM[platform]];
++  const python = paywallproofPythonOverride();
++  const gitRoot = paywallproofGitRoot();
++  return [...ALLOW_READ_BY_PLATFORM[platform], ...python === void 0 ? [] : [dirname2(dirname2(python))], ...gitRoot === void 0 ? [] : [gitRoot]];
++}
++function paywallproofPythonOverride() {
++  const override = process.env["PAYWALLPROOF_LOCAL_PYTHON"];
++  if (override === void 0 || override === "") return void 0;
++  if (!isAbsolute2(override)) throw new Error("PAYWALLPROOF_LOCAL_PYTHON must be an absolute interpreter path");
++  const executable = realpathSync2(override);
++  const runtimeRoot = dirname2(dirname2(executable));
++  if (runtimeRoot === "/" || runtimeRoot === process.env["HOME"] || dirname2(runtimeRoot) === "/") {
++    throw new Error("Refusing a broad Python runtime read allowance");
++  }
++  return executable;
++}
++function paywallproofGitRoot() {
++  const override = process.env["PAYWALLPROOF_LOCAL_GIT_ROOT"];
++  if (override === void 0 || override === "") return void 0;
++  if (!isAbsolute2(override)) throw new Error("PAYWALLPROOF_LOCAL_GIT_ROOT must be an absolute directory path");
++  const root = realpathSync2(override);
++  if (root === "/" || root === process.env["HOME"] || dirname2(root) === "/") {
++    throw new Error("Refusing a broad Git runtime read allowance");
++  }
++  return root;
++}
++function paywallproofCommandPath(platform) {
++  const gitRoot = paywallproofGitRoot();
++  return gitRoot === void 0 ? commandPath(platform) : `${join2(gitRoot, "usr", "bin")}:${commandPath(platform)}`;
++}
++function paywallproofExecTimeoutSeconds() {
++  const value = process.env["PAYWALLPROOF_LOCAL_EXEC_TIMEOUT_SECONDS"];
++  if (value === void 0 || value === "") return 60;
++  if (!/^[0-9]+$/.test(value)) throw new Error("Invalid local execution timeout");
++  const seconds = Number(value);
++  if (!Number.isSafeInteger(seconds) || seconds < 60 || seconds > 450) {
++    throw new Error("Local execution timeout must be between 60 and 450 seconds");
++  }
++  return seconds;
+ }
+ function filesystemPolicy(params) {
+   return {
+@@ -1015,7 +1052,7 @@ function commandEnv(params) {
+     VIRTUAL_ENV: venvDir,
+     // Cwd-relative layout dirs (not host-absolute). Absolute paths under
+     // `Application Support` break PATH lookup (`mcp-client: command not found`).
+-    PATH: `${join2(SANDBOX_VENV_DIR, "bin")}:mcp-client/bin:${commandPath(params.platform)}`
++    PATH: `${join2(SANDBOX_VENV_DIR, "bin")}:mcp-client/bin:${paywallproofCommandPath(params.platform)}`
+   };
+   return {
+     ...params.extra,
+@@ -1573,7 +1610,7 @@ var init_LocalSandboxProvider = __esm({
+           }
+           let python;
+           for (const name of PYTHON_CANDIDATES) {
+-            const resolved = await resolveCommandOnHost({ platform, name });
++            const resolved = paywallproofPythonOverride() ?? await resolveCommandOnHost({ platform, name });
+             if (resolved === void 0) {
+               pythonAttempts.push({ kind: "python", name, resolved: void 0 });
+               continue;
+@@ -6734,6 +6771,7 @@ async function resolveSandboxProvider({
+     return void 0;
+   }
+   return new LocalSandboxProvider({
++    defaultExecTimeoutSeconds: paywallproofExecTimeoutSeconds(),
+     sandboxRootPathParent: join4(config_default.LOCAL_SANDBOX_ROOT_PARENT, localSandboxSessionSegment(sessionId)),
+     codeModeSocketParentPath: config_default.CODE_MODE_SOCKET_PARENT,
+     support,
