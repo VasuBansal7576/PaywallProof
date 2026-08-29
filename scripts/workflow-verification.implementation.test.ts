@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { assertLocalWorkflowComplete } from './workflow-verification.ts';
+import {
+  assertLocalWorkflowComplete,
+  assertPolarWorkflowComplete,
+} from './workflow-verification.ts';
 
 // Implementation-aware acceptance-receipt tests; these fixtures are not live evidence.
 const receipt = () => ({
@@ -78,5 +81,108 @@ describe('local workflow completion receipt', () => {
       { resourceId: 'same', status: 'deleted' },
     ];
     expect(() => assertLocalWorkflowComplete(input)).toThrow();
+  });
+});
+
+const polarReceipt = () => {
+  const sources = ['billing_provider', 'application', 'api_probe', 'browser'] as const;
+  const scenarios = ['SC01', 'SC02', 'SC03', 'SC04'].map((id) => ({
+    id,
+    api: { verdict: 'pass' },
+    browser: { verdict: 'pass' },
+    state: { verdict: 'pass' },
+    observationIds: sources.map((source) => `${id}-${source}`),
+  }));
+  const observations = scenarios.flatMap((scenario) =>
+    sources.map((source) => ({
+      id: `${scenario.id}-${source}`,
+      runId: 'polar-run',
+      scenarioId: scenario.id,
+      source,
+      mode: 'polar_sandbox',
+      sha256: 'a'.repeat(64),
+    })),
+  );
+  return {
+    run: { id: 'polar-run', status: 'completed', outcome: 'passed', mode: 'polar_sandbox' },
+    scenarios,
+    observations,
+    artifacts: observations
+      .filter((observation) => observation.source === 'browser')
+      .map((observation) => ({
+        id: `artifact-${observation.scenarioId}`,
+        observationId: observation.id,
+        source: 'browser',
+        contentType: 'image/png',
+        sha256: 'b'.repeat(64),
+      })),
+    cleanup: [
+      { resourceId: 'free-user', status: 'deleted', code: undefined },
+      { resourceId: 'paid-user', status: 'deleted', code: undefined },
+      ...['customer', 'checkout', 'subscription'].map((resourceId) => ({
+        resourceId,
+        status: 'retained',
+        code: 'POLAR_CANCELED_AUDIT_RETAINED',
+      })),
+    ],
+  };
+};
+
+describe('Polar workflow completion receipt', () => {
+  it('accepts one fully bound native lifecycle with honest provider retention', () =>
+    expect(() => assertPolarWorkflowComplete(polarReceipt())).not.toThrow());
+
+  it('rejects a local-replay receipt presented as native provider evidence', () => {
+    const input = polarReceipt();
+    input.run.mode = 'local_replay';
+    expect(() => assertPolarWorkflowComplete(input)).toThrow();
+  });
+
+  it('rejects missing provider observations even when every scenario says pass', () => {
+    const input = polarReceipt();
+    input.observations.shift();
+    expect(() => assertPolarWorkflowComplete(input)).toThrow('POLAR_OBSERVATION_BINDING_INVALID');
+  });
+
+  it('rejects duplicated provider observations hidden by set membership', () => {
+    const input = polarReceipt();
+    const first = input.observations[0];
+    if (!first) throw Error('FIXTURE_MISSING');
+    input.observations.push({ ...first });
+    expect(() => assertPolarWorkflowComplete(input)).toThrow('POLAR_OBSERVATION_BINDING_INVALID');
+  });
+
+  it('rejects synthetic observation provenance', () => {
+    const input = polarReceipt();
+    const observation = input.observations[0];
+    if (!observation) throw Error('FIXTURE_MISSING');
+    observation.mode = 'local_replay';
+    expect(() => assertPolarWorkflowComplete(input)).toThrow();
+  });
+
+  it('requires one browser screenshot bound to each browser observation', () => {
+    const input = polarReceipt();
+    input.artifacts.pop();
+    expect(() => assertPolarWorkflowComplete(input)).toThrow('POLAR_ARTIFACT_BINDING_INVALID');
+  });
+
+  it('rejects a duplicate browser artifact hidden by set membership', () => {
+    const input = polarReceipt();
+    const first = input.artifacts[0];
+    if (!first) throw Error('FIXTURE_MISSING');
+    input.artifacts.push({ ...first });
+    expect(() => assertPolarWorkflowComplete(input)).toThrow('POLAR_ARTIFACT_BINDING_INVALID');
+  });
+
+  it.each([
+    ['leftover', 'POLAR_CHECKOUT_STILL_OPEN'],
+    ['retained', 'POLAR_UNPAID_AUDIT_RETAINED'],
+  ])('rejects incomplete provider cleanup %s/%s', (status, code) => {
+    const input = polarReceipt();
+    const provider = input.cleanup[2];
+    if (!provider) throw Error('FIXTURE_MISSING');
+    provider.status = status;
+    provider.code = code;
+    expect(() => assertPolarWorkflowComplete(input)).toThrow('POLAR_CLEANUP_INCOMPLETE');
   });
 });

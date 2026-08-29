@@ -82,7 +82,11 @@ export function createControlApp(config: ControllerConfig) {
             ? 403
             : code === 'PREFLIGHT_BLOCKED'
               ? 422
-              : code.includes('APPROVAL') || code.includes('CONFLICT') || code.includes('IN_FLIGHT')
+              : code.includes('APPROVAL') ||
+                  code.includes('CONFLICT') ||
+                  code.includes('IN_FLIGHT') ||
+                  code.includes('NOT_READY') ||
+                  code.includes('PENDING')
                 ? 409
                 : 422;
     return c.json(
@@ -186,7 +190,10 @@ export function createControlApp(config: ControllerConfig) {
     await next();
     const body = await c.res.clone().text();
     // Retryable precondition failures cannot have dispatched provider work.
-    if (c.res.status === 409 && body.includes('RUNTIME_APPROVAL_PENDING'))
+    if (
+      c.res.status === 409 &&
+      /RUNTIME_APPROVAL_PENDING|CHECKOUT_(?:CONTINUATION_NOT_READY|PENDING)/.test(body)
+    )
       controller.database.prepare('DELETE FROM http_requests WHERE id=?').run(id);
     else
       controller.database
@@ -261,6 +268,10 @@ export function createControlApp(config: ControllerConfig) {
     c.header('Referrer-Policy', 'no-referrer');
     return c.redirect(url, 303);
   });
+  app.post('/api/runs/:id/checkout/continue', async (c) => {
+    z.strictObject({}).parse(await c.req.json());
+    return c.json(await controller.continueCheckout(c.req.param('id')));
+  });
   app.get('/api/runs/:id/artifacts/:artifactId', async (c) => {
     const artifact = await controller.artifact(c.req.param('id'), c.req.param('artifactId'));
     return new Response(artifact.bytes, {
@@ -295,8 +306,10 @@ export function createControlApp(config: ControllerConfig) {
     return c.json(await controller.repairs.start(c.req.param('id'), await c.req.json()), 202);
   });
   app.post('/api/runs/:id/evidence-review', async (c) => {
-    z.strictObject({}).parse(await c.req.json());
-    return c.json(await controller.reviews.start(c.req.param('id')), 202);
+    const input = z
+      .strictObject({ retryCompleted: z.boolean().optional() })
+      .parse(await c.req.json());
+    return c.json(await controller.reviews.start(c.req.param('id'), input), 202);
   });
   app.post('/api/runs/:id/repairs/:jobId/cancel', async (c) => {
     z.strictObject({}).parse(await c.req.json());
@@ -366,7 +379,7 @@ export function createControlApp(config: ControllerConfig) {
         const fields = { runId: z.literal(scope.data.runId), operationId: identifier };
         const inputSchema =
           name === 'change_test_subscription'
-            ? z.strictObject({ ...fields, action: z.enum(['create', 'schedule']) })
+            ? z.strictObject({ ...fields, action: z.enum(['create', 'confirm', 'schedule']) })
             : name === 'probe_feature'
               ? z.strictObject({ ...fields, scenarioId: z.enum(['SC01', 'SC02', 'SC03', 'SC04']) })
               : name === 'observe_billing'

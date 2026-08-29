@@ -2,19 +2,13 @@
 
 Check whether subscription state and access to a paid feature agree. Reproduce failures, collect evidence, and prepare a tested repair for approval.
 
-A complete local-replay scan and a generated application repair passed through TrueForge and the real browser. The repair reproduced the original failure, then passed all twelve scenario assertions and fourteen security controls under the same frozen evaluator. Real Polar payment lifecycle acceptance remains pending. The full requirements are in [PRD.md](PRD.md).
+A native Polar sandbox subscription completed the full lifecycle through TrueForge on August 29, 2026: checkout, signed webhook delivery, paid access, scheduled cancellation, provider-confirmed expiry, post-expiry denial, and owned-resource cleanup. All twelve API, browser, and application-state assertions passed. Polar reported `livemode: false`; the sandbox order was marked paid, the subscription is canceled, and no real payment was processed. The full requirements are in [PRD.md](PRD.md).
+
+The terminal receipt for run `7563883e-62d1-45a3-86e7-5bd09f8cbfb3` has SHA-256 `993f30e59e9e383edda2f9b95681b8474cef104d8c9610761eb2907c5e14ab06`. It remains in ignored local evidence rather than committing customer, checkout, or provider identifiers. A complete local-replay scan and an isolated generated repair also passed through TrueForge and the real browser.
 
 [Recorded local-replay sample](examples/recorded-local-replay.json) contains an explicitly reduced projection of the actual Luna run, including scenario outcomes, screenshot hashes, cleanup and the source receipt hash. It is not a Polar transaction or a fabricated demonstration report.
 
 [Recorded repair acceptance](examples/recorded-repair.json) preserves the actual before/after outcomes and cleanup for an isolated injected fault. It is not a discovered production bug, provider payment or published repair PR.
-
-## Real application verification
-
-PaywallProof has also passed against the separate user-owned **Kill My SaaS / ProgramFlow** application, using its real Registration & Commerce services and a clean PostgreSQL 17 database. Run `1320a925-a06e-4ae9-9e8a-370fff3e15a3` passed all 12 API, browser and application-state assertions across unpaid checkout, settlement, pending refund and completed refund. It issued and revoked a real ProgramFlow ticket and purchaser-scoped immutable invoice, then deleted both run-owned registrations and every dependent commerce record.
-
-[Inspect the ProgramFlow case study](docs/real-world/programflow/README.md), including its compact machine-readable receipt and one representative browser screenshot. Third-party source, patches, raw reports, and redundant screenshots stay in their owning repository or ignored local evidence.
-
-The payment provider was an explicit signed local test port with zero external calls. This proves integration with a separate real application and its persisted domain state; it does not replace the pending native provider lifecycle gate.
 
 ## Boundaries
 
@@ -26,25 +20,25 @@ The payment provider was an explicit signed local test port with zero external c
 
 ## Qodo Code Review Evidence
 
-[Implementation PR #1](https://github.com/VasuBansal7576/PaywallProof/pull/1) has received Qodo review. No substantive implementation PR has been merged yet.
+[Implementation PR #1](https://github.com/VasuBansal7576/PaywallProof/pull/1) was reviewed repeatedly by Qodo through final head `b93f15c`, passed CI, and was squash-merged as `fc1a626e2eec3fd86cd72654e1b83d765cab4a7a`.
 
 The [Qodo review thread](https://github.com/VasuBansal7576/PaywallProof/pull/1#issuecomment-5441252429) identified cancellation races, unsafe path collisions, stale browser timestamps, missing live-gateway checks, and a newest-turn pagination bug. Each valid finding now has a focused regression test. The pagination test uses a multi-page SDK iterator so a one-item mock cannot hide the fault again.
 
-The organizer requires a representative **merged** reviewed PR. PR #1 is still open, so that submission requirement is not yet satisfied. No merge or deployment is implied by a passing test or completed review.
+Valid Qodo findings led to focused regressions for cancellation races, review-session cleanup, unsafe paths, prompt-injection boundaries, stale timestamps, gateway checks, and TrueForge turn pagination. Findings contradicted by the final committed code have public evidence-based dispositions in the same thread. The representative merged-PR requirement is satisfied; later substantive changes still go through their own Qodo-reviewed pull request.
 
 Current executed checks and remaining acceptance gaps are recorded in [verification status](docs/verification-status.md). Unit test counts and installation probes do not establish a completed product run.
 
 [Watch the three-minute workspace walkthrough](docs/media/paywallproof-walkthrough.mp4), with an embedded subtitle track and [separate captions](docs/media/paywallproof-walkthrough.srt). It shows a recorded local-replay run, not a live provider payment.
 
-[Submission material](docs/submission.md) includes the architecture, a reproducible recording command and the remaining merge requirement. Original project code uses the [MIT license](LICENSE); dependencies retain their own licenses.
+[Submission material](docs/submission.md) includes the architecture, a reproducible recording command and the remaining external submission steps. Original project code uses the [MIT license](LICENSE); dependencies retain their own licenses.
 
 The [judging access notes](docs/judging-access.md) distinguish the 60-day local evidence window from provider access. Polar sandbox tokens expire November 26, 2026. No paid hosting is used.
 
 ## Billing provider migration
 
-The owner authorized replacing Stripe on August 28. The runtime, target, UI and contracts now use Polar's isolated sandbox. Organization, product and both token scopes have passed actual read-only preflight. The paid lifecycle remains unverified. Do not continue Stripe onboarding. See the [migration requirements](docs/billing-provider-migration.md).
+The owner authorized replacing Stripe on August 28. The runtime, target, UI and contracts now use Polar's isolated sandbox. Organization, product and both token scopes passed actual preflight, followed by the complete native sandbox lifecycle above. Do not continue Stripe onboarding. See the [migration record](docs/billing-provider-migration.md).
 
-`pnpm test:polar` performs only a read-only organization/product/price preflight. It requires server-side `POLAR_ACCESS_TOKEN`, `POLAR_ORGANIZATION_ID`, `POLAR_PRODUCT_ID` and `POLAR_PRICE_ID`. Do not put these values in chat or tracked files. Missing or rejected configuration exits with code 2. Even a successful preflight explicitly reports `lifecycleVerified: false`; it does not verify checkout, webhooks, access scenarios or repair.
+`pnpm test:polar` performs only a read-only organization/product/price preflight. It requires server-side `POLAR_ACCESS_TOKEN`, `POLAR_ORGANIZATION_ID`, `POLAR_PRODUCT_ID` and `POLAR_PRICE_ID`. Do not put these values in chat or tracked files. Missing or rejected configuration exits with code 2. Use `pnpm test:polar:lifecycle` for the separately authorized native lifecycle; a successful preflight alone still reports `lifecycleVerified: false`.
 
 ## Development disclosure
 
@@ -105,6 +99,7 @@ For Polar runs, configure `POLAR_ACCESS_TOKEN`, `POLAR_REFERENCE_TOKEN`, `POLAR_
 | `pnpm test:evidence-review`                      | Skill registration, dynamic subagents, scoped tools, persisted review              |
 | `pnpm test:acceptance`                           | Local reference integration tests                                                  |
 | `pnpm test:polar`                                | Real read-only Polar preflight; not lifecycle acceptance                           |
+| `pnpm test:polar:lifecycle`                      | Full native Polar checkout, webhook, access, cancellation and expiry workflow      |
 | `pnpm test:runtime`                              | TrueForge installation and approval behavior                                       |
 | `pnpm model:codex`                               | Check subscription allowance and register Luna; no inference or billing change     |
 | `pnpm dev:codex-model`                           | Start the local bridge to the signed-in Codex CLI                                  |
@@ -127,13 +122,15 @@ The local workflow verifier saves each receipt under `.local/workflow-<run-id>/`
 - [x] A reusable repository skill is registered from Git and attached to the review session.
 - [x] Dynamic subagents perform two independent report reviews in a separate session.
 - [x] The review session exposes only report read and bounded review-recording tools.
-- [x] Run the evidence-review path on the local TrueForge stack and retain its report-hash-bound, two-reviewer receipt. The recorded `needs_attention` verdict is preserved honestly in local evidence.
+- [x] Run the evidence-review path on the local TrueForge stack and retain its report-hash-bound, two-reviewer receipt. The binding reviewer confirmed integrity; the coverage reviewer preserved the intentional sandbox/build scope as `needs_attention`.
+- [x] Resume the same persisted TrueForge session after the owner completes native Polar checkout; the external wait does not consume the active-run watchdog.
+- [x] Complete native signed-webhook, cancellation, expiry, access, and cleanup verification with no live charge.
 
 ### Qodo
 
 - [x] Repository configuration requests agentic description and review on GitHub PRs.
 - [x] CI checks formatting, repository shape, types, lint, tests, build, browser behavior, and skill validity.
-- [ ] Push the final implementation commit and request `/agentic_review`.
-- [ ] Fix valid findings and explain invalid or deferred findings in the review thread.
-- [ ] Request a follow-up review on the final commit.
-- [ ] Merge the representative reviewed PR; its public link is PR #1 above.
+- [x] Request `/agentic_review` on the substantive implementation PR.
+- [x] Fix valid findings and explain invalid findings in the public review thread.
+- [x] Request follow-up review through the final commit.
+- [x] Merge the representative reviewed PR; its public link is PR #1 above.

@@ -24,7 +24,8 @@ Outputs are under `.local/submission/<timestamp>/`: an MP4 with a default subtit
 
 ## Organizer requirements still to confirm
 
-- A representative reviewed PR must pass Qodo review and be merged. The owner has authorized that review-and-merge workflow; production deployment remains out of scope.
+- The native Polar lifecycle is complete and preserved as an ignored, hash-addressed local receipt. The submission may state 12/12 sandbox assertions, signed webhooks, canceled terminal state, and zero live charges; it must not publish customer or provider identifiers.
+- The final lifecycle-hardening PR must pass Qodo review and CI before merge. PR #1 already satisfies the representative merged-PR requirement; this new substantive head still receives its own review.
 - Original project code is under the [MIT license](../LICENSE). Dependencies retain their own licenses and notices.
 - Supply the committed video link in the hackathon submission. The repository copy needs no paid video hosting.
 - Keep sandbox tokens, operator credentials, customer email and private checkout links out of the repository and recording.

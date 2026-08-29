@@ -4,11 +4,11 @@ Decision recorded August 28, 2026. The owner authorized replacing Stripe, while 
 
 ## Selected target and release gate
 
-Polar's isolated sandbox is the selected replacement. The owner approved GitHub sign-in, the disclosed read permissions and completion of the project. The PaywallProof sandbox organization was created and its identity verified through the actual API. Separate worker and read-only reference tokens expire November 26, 2026. This does not establish a passing payment, webhook or lifecycle. Do not create a Paddle account or continue the Stripe invitation request in parallel.
+Polar's isolated sandbox is the selected replacement. The owner approved GitHub sign-in, the disclosed read permissions and completion of the project. The PaywallProof sandbox organization was created and its identity verified through the actual API. Separate worker and read-only reference tokens expire November 26, 2026. Do not create a Paddle account or continue the Stripe invitation request in parallel.
 
 Polar documents a separate sandbox server, credentials and data, and test payments that do not process real money. It supports shortening an active subscription's actual billing period before scheduling cancellation. Unlike a fabricated webhook, this can exercise the provider's own expiry transition. The exact timing and delivered events must still be observed against our account.
 
-The migration cannot be declared complete until the same actual subscription passes paid access, scheduled-cancellation access and post-expiry denial, with real provider reads and signed webhooks. Free-user denial remains mandatory. Read-only preflight and synthetic contract tests do not satisfy this gate.
+The migration gate completed on August 29, 2026. One actual sandbox subscription passed free-user denial, paid access, scheduled-cancellation access, post-expiry denial, provider reads, and signed webhook delivery. Read-only preflight and synthetic contract tests remain distinct and do not substitute for that receipt.
 
 ## Required contract changes
 
@@ -47,4 +47,4 @@ These are capability sources, not acceptance receipts. Source branches may chang
 
 ## Executed checkpoint
 
-The migrated full local suite passes 1,584 tests. The actual TrueForge local-replay lifecycle passes all twelve assertions and retains four real browser screenshots. Both Polar tokens pass actual read-only preflight again. Real paid provider lifecycle and generated application repair remain separate, incomplete acceptance gates. See [verification status](verification-status.md).
+Native sandbox run `7563883e-62d1-45a3-86e7-5bd09f8cbfb3` passed all twelve assertions and retained four real browser screenshots. The sandbox order was marked paid, `livemode` was false, the terminal subscription state was canceled, both run-owned application users were deleted, and non-deletable provider audit records were retained under an explicit canceled-audit code. The terminal receipt SHA-256 is `993f30e59e9e383edda2f9b95681b8474cef104d8c9610761eb2907c5e14ab06`. See [verification status](verification-status.md).

@@ -99,6 +99,23 @@ function fixture(sourceReport: unknown = report, skillRef = report.run.targetBui
 }
 
 describe('skill-backed evidence review', () => {
+  it('authorizes the scoped MCP token while TrueForge preloads the review server', async () => {
+    const { coordinator, runtime } = fixture();
+    runtime.createSession.mockImplementationOnce(async () => {
+      const registration = runtime.registerMcpServer.mock.calls[0]?.[0];
+      const token = new Headers(registration?.headers)
+        .get('authorization')
+        ?.replace(/^Bearer /, '');
+
+      expect(token).toBeTruthy();
+      expect(coordinator.view(runId)).toMatchObject({ status: 'starting' });
+      expect(coordinator.authorize(runId, token ?? '')).toBe(true);
+      return { id: 'review-session' };
+    });
+
+    await expect(coordinator.start(runId)).resolves.toMatchObject({ status: 'running' });
+  });
+
   it('starts an isolated skill and dynamic-subagent session', async () => {
     const { coordinator, runtime } = fixture();
     const state = await coordinator.start(runId);
@@ -169,7 +186,7 @@ describe('skill-backed evidence review', () => {
     });
     expect(read).toMatchObject({
       report: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         run: {
           id: runId,
           status: 'completed',
@@ -177,8 +194,25 @@ describe('skill-backed evidence review', () => {
           targetBuildHash: expect.stringMatching(/^[a-f0-9]{64}$/),
           policyHash: report.run.policy.hash,
         },
-        scenarios: report.scenarios,
-        observations: [{ id: 'observation-1', runId, payloadHash: null, subjectHash: null }],
+        scenarios: [
+          expect.objectContaining({
+            id: 'SC01',
+            observationCount: 1,
+            observationIdsHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          }),
+        ],
+        observationBindings: {
+          count: 1,
+          ids: ['observation-1'],
+          duplicateIds: [],
+          unknownReferencedIds: [],
+          unreferencedIds: [],
+          runMismatchIds: [],
+          scenarioMismatchIds: ['observation-1'],
+          policyMismatchIds: ['observation-1'],
+          buildMismatchIds: ['observation-1'],
+          modeMismatchIds: [],
+        },
         coverageLimitHashes: [expect.stringMatching(/^[a-f0-9]{64}$/)],
         coverageLimitCodes: report.coverageLimitCodes,
       },
@@ -188,6 +222,67 @@ describe('skill-backed evidence review', () => {
     const recorded = await coordinator.tool(runId, 'record_evidence_review', completedReview);
     expect(recorded).toMatchObject({ runId, status: 'completed', verdict: 'confirmed' });
     expect(coordinator.view(runId)).toEqual(recorded);
+  });
+
+  it('rejects an observation cited under a different scenario', async () => {
+    const secondObservationId = 'observation-2';
+    const { coordinator } = fixture({
+      ...report,
+      scenarios: [
+        ...report.scenarios,
+        {
+          id: 'SC02',
+          api: { verdict: 'pass', code: 'ALLOWED' },
+          browser: { verdict: 'pass', code: 'VISIBLE' },
+          state: { verdict: 'pass', code: 'PAID' },
+          observationIds: [secondObservationId],
+        },
+      ],
+      observations: [...report.observations, { id: secondObservationId, runId }],
+    });
+    await coordinator.start(runId);
+
+    await expect(
+      coordinator.tool(runId, 'record_evidence_review', {
+        ...completedReview,
+        reviewers: completedReview.reviewers.map((reviewer) =>
+          reviewer.role === 'binding'
+            ? {
+                ...reviewer,
+                findings: reviewer.findings.map((finding) => ({
+                  ...finding,
+                  observationIds: [secondObservationId],
+                })),
+              }
+            : reviewer,
+        ),
+      }),
+    ).rejects.toThrow('EVIDENCE_REVIEW_OBSERVATION_SCENARIO_MISMATCH');
+  });
+
+  it('preserves canceled-provider audit retention without treating it as a cleanup leftover', async () => {
+    const retained = {
+      resourceId: 'synthetic-polar-subscription',
+      status: 'retained',
+      code: 'POLAR_CANCELED_AUDIT_RETAINED',
+    } as const;
+    const { coordinator } = fixture({ ...report, cleanup: [retained] });
+    await coordinator.start(runId);
+    const result = await coordinator.tool(runId, 'read_run_report', {
+      runId,
+      operationId: 'read-report-a1',
+    });
+    expect(result).toMatchObject({
+      report: {
+        cleanup: [
+          {
+            resourceHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+            status: 'retained',
+            codeHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          },
+        ],
+      },
+    });
   });
 
   it('reviews non-SHA build identifiers while mounting the controller skill ref', async () => {
@@ -227,6 +322,55 @@ describe('skill-backed evidence review', () => {
     expect(serialized).toContain('coverageLimitHashes');
     expect(serialized).not.toContain('"payload":');
     expect(serialized).not.toContain('"project":');
+  });
+
+  it('keeps a four-scenario projection small enough to copy into both subagent prompts', async () => {
+    const scenarioIds = ['SC01', 'SC02', 'SC03', 'SC04'] as const;
+    const sources = ['billing_provider', 'application', 'api_probe', 'browser'] as const;
+    const observations = scenarioIds.flatMap((scenarioId) =>
+      sources.map((source) => ({
+        id: `observation-${scenarioId}-${source}`,
+        runId,
+        scenarioId,
+        source,
+        policyHash: report.run.policy.hash,
+        targetBuild: report.run.targetBuild,
+        mode: 'polar_sandbox' as const,
+      })),
+    );
+    const scenarios = scenarioIds.map((id) => ({
+      id,
+      api: { verdict: 'pass' as const, code: 'ACCESS_ALLOWED' },
+      browser: { verdict: 'pass' as const, code: 'ACCESS_ALLOWED' },
+      state: { verdict: 'pass' as const, code: 'STATE_MATCHES' },
+      observationIds: observations
+        .filter((observation) => observation.scenarioId === id)
+        .map((observation) => observation.id),
+    }));
+    const { coordinator } = fixture({
+      ...report,
+      run: { ...report.run, mode: 'polar_sandbox' },
+      scenarios,
+      observations,
+    });
+    await coordinator.start(runId);
+
+    const result = await coordinator.tool(runId, 'read_run_report', {
+      runId,
+      operationId: 'read-report-a1',
+    });
+    const projected = result as {
+      report: {
+        observationBindings: { count: number; ids: string[]; scenarioMismatchIds: string[] };
+      };
+    };
+
+    expect(projected.report.observationBindings).toMatchObject({
+      count: 16,
+      scenarioMismatchIds: [],
+    });
+    expect(projected.report.observationBindings.ids).toHaveLength(16);
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(7_500);
   });
 
   it('attaches only one recovery watcher to a running review', async () => {
@@ -303,5 +447,23 @@ describe('skill-backed evidence review', () => {
     expect(runtime.registerSkill).toHaveBeenLastCalledWith(
       expect.objectContaining({ ref: report.run.targetBuild }),
     );
+  });
+
+  it('preserves a completed audit before an explicit reviewer-upgrade retry', async () => {
+    const { coordinator, documents } = fixture();
+    await coordinator.start(runId);
+    const completed = await coordinator.tool(runId, 'record_evidence_review', {
+      ...completedReview,
+      verdict: 'needs_attention',
+      reviewers: completedReview.reviewers.map((reviewer) => ({
+        ...reviewer,
+        verdict: 'needs_attention' as const,
+      })),
+    });
+
+    const retried = await coordinator.start(runId, { retryCompleted: true });
+
+    expect(retried).toMatchObject({ status: 'running', attempt: 2 });
+    expect(documents.get('evidence-review-attempt', `${runId}:1`)).toEqual(completed);
   });
 });

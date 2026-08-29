@@ -5,6 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   Controller,
+  continuationDisposition,
+  persistConfirmedCheckoutContinuation,
+  runtimeStatusAfterTurn,
   coverageForMode,
   coverageLimits,
   type ControllerConfig,
@@ -47,6 +50,115 @@ describe('mode-specific coverage limits', () => {
       /local replay|synthetic signed billing/i,
     );
     expect(coverageLimits.join(' ')).not.toMatch(/local replay|synthetic signed billing/i);
+  });
+});
+
+describe('external checkout runtime boundary', () => {
+  it('reconciles an uncertain continuation instead of dispatching it again', () => {
+    expect(continuationDisposition('checkout_observed')).toBe('dispatch');
+    expect(continuationDisposition('dispatched')).toBe('reconcile');
+    expect(continuationDisposition('confirmed')).toBe('complete');
+  });
+
+  it('persists a waiting state instead of failing an intentional terminal turn', () => {
+    expect(
+      runtimeStatusAfterTurn({
+        requiredActions: 0,
+        mode: 'polar_sandbox',
+        checkoutStarted: true,
+        subscriptionCreated: false,
+      }),
+    ).toBe('waiting_external');
+  });
+
+  it('keeps ordinary incomplete terminal turns fail-closed', () => {
+    expect(
+      runtimeStatusAfterTurn({
+        requiredActions: 0,
+        mode: 'local_replay',
+        checkoutStarted: false,
+        subscriptionCreated: false,
+      }),
+    ).toBe('done');
+  });
+
+  it('commits confirmation and resumed runtime state atomically', () => {
+    const { controller } = setup();
+    const runId = randomUUID();
+    controller.put('checkout-continuation', runId, {
+      status: 'dispatched',
+      sessionId: 'session-1',
+      previousTurnId: 'turn-1',
+    });
+    controller.database.exec(`
+      CREATE TRIGGER reject_runtime_insert
+      BEFORE INSERT ON control_documents
+      WHEN NEW.kind = 'runtime'
+      BEGIN
+        SELECT RAISE(ABORT, 'synthetic runtime write failure');
+      END;
+    `);
+
+    expect(() =>
+      persistConfirmedCheckoutContinuation(controller.database, {
+        runId,
+        sessionId: 'session-1',
+        previousTurnId: 'turn-1',
+        turnId: 'turn-2',
+      }),
+    ).toThrow('synthetic runtime write failure');
+    expect(controller.get('checkout-continuation', runId)).toMatchObject({
+      status: 'dispatched',
+    });
+    expect(controller.get('runtime', runId)).toBeNull();
+  });
+
+  it('exposes an authenticated, request-idempotent continuation endpoint', async () => {
+    const { controller, app } = setup(true);
+    if (!app) throw new Error('HTTP fixture missing');
+    const runId = randomUUID();
+    const continuation = vi
+      .spyOn(controller, 'continueCheckout')
+      .mockResolvedValue({ status: 'resumed', turnId: 'synthetic-turn' });
+    const response = await app.request(
+      `http://127.0.0.1:39982/api/runs/${runId}/checkout/continue`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer synthetic-operator',
+          'Content-Type': 'application/json',
+          'X-Request-Id': 'synthetic-checkout-continuation',
+        },
+        body: '{}',
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: 'resumed', turnId: 'synthetic-turn' });
+    expect(continuation).toHaveBeenCalledExactlyOnceWith(runId);
+  });
+
+  it('maps an external checkout wait to a retryable conflict', async () => {
+    const { controller, app } = setup(true);
+    if (!app) throw new Error('HTTP fixture missing');
+    vi.spyOn(controller, 'continueCheckout').mockRejectedValue(
+      new (await import('#run')).ControlError('CHECKOUT_CONTINUATION_NOT_READY'),
+    );
+    const response = await app.request(
+      `http://127.0.0.1:39982/api/runs/${randomUUID()}/checkout/continue`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer synthetic-operator',
+          'Content-Type': 'application/json',
+          'X-Request-Id': 'synthetic-checkout-wait',
+        },
+        body: '{}',
+      },
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      error: { code: 'CHECKOUT_CONTINUATION_NOT_READY' },
+    });
   });
 });
 function setup(http = false, overrides: Pick<ControllerConfig, 'artifactRetentionMs'> = {}) {

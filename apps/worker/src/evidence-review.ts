@@ -109,7 +109,7 @@ const reviewSourceSchema = z.object({
     .array(
       z.object({
         resourceId: z.string(),
-        status: z.enum(['deleted', 'leftover']),
+        status: z.enum(['deleted', 'retained', 'leftover']),
         code: z.string().optional(),
       }),
     )
@@ -148,13 +148,63 @@ const reviewSourceSchema = z.object({
 
 function dataOnlyReviewReport(value: ReturnType<typeof parseJson>) {
   const source = reviewSourceSchema.parse(value);
+  const targetBuildHash = hashValue(source.run.targetBuild);
+  const observationIds = source.observations.map((observation) => observation.id);
+  const observationIdSet = new Set(observationIds);
+  const scenarioIds = new Set(source.scenarios.map((scenario) => scenario.id));
+  const references = new Map<string, string[]>();
+  for (const scenario of source.scenarios)
+    for (const observationId of scenario.observationIds)
+      references.set(observationId, [...(references.get(observationId) ?? []), scenario.id]);
+  const duplicateIds = observationIds.filter((id, index) => observationIds.indexOf(id) !== index);
+  const unknownReferencedIds = [...references.keys()].filter((id) => !observationIdSet.has(id));
+  const unreferencedIds = observationIds.filter((id) => !references.has(id));
+  const runMismatchIds = source.observations
+    .filter((observation) => observation.runId !== source.run.id)
+    .map((observation) => observation.id);
+  const scenarioMismatchIds = source.observations
+    .filter(
+      (observation) =>
+        !observation.scenarioId ||
+        !scenarioIds.has(observation.scenarioId) ||
+        !references.get(observation.id)?.includes(observation.scenarioId) ||
+        references.get(observation.id)?.length !== 1,
+    )
+    .map((observation) => observation.id);
+  const policyMismatchIds = source.observations
+    .filter((observation) => observation.policyHash !== source.run.policy.hash)
+    .map((observation) => observation.id);
+  const buildMismatchIds = source.observations
+    .filter(
+      (observation) =>
+        !observation.targetBuild || hashValue(observation.targetBuild) !== targetBuildHash,
+    )
+    .map((observation) => observation.id);
+  const modeMismatchIds = source.observations
+    .filter((observation) => observation.mode !== source.run.mode)
+    .map((observation) => observation.id);
+  const observationById = new Map(
+    source.observations.map((observation) => [observation.id, observation]),
+  );
+  const artifactBindingIssueIds = source.artifacts
+    .filter((artifact) => {
+      const observation = observationById.get(artifact.observationId);
+      return (
+        artifact.runId !== source.run.id ||
+        !observation ||
+        observation.source !== 'browser' ||
+        observation.observedAt === undefined ||
+        Date.parse(artifact.collectedAt) > observation.observedAt
+      );
+    })
+    .map((artifact) => artifact.observationId);
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     run: {
       id: source.run.id,
       status: source.run.status,
       outcome: source.run.outcome,
-      targetBuildHash: hashValue(source.run.targetBuild),
+      targetBuildHash,
       policyHash: source.run.policy.hash,
       featureConfigHash: source.run.featureConfigHash ?? null,
       projectConfigHash: source.run.projectConfigHash ?? null,
@@ -172,25 +222,35 @@ function dataOnlyReviewReport(value: ReturnType<typeof parseJson>) {
           }
         : null,
     },
-    scenarios: source.scenarios,
-    observations: source.observations.map((observation) => ({
-      id: observation.id,
-      runId: observation.runId,
-      scenarioId: observation.scenarioId ?? null,
-      subjectHash: observation.subjectId ? hashValue(observation.subjectId) : null,
-      source: observation.source ?? null,
-      policyHash: observation.policyHash ?? null,
-      targetBuildHash: observation.targetBuild ? hashValue(observation.targetBuild) : null,
-      observedAt: observation.observedAt ?? null,
-      billingTime: observation.billingTime ?? null,
-      mode: observation.mode ?? null,
-      sha256: observation.sha256 ?? null,
-      payloadHash: observation.payload === undefined ? null : hashValue(observation.payload),
+    scenarios: source.scenarios.map(({ observationIds: ids, ...scenario }) => ({
+      ...scenario,
+      observationCount: ids.length,
+      observationIdsHash: hashValue(ids),
+      sources: [
+        ...new Set(
+          ids
+            .map((id) => observationById.get(id)?.source)
+            .filter((item): item is NonNullable<typeof item> => item !== undefined),
+        ),
+      ].sort(),
     })),
-    artifacts: source.artifacts.map((artifact) => ({
-      ...artifact,
-      collectedAt: Date.parse(artifact.collectedAt),
-    })),
+    observationBindings: {
+      count: observationIds.length,
+      ids: observationIds,
+      duplicateIds,
+      unknownReferencedIds,
+      unreferencedIds,
+      runMismatchIds,
+      scenarioMismatchIds,
+      policyMismatchIds,
+      buildMismatchIds,
+      modeMismatchIds,
+    },
+    artifacts: {
+      count: source.artifacts.length,
+      observationIds: source.artifacts.map((artifact) => artifact.observationId),
+      bindingIssueIds: artifactBindingIssueIds,
+    },
     cleanup: source.cleanup.map((item) => ({
       resourceHash: hashValue(item.resourceId),
       status: item.status,
@@ -199,7 +259,11 @@ function dataOnlyReviewReport(value: ReturnType<typeof parseJson>) {
     coverageLimitHashes: source.coverageLimits.map((limit) => hashValue(limit)),
     coverageLimitCodes: source.coverageLimitCodes,
     oracle: source.oracle
-      ? { hash: source.oracle.hash, fileHashes: source.oracle.files.map((file) => file.sha256) }
+      ? {
+          hash: source.oracle.hash,
+          fileCount: source.oracle.files.length,
+          fileHashesHash: hashValue(source.oracle.files.map((file) => file.sha256)),
+        }
       : null,
     runtime: source.runtime
       ? {
@@ -349,15 +413,18 @@ export class EvidenceReviewCoordinator {
       binding.success &&
       binding.data.runId === runId &&
       binding.data.attempt === state?.attempt &&
-      (state?.status === 'running' || state?.status === 'completed')
+      (state?.status === 'starting' || state?.status === 'running' || state?.status === 'completed')
     );
   }
 
-  async start(runId: string): Promise<EvidenceReviewState> {
+  async start(
+    runId: string,
+    options: { retryCompleted?: boolean } = {},
+  ): Promise<EvidenceReviewState> {
     identifier.parse(runId);
     const existing = this.view(runId);
     if (
-      existing?.status === 'completed' ||
+      (existing?.status === 'completed' && !options.retryCompleted) ||
       existing?.status === 'running' ||
       existing?.status === 'starting'
     )
@@ -369,8 +436,9 @@ export class EvidenceReviewCoordinator {
       z.object({
         run: z.object({ id: z.literal(runId), status: z.literal('completed') }),
       }).parse(report);
-      const attempt = existing?.status === 'error' ? existing.attempt + 1 : 1;
-      if (existing?.status === 'error') {
+      const retrying = existing?.status === 'error' || existing?.status === 'completed';
+      const attempt = retrying ? existing.attempt + 1 : 1;
+      if (retrying) {
         this.options.documents.put(
           'evidence-review-attempt',
           `${runId}:${existing.attempt}`,
@@ -466,7 +534,8 @@ export class EvidenceReviewCoordinator {
     const state = this.view(boundRunId);
     if (!state || (state.status !== 'running' && state.status !== 'completed'))
       throw new EvidenceReviewError('EVIDENCE_REVIEW_NOT_ACTIVE');
-    const report = this.boundReport(boundRunId);
+    const sourceReport = parseJson(this.options.report(boundRunId));
+    const report = dataOnlyReviewReport(sourceReport);
     if (hashValue(report) !== state.reportHash)
       throw new EvidenceReviewError('EVIDENCE_REVIEW_REPORT_CHANGED');
     if (name === 'read_run_report') return { report, reportHash: state.reportHash };
@@ -490,7 +559,7 @@ export class EvidenceReviewCoordinator {
         return state;
       throw new EvidenceReviewError('EVIDENCE_REVIEW_ALREADY_RECORDED');
     }
-    this.assertGrounded(report, review);
+    this.assertGrounded(sourceReport, review);
     const completed = completedStateSchema.parse({
       ...state,
       status: 'completed',
@@ -527,19 +596,22 @@ export class EvidenceReviewCoordinator {
     report: ReturnType<typeof parseJson>,
     request: z.infer<typeof recordEvidenceReviewSchema>,
   ) {
-    const parsed = z
-      .object({
-        scenarios: z.array(z.object({ id: z.string(), observationIds: z.array(z.string()) })),
-        observations: z.array(z.object({ id: z.string() })),
-      })
-      .parse(report);
+    const parsed = reviewSourceSchema.parse(report);
     const scenarioIds = new Set(parsed.scenarios.map((scenario) => scenario.id));
     const observationIds = new Set(parsed.observations.map((observation) => observation.id));
+    const observationsByScenario = new Map(
+      parsed.scenarios.map((scenario) => [scenario.id, new Set(scenario.observationIds)]),
+    );
     for (const finding of request.reviewers.flatMap((reviewer) => reviewer.findings)) {
       if (finding.scenarioId && !scenarioIds.has(finding.scenarioId))
         throw new EvidenceReviewError('EVIDENCE_REVIEW_SCENARIO_UNKNOWN');
       if (finding.observationIds.some((id) => !observationIds.has(id)))
         throw new EvidenceReviewError('EVIDENCE_REVIEW_OBSERVATION_UNKNOWN');
+      if (finding.scenarioId) {
+        const scenarioObservationIds = observationsByScenario.get(finding.scenarioId);
+        if (finding.observationIds.some((id) => !scenarioObservationIds?.has(id)))
+          throw new EvidenceReviewError('EVIDENCE_REVIEW_OBSERVATION_SCENARIO_MISMATCH');
+      }
     }
   }
 

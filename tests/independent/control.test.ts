@@ -534,6 +534,45 @@ describe('independent durable control: bounds and terminal states', () => {
     await rejectsCode(() => reopened.claimOperation(claimInput(run)));
   });
 
+  it('excludes one persisted external wait from the active execution deadline', async () => {
+    const store = await connect();
+    const run = await running(store);
+    const waitStartedAt = now;
+    now += 20 * 60 * 1_000;
+    await store.creditExternalWait({
+      runId: run.id,
+      waitId: 'polar-checkout',
+      startedAt: waitStartedAt,
+      endedAt: now,
+    });
+    now += fifteenMinutes - 1;
+    expect((await store.claimOperation(claimInput(run))).kind).toBe('dispatch');
+    now += 1;
+    await rejectsCode(() =>
+      store.claimOperation(claimInput(run, { operationId: 'after_active_deadline' })),
+    );
+  });
+
+  it('credits an external wait exactly once across restart', async () => {
+    const store = await connect();
+    const run = await running(store);
+    const request = {
+      runId: run.id,
+      waitId: 'polar-checkout',
+      startedAt: now,
+      endedAt: now + 10 * 60 * 1_000,
+    };
+    now = request.endedAt;
+    const credited = await store.creditExternalWait(request);
+    await disconnect(store);
+    const reopened = await connect();
+    expect(await reopened.creditExternalWait(request)).toEqual(credited);
+    await rejectsCode(
+      () => reopened.creditExternalWait({ ...request, endedAt: request.endedAt + 1 }),
+      'OPERATION_CONFLICT',
+    );
+  });
+
   it.each([
     'prepare_fixture',
     'change_test_subscription',

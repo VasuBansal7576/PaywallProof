@@ -20,6 +20,8 @@ Rules:
 - Review-tool `operationId` values are attempt-scoped idempotency keys supplied by the coordinator. They are not run evidence and are not expected inside the report.
 - Approval hashes are opaque controller bindings unless the report claims they are independently recomputable. Check their presence and consistency, but do not flag the absence of an undocumented canonical preimage.
 - Cleanup leftovers require `needs_attention`.
+- A `retained` cleanup item is not a leftover when it binds a provider audit object that cannot be
+  deleted and the primary run independently confirmed its canceled terminal state.
 - A browser screenshot is captured before its browser observation is finalized. `artifact.collectedAt` should therefore be no later than the bound browser observation's `observedAt`; a small positive finalization delay is expected. Flag an artifact only when it is collected after the observation, falls outside the run, or has a contradictory binding or digest.
 - Disagreement between reviewers makes the synthesis `inconclusive` unless one result contains a concrete, report-backed material finding, which makes it `needs_attention`.
 - Keep each summary under 1,000 characters and each finding summary under 500 characters.

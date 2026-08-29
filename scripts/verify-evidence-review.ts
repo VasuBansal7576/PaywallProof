@@ -4,22 +4,33 @@ import { z } from 'zod';
 
 const origin = 'http://127.0.0.1:8787';
 const token = (await readFile('.local/operator-token', 'utf8')).trim();
-const sourceReport = z
-  .object({
-    run: z.object({
-      id: z.string().uuid(),
-      status: z.literal('completed'),
-      outcome: z.literal('passed'),
-      targetBuild: z
-        .string()
-        .min(1)
-        .max(255)
-        .refine((value) => value.trim() === value),
-    }),
-  })
-  .parse(JSON.parse(await readFile('.local/local-workflow-report.json', 'utf8')));
-const runId = process.argv[2] ?? sourceReport.run.id;
-if (runId !== sourceReport.run.id) throw new Error('REVIEW_RUN_MUST_MATCH_WORKFLOW_RECEIPT');
+const sourceReportSchema = z.object({
+  run: z.object({
+    id: z.string().uuid(),
+    status: z.literal('completed'),
+    outcome: z.literal('passed'),
+    targetBuild: z
+      .string()
+      .min(1)
+      .max(255)
+      .refine((value) => value.trim() === value),
+  }),
+});
+const requestedRunId = process.argv[2];
+const retryCompleted = process.argv.includes('--retry');
+const sourceReports = [];
+for (const path of ['.local/polar-workflow-report.json', '.local/local-workflow-report.json']) {
+  try {
+    sourceReports.push(sourceReportSchema.parse(JSON.parse(await readFile(path, 'utf8'))));
+  } catch (error) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+  }
+}
+const sourceReport = requestedRunId
+  ? sourceReports.find((report) => report.run.id === requestedRunId)
+  : sourceReports[0];
+if (!sourceReport) throw new Error('REVIEW_RUN_MUST_MATCH_WORKFLOW_RECEIPT');
+const runId = requestedRunId ?? sourceReport.run.id;
 
 async function call(path: string, body?: unknown) {
   const response = await fetch(new URL(path, origin), {
@@ -64,10 +75,10 @@ const reviewState = z
   })
   .passthrough();
 
-await call(`/api/runs/${runId}/evidence-review`, {});
-const deadline = Date.now() + 10 * 60 * 1000;
+await call(`/api/runs/${runId}/evidence-review`, retryCompleted ? { retryCompleted: true } : {});
+const deadline = performance.now() + 10 * 60 * 1000;
 let receipt: z.infer<typeof completedReview> | undefined;
-while (Date.now() < deadline) {
+while (performance.now() < deadline) {
   const detail = z
     .object({ evidenceReview: reviewState.nullable() })
     .parse(await call(`/api/runs/${runId}`));
