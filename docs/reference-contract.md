@@ -1,6 +1,6 @@
 # Reference target HTTP contract
 
-`createReferenceApp(options)` is exported from `packages/reference/src/index.ts` and returns `{ app, close }`. `app` is a real Hono app with `.request()` and `.fetch()` methods. `close()` closes the target's SQLite connection. The target imports no controller or evaluator code.
+`createReferenceApp(options)` is exported from `src/reference/index.ts` and returns `{ app, close }`. `app` is a real Hono app with `.request()` and `.fetch()` methods. `close()` closes the target's SQLite connection. The target imports no controller or evaluator code.
 
 Options are `databasePath`, `stagingEnabled`, `adapterToken`, `webhookSecret`, `replaySecret`, `priceId`, `buildId`, optional `polarToken`, `polarOrganizationId`, `polarProductId`, and optional `faultMode`. Fault modes are `none`, `missing_guard`, `missing_activation`, and `missing_cancellation`. Secrets must be nonempty and the webhook and replay secrets must differ. Provider credentials must be a Polar organization token with UUID organization, product and price. Partial provider configuration is rejected. Fault modes require staging to be enabled and `NODE_ENV` to differ from `production`; they have no HTTP setter.
 
@@ -89,7 +89,12 @@ Successful responses contain `received`, `processed`, `duplicate`, `stale`, and 
       "status": "active",
       "cancel_at_period_end": false,
       "items": {
-        "data": [{ "price": { "id": "price_configured", "livemode": false }, "current_period_end": 1802678400 }],
+        "data": [
+          {
+            "price": { "id": "price_configured", "livemode": false },
+            "current_period_end": 1802678400
+          }
+        ],
         "has_more": false
       },
       "latest_invoice": {
@@ -105,7 +110,7 @@ Successful responses contain `received`, `processed`, `duplicate`, `stale`, and 
 }
 ```
 
-Use the current real Unix timestamp in the signature, even when the event's `created` value represents simulated billing time. `signReplay({ payload: rawBody, secret: replaySecret })` from `packages/reference/src/replay-signature.ts` produces an appropriate test signature. The `created` timestamp orders replay events; older events are recorded but return `stale: true` without overwriting newer billing state. Cancellation scheduling uses a fresh updated event with `cancel_at_period_end: true` and status `active`. Actual cancellation uses a fresh deleted event with status `canceled`.
+Use the current real Unix timestamp in the signature, even when the event's `created` value represents simulated billing time. `signReplay({ payload: rawBody, secret: replaySecret })` from `src/reference/replay-signature.ts` produces an appropriate test signature. The `created` timestamp orders replay events; older events are recorded but return `stale: true` without overwriting newer billing state. Cancellation scheduling uses a fresh updated event with `cancel_at_period_end: true` and status `active`. Actual cancellation uses a fresh deleted event with status `canceled`.
 
 Replay accepts exactly one configured item and requires matching subscription `metadata.runId`. Invoice `customer` and subscription linkage are checked when supplied. Invoice `livemode: false` and `status` are required; `id`, `object`, `billing_reason`, and identity fields are optional for minimal sanitized fixtures. Only a paid creation invoice establishes initial payment, and that fact survives later lifecycle events for the same subscription. A user cannot mix replay and real Polar billing projections. Every replay response and the ordinary UI are labeled `local_replay`; these results are never real Polar verification.
 

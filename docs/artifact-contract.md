@@ -65,19 +65,19 @@ The returned bytes must have the PNG signature and a SHA-256 equal to the stored
 
 All service failures reject with `ArtifactError`, an Error instance with stable `code` and numeric `status`:
 
-| Code | Status | Meaning |
-| --- | --- | --- |
-| `ARTIFACT_INPUT_INVALID` | 400 | Invalid request input or filename |
-| `ARTIFACT_NOT_FOUND` | 404 | No persisted metadata for the artifact |
-| `ARTIFACT_RUN_MISMATCH` | 403 | Receipt belongs to another run |
-| `ARTIFACT_EXPIRED` | 410 | Retention or explicit expiry elapsed |
-| `ARTIFACT_MISSING` | 404 | Persisted artifact file or directory is missing |
-| `ARTIFACT_METADATA_INVALID` | 422 | Malformed or contradictory stored receipt |
-| `ARTIFACT_UNSAFE_FILE` | 422 | Symlink, nonregular file, hard link, or unsafe/replaced root |
-| `ARTIFACT_TOO_LARGE` | 413 | File exceeds the configured maximum |
-| `ARTIFACT_CORRUPT` | 422 | Size, PNG signature, SHA-256, or concurrent modification mismatch |
-| `ARTIFACT_UNAVAILABLE` | 503 | Storage/lookup failure that prevents verification |
-| `ARTIFACT_CONFIGURATION_INVALID` | 500 | Invalid trusted configuration or clock |
+| Code                             | Status | Meaning                                                           |
+| -------------------------------- | ------ | ----------------------------------------------------------------- |
+| `ARTIFACT_INPUT_INVALID`         | 400    | Invalid request input or filename                                 |
+| `ARTIFACT_NOT_FOUND`             | 404    | No persisted metadata for the artifact                            |
+| `ARTIFACT_RUN_MISMATCH`          | 403    | Receipt belongs to another run                                    |
+| `ARTIFACT_EXPIRED`               | 410    | Retention or explicit expiry elapsed                              |
+| `ARTIFACT_MISSING`               | 404    | Persisted artifact file or directory is missing                   |
+| `ARTIFACT_METADATA_INVALID`      | 422    | Malformed or contradictory stored receipt                         |
+| `ARTIFACT_UNSAFE_FILE`           | 422    | Symlink, nonregular file, hard link, or unsafe/replaced root      |
+| `ARTIFACT_TOO_LARGE`             | 413    | File exceeds the configured maximum                               |
+| `ARTIFACT_CORRUPT`               | 422    | Size, PNG signature, SHA-256, or concurrent modification mismatch |
+| `ARTIFACT_UNAVAILABLE`           | 503    | Storage/lookup failure that prevents verification                 |
+| `ARTIFACT_CONFIGURATION_INVALID` | 500    | Invalid trusted configuration or clock                            |
 
 ## Root HTTP integration
 

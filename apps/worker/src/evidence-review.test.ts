@@ -1,0 +1,154 @@
+import { describe, expect, it, vi } from 'vitest';
+import { EvidenceReviewCoordinator, type ReviewRuntime } from './evidence-review.ts';
+
+const runId = 'run-review-contract';
+const report = {
+  run: {
+    id: runId,
+    status: 'completed',
+    outcome: 'passed',
+    targetBuild: 'a'.repeat(40),
+    policy: { hash: 'b'.repeat(64) },
+  },
+  scenarios: [
+    {
+      id: 'SC01',
+      api: { verdict: 'pass', code: 'DENIED' },
+      browser: { verdict: 'pass', code: 'HIDDEN' },
+      state: { verdict: 'pass', code: 'FREE' },
+      observationIds: ['observation-1'],
+    },
+  ],
+  observations: [{ id: 'observation-1', runId }],
+  cleanup: [],
+  coverageLimits: ['Synthetic contract fixture.'],
+};
+
+function fixture() {
+  const values = new Map<string, unknown>();
+  const documents = {
+    put: (kind: string, id: string, value: unknown) => values.set(`${kind}:${id}`, value),
+    get: (kind: string, id: string) => values.get(`${kind}:${id}`) ?? null,
+    list: (kind: string) =>
+      [...values.entries()].filter(([key]) => key.startsWith(`${kind}:`)).map(([, value]) => value),
+  };
+  const registerSkill = vi.fn<ReviewRuntime['registerSkill']>(async () => undefined);
+  const registerMcpServer = vi.fn<ReviewRuntime['registerMcpServer']>(async () => undefined);
+  const createSession = vi.fn<ReviewRuntime['createSession']>(async () => ({
+    id: 'review-session',
+  }));
+  const beginTurn = vi.fn<ReviewRuntime['beginTurn']>(async () => ({ id: 'review-turn' }));
+  const resumeStream = vi.fn<ReviewRuntime['resumeStream']>(() => new Promise<never>(() => {}));
+  const inspectTurn = vi.fn<ReviewRuntime['inspectTurn']>();
+  const runtime = {
+    registerSkill,
+    registerMcpServer,
+    createSession,
+    beginTurn,
+    resumeStream,
+    inspectTurn,
+  };
+  const coordinator = new EvidenceReviewCoordinator({
+    runtime,
+    documents,
+    report: (requestedRunId) => {
+      expect(requestedRunId).toBe(runId);
+      return report;
+    },
+    workerOrigin: 'http://127.0.0.1:8787',
+    repository: 'example/paywallproof',
+    ref: 'a'.repeat(40),
+  });
+  return { coordinator, runtime };
+}
+
+describe('skill-backed evidence review', () => {
+  it('starts an isolated skill and dynamic-subagent session', async () => {
+    const { coordinator, runtime } = fixture();
+    const state = await coordinator.start(runId);
+
+    expect(state).toMatchObject({
+      runId,
+      status: 'running',
+      sessionId: 'review-session',
+      turnId: 'review-turn',
+      skill: {
+        name: 'paywallproof-evidence-review',
+        dynamicSubAgents: true,
+      },
+    });
+    expect(runtime.registerSkill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'paywallproof-evidence-review',
+        repositoryUrl: 'https://github.com/example/paywallproof.git',
+        ref: 'a'.repeat(40),
+        path: 'skills/paywallproof-evidence-review',
+      }),
+    );
+    expect(runtime.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        enableTools: ['read_run_report', 'record_evidence_review'],
+        requireApprovalForTools: [],
+        skills: ['paywallproof-evidence-review'],
+        dynamicSubAgents: true,
+        sandbox: true,
+      }),
+    );
+  });
+
+  it('serves the bound report and records two distinct grounded reviews', async () => {
+    const { coordinator, runtime } = fixture();
+    await coordinator.start(runId);
+    const registration = runtime.registerMcpServer.mock.calls[0]?.[0];
+    const token = new Headers(registration?.headers).get('authorization')?.replace(/^Bearer /, '');
+    expect(token).toBeTruthy();
+    expect(coordinator.authorize(runId, token ?? '')).toBe(true);
+
+    const read = await coordinator.tool(runId, 'read_run_report', {
+      runId,
+      operationId: 'read-report',
+    });
+    expect(read).toMatchObject({ report, reportHash: expect.stringMatching(/^[a-f0-9]{64}$/) });
+
+    const recorded = await coordinator.tool(runId, 'record_evidence_review', {
+      runId,
+      operationId: 'record-review',
+      verdict: 'confirmed',
+      summary: 'Both independent checks found the saved outcome internally consistent.',
+      reviewers: [
+        {
+          role: 'coverage',
+          verdict: 'confirmed',
+          summary: 'Coverage is internally consistent.',
+          findings: [],
+        },
+        {
+          role: 'binding',
+          verdict: 'confirmed',
+          summary: 'Bindings are internally consistent.',
+          findings: [
+            {
+              code: 'BINDING_OK',
+              severity: 'info',
+              summary: 'The cited observation belongs to this run.',
+              scenarioId: 'SC01',
+              observationIds: ['observation-1'],
+            },
+          ],
+        },
+      ],
+    });
+    expect(recorded).toMatchObject({ runId, status: 'completed', verdict: 'confirmed' });
+    expect(coordinator.view(runId)).toEqual(recorded);
+  });
+
+  it('attaches only one recovery watcher to a running review', async () => {
+    const { coordinator, runtime } = fixture();
+    await coordinator.start(runId);
+
+    await coordinator.recover();
+    await coordinator.recover();
+
+    expect(runtime.resumeStream).toHaveBeenCalledTimes(1);
+  });
+});

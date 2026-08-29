@@ -1,6 +1,6 @@
 # Repair authorization and publication contract
 
-This is the public contract for `packages/repair/src/index.ts`. Independent tests may use this document without reading implementation. All public JSON request objects reject unknown fields; factory dependencies and `publishRepair`'s store/adapter handles are trusted typed configuration. Errors have a stable `code`. No method executes a test or claims that supplied receipts prove more than their trusted collector observed.
+This is the public contract for `src/repair/index.ts`. Independent tests may use this document without reading implementation. All public JSON request objects reject unknown fields; factory dependencies and `publishRepair`'s store/adapter handles are trusted typed configuration. Errors have a stable `code`. No method executes a test or claims that supplied receipts prove more than their trusted collector observed.
 
 ## Proposal and verification
 

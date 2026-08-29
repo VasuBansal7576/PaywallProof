@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { createReferenceApp } from '../../packages/reference/src/index';
+import { createReferenceApp } from '#reference';
 
 let target: ReturnType<typeof createReferenceApp> | undefined;
 
@@ -13,7 +13,8 @@ function required(name: string): string {
 export async function handleReferenceRequest(request: Request): Promise<Response> {
   try {
     target ??= createReferenceApp({
-      databasePath: process.env.REFERENCE_DATABASE_PATH ?? resolve(process.cwd(), '.local/reference-v2.sqlite'),
+      databasePath:
+        process.env.REFERENCE_DATABASE_PATH ?? resolve(process.cwd(), '.local/reference-v2.sqlite'),
       stagingEnabled: process.env.STAGING_ENABLED === 'true',
       adapterToken: required('TARGET_ADAPTER_TOKEN'),
       webhookSecret: required('POLAR_WEBHOOK_SECRET'),
@@ -26,6 +27,9 @@ export async function handleReferenceRequest(request: Request): Promise<Response
     });
     return await target.app.fetch(request);
   } catch {
-    return Response.json({ error: 'REFERENCE_CONFIGURATION_REQUIRED' }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
+    return Response.json(
+      { error: 'REFERENCE_CONFIGURATION_REQUIRED' },
+      { status: 503, headers: { 'Cache-Control': 'no-store' } },
+    );
   }
 }

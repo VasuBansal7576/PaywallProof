@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createPolicy } from '../../packages/core/src/index.ts';
-import { openRunStore } from '../../packages/control/src/index.ts';
+import { createPolicy } from '#domain';
+import { openRunStore } from '#run';
 
 // Authored from the PRD and frozen public contracts, without implementation access.
 // These tests use a real temporary SQLite file and synthetic inputs only.
@@ -23,7 +23,11 @@ function singleCases<T>(cases: readonly T[]): [T][] {
 }
 
 function attemptMutation(record: object, changes: object) {
-  try { Object.assign(record, changes); } catch { /* Frozen records also satisfy detachment. */ }
+  try {
+    Object.assign(record, changes);
+  } catch {
+    /* Frozen records also satisfy detachment. */
+  }
 }
 
 function runInput(overrides: Record<string, unknown> = {}) {
@@ -109,28 +113,31 @@ afterEach(async () => {
 });
 
 describe('independent durable control: creation and restart', () => {
-  it.each(['local_replay', 'polar_sandbox'])('persists %s configuration in a real SQLite file', async (mode) => {
-    const store = await connect();
-    const input = runInput({ mode });
-    const run = await store.createRun(input);
-    expect(run).toMatchObject({
-      ...input,
-      id: expect.any(String),
-      status: 'awaiting_plan_approval',
-      outcome: null,
-      approval: {
+  it.each(['local_replay', 'polar_sandbox'])(
+    'persists %s configuration in a real SQLite file',
+    async (mode) => {
+      const store = await connect();
+      const input = runInput({ mode });
+      const run = await store.createRun(input);
+      expect(run).toMatchObject({
+        ...input,
         id: expect.any(String),
-        bindingHash: expect.any(String),
-        expiresAt: initialTime + fifteenMinutes,
-        decision: 'pending',
-      },
-    });
-    expect(statSync(databasePath).isFile()).toBe(true);
-    const before = await store.getRun(run.id);
-    await disconnect(store);
-    const reopened = await connect();
-    expect(await reopened.getRun(run.id)).toEqual(before);
-  });
+        status: 'awaiting_plan_approval',
+        outcome: null,
+        approval: {
+          id: expect.any(String),
+          bindingHash: expect.any(String),
+          expiresAt: initialTime + fifteenMinutes,
+          decision: 'pending',
+        },
+      });
+      expect(statSync(databasePath).isFile()).toBe(true);
+      const before = await store.getRun(run.id);
+      await disconnect(store);
+      const reopened = await connect();
+      expect(await reopened.getRun(run.id)).toEqual(before);
+    },
+  );
 
   it('keeps returned run, policy, and approval records detached from durable state', async () => {
     const store = await connect();
@@ -194,7 +201,10 @@ describe('independent durable control: approval binding and expiry', () => {
     await rejectsCode(() => store.claimOperation(claimInput(run)));
     expect((await store.getRun(run.id)).status).toBe('awaiting_plan_approval');
     await store.decidePlan(planDecision(run));
-    expect(await store.getRun(run.id)).toMatchObject({ status: 'running', approval: { decision: 'allow' } });
+    expect(await store.getRun(run.id)).toMatchObject({
+      status: 'running',
+      approval: { decision: 'allow' },
+    });
     expect((await store.claimOperation(claimInput(run))).kind).toBe('dispatch');
   });
 
@@ -202,7 +212,10 @@ describe('independent durable control: approval binding and expiry', () => {
     const store = await connect();
     const run = await store.createRun(runInput());
     const before = await store.events({ runId: run.id, after: 0 });
-    await rejectsCode(() => store.decidePlan(planDecision(run, { bindingHash: 'f'.repeat(64) })), 'APPROVAL_STALE');
+    await rejectsCode(
+      () => store.decidePlan(planDecision(run, { bindingHash: 'f'.repeat(64) })),
+      'APPROVAL_STALE',
+    );
     expect((await store.getRun(run.id)).approval.decision).toBe('pending');
     expect(await store.events({ runId: run.id, after: 0 })).toEqual(before);
     await store.decidePlan(planDecision(run));
@@ -213,10 +226,14 @@ describe('independent durable control: approval binding and expiry', () => {
     const store = await connect();
     const first = await store.createRun(runInput());
     const second = await store.createRun(runInput({ projectId: 'project_other' }));
-    await rejectsCode(() => store.decidePlan(planDecision(first, {
-      approvalId: second.approval.id,
-      bindingHash: second.approval.bindingHash,
-    })));
+    await rejectsCode(() =>
+      store.decidePlan(
+        planDecision(first, {
+          approvalId: second.approval.id,
+          bindingHash: second.approval.bindingHash,
+        }),
+      ),
+    );
     expect((await store.getRun(first.id)).approval.decision).toBe('pending');
     await rejectsCode(() => store.claimOperation(claimInput(first)));
   });
@@ -229,32 +246,50 @@ describe('independent durable control: approval binding and expiry', () => {
     expect((await store.getRun(run.id)).status).toBe('running');
   });
 
-  it.each([0, 1, fifteenMinutes])('rejects plan approval at expiry plus %s milliseconds', async (offset) => {
-    const store = await connect();
-    const run = await store.createRun(runInput());
-    now = run.approval.expiresAt + offset;
-    await rejectsCode(() => store.decidePlan(planDecision(run)), 'APPROVAL_STALE');
-    expect(await store.getRun(run.id)).toMatchObject({ status: 'awaiting_plan_approval', approval: { decision: 'pending' } });
-  });
+  it.each([0, 1, fifteenMinutes])(
+    'rejects plan approval at expiry plus %s milliseconds',
+    async (offset) => {
+      const store = await connect();
+      const run = await store.createRun(runInput());
+      now = run.approval.expiresAt + offset;
+      await rejectsCode(() => store.decidePlan(planDecision(run)), 'APPROVAL_STALE');
+      expect(await store.getRun(run.id)).toMatchObject({
+        status: 'awaiting_plan_approval',
+        approval: { decision: 'pending' },
+      });
+    },
+  );
 
-  it.each(['allow', 'deny'])('keeps an exact %s decision idempotent across expiry and reopen', async (decision) => {
-    const store = await connect();
-    const run = await store.createRun(runInput());
-    const input = planDecision(run, { decision });
-    const result = await store.decidePlan(input);
-    const before = await store.events({ runId: run.id, after: 0 });
-    now = run.approval.expiresAt + 1;
-    await disconnect(store);
-    const reopened = await connect();
-    expect(await reopened.decidePlan(input)).toEqual(result);
-    expect(await reopened.events({ runId: run.id, after: 0 })).toEqual(before);
-    await rejectsCode(() => reopened.decidePlan(planDecision(run, { decision: decision === 'allow' ? 'deny' : 'allow' })), 'APPROVAL_CONFLICT');
-  });
+  it.each(['allow', 'deny'])(
+    'keeps an exact %s decision idempotent across expiry and reopen',
+    async (decision) => {
+      const store = await connect();
+      const run = await store.createRun(runInput());
+      const input = planDecision(run, { decision });
+      const result = await store.decidePlan(input);
+      const before = await store.events({ runId: run.id, after: 0 });
+      now = run.approval.expiresAt + 1;
+      await disconnect(store);
+      const reopened = await connect();
+      expect(await reopened.decidePlan(input)).toEqual(result);
+      expect(await reopened.events({ runId: run.id, after: 0 })).toEqual(before);
+      await rejectsCode(
+        () =>
+          reopened.decidePlan(
+            planDecision(run, { decision: decision === 'allow' ? 'deny' : 'allow' }),
+          ),
+        'APPROVAL_CONFLICT',
+      );
+    },
+  );
 
   it('does not accept a forged binding just because the decision was already allowed', async () => {
     const store = await connect();
     const run = await running(store);
-    await rejectsCode(() => store.decidePlan(planDecision(run, { bindingHash: 'f'.repeat(64) })), 'APPROVAL_STALE');
+    await rejectsCode(
+      () => store.decidePlan(planDecision(run, { bindingHash: 'f'.repeat(64) })),
+      'APPROVAL_STALE',
+    );
   });
 
   it('denial releases the project lock and cannot execute operations', async () => {
@@ -339,23 +374,42 @@ describe('independent durable control: operation ownership and recovery', () => 
     const retry = await reopened.claimOperation(request);
     expect(retry).toMatchObject({ kind: 'confirmed', operation: { state: 'confirmed', receipt } });
     expect(retry.operation.idempotencyKey).toBe(original.operation.idempotencyKey);
-    await rejectsCode(() => reopened.confirmOperation({
-      runId: run.id, operationId: request.operationId, receipt: { providerId: 'different_effect' },
-    }), 'OPERATION_CONFLICT');
+    await rejectsCode(
+      () =>
+        reopened.confirmOperation({
+          runId: run.id,
+          operationId: request.operationId,
+          receipt: { providerId: 'different_effect' },
+        }),
+      'OPERATION_CONFLICT',
+    );
     expect((await reopened.claimOperation(request)).operation.receipt).toEqual(receipt);
   });
 
-  it.each(['dispatched', 'confirmed'])('rejects changed args and kind for a %s operation', async (state) => {
-    const store = await connect();
-    const run = await running(store);
-    const request = claimInput(run);
-    await store.claimOperation(request);
-    if (state === 'confirmed') {
-      await store.confirmOperation({ runId: run.id, operationId: request.operationId, receipt: { ok: true } });
-    }
-    await rejectsCode(() => store.claimOperation({ ...request, args: { user: 'different_user' } }), 'OPERATION_CONFLICT');
-    await rejectsCode(() => store.claimOperation({ ...request, kind: 'await_period_end' }), 'OPERATION_CONFLICT');
-  });
+  it.each(['dispatched', 'confirmed'])(
+    'rejects changed args and kind for a %s operation',
+    async (state) => {
+      const store = await connect();
+      const run = await running(store);
+      const request = claimInput(run);
+      await store.claimOperation(request);
+      if (state === 'confirmed') {
+        await store.confirmOperation({
+          runId: run.id,
+          operationId: request.operationId,
+          receipt: { ok: true },
+        });
+      }
+      await rejectsCode(
+        () => store.claimOperation({ ...request, args: { user: 'different_user' } }),
+        'OPERATION_CONFLICT',
+      );
+      await rejectsCode(
+        () => store.claimOperation({ ...request, kind: 'await_period_end' }),
+        'OPERATION_CONFLICT',
+      );
+    },
+  );
 
   it('does not expose or mutate another run operation through a known operation ID', async () => {
     const store = await connect();
@@ -365,9 +419,20 @@ describe('independent durable control: operation ownership and recovery', () => 
     await store.claimOperation(request);
     const receipt = { providerId: 'synthetic_private_receipt_owner' };
     await store.confirmOperation({ runId: owner.id, operationId: request.operationId, receipt });
-    const error = await rejectsCode(() => store.claimOperation(claimInput(foreign)), 'OWNERSHIP_MISMATCH');
+    const error = await rejectsCode(
+      () => store.claimOperation(claimInput(foreign)),
+      'OWNERSHIP_MISMATCH',
+    );
     expect(String(error)).not.toContain(receipt.providerId);
-    await rejectsCode(() => store.confirmOperation({ runId: foreign.id, operationId: request.operationId, receipt: { malicious: true } }), 'OWNERSHIP_MISMATCH');
+    await rejectsCode(
+      () =>
+        store.confirmOperation({
+          runId: foreign.id,
+          operationId: request.operationId,
+          receipt: { malicious: true },
+        }),
+      'OWNERSHIP_MISMATCH',
+    );
     expect((await store.claimOperation(request)).operation.receipt).toEqual(receipt);
   });
 
@@ -375,15 +440,25 @@ describe('independent durable control: operation ownership and recovery', () => 
     const store = await connect();
     const owner = await running(store);
     const foreign = await running(store, 'project_other');
-    await rejectsCode(() => store.claimOperation(claimInput(owner, { approvalId: foreign.approval.id })));
+    await rejectsCode(() =>
+      store.claimOperation(claimInput(owner, { approvalId: foreign.approval.id })),
+    );
     expect((await store.claimOperation(claimInput(owner))).kind).toBe('dispatch');
   });
 
   it('does not confirm an operation that was never dispatched', async () => {
     const store = await connect();
     const run = await running(store);
-    await rejectsCode(() => store.confirmOperation({ runId: run.id, operationId: 'not_dispatched', receipt: { ok: true } }));
-    expect((await store.claimOperation(claimInput(run, { operationId: 'not_dispatched' }))).kind).toBe('dispatch');
+    await rejectsCode(() =>
+      store.confirmOperation({
+        runId: run.id,
+        operationId: 'not_dispatched',
+        receipt: { ok: true },
+      }),
+    );
+    expect(
+      (await store.claimOperation(claimInput(run, { operationId: 'not_dispatched' }))).kind,
+    ).toBe('dispatch');
   });
 
   it('does not retain caller references to args or confirmation receipts', async () => {
@@ -393,16 +468,28 @@ describe('independent durable control: operation ownership and recovery', () => 
     const request = claimInput(run, { args });
     const original = await store.claimOperation(request);
     args.nested.user = 'mutated';
-    const retry = await store.claimOperation({ ...request, args: { nested: { user: 'original' } } });
+    const retry = await store.claimOperation({
+      ...request,
+      args: { nested: { user: 'original' } },
+    });
     expect(retry.operation.argsHash).toBe(original.operation.argsHash);
     const receipt = { nested: { providerId: 'original' } };
     await store.confirmOperation({ runId: run.id, operationId: request.operationId, receipt });
     receipt.nested.providerId = 'mutated';
-    const confirmed = await store.claimOperation({ ...request, args: { nested: { user: 'original' } } });
+    const confirmed = await store.claimOperation({
+      ...request,
+      args: { nested: { user: 'original' } },
+    });
     expect(confirmed.operation.receipt).toEqual({ nested: { providerId: 'original' } });
-    try { Object.assign(confirmed.operation, { receipt: { forged: true }, state: 'dispatched' }); } catch { /* Frozen is acceptable. */ }
-    expect((await store.claimOperation({ ...request, args: { nested: { user: 'original' } } })).operation.receipt)
-      .toEqual({ nested: { providerId: 'original' } });
+    try {
+      Object.assign(confirmed.operation, { receipt: { forged: true }, state: 'dispatched' });
+    } catch {
+      /* Frozen is acceptable. */
+    }
+    expect(
+      (await store.claimOperation({ ...request, args: { nested: { user: 'original' } } })).operation
+        .receipt,
+    ).toEqual({ nested: { providerId: 'original' } });
   });
 });
 
@@ -415,10 +502,14 @@ describe('independent durable control: bounds and terminal states', () => {
       expect((await store.claimOperation(request)).kind).toBe('dispatch');
       expect((await store.claimOperation(request)).kind).toBe('in_flight');
     }
-    await rejectsCode(() => store.claimOperation(claimInput(run, { operationId: 'operation_100' })));
+    await rejectsCode(() =>
+      store.claimOperation(claimInput(run, { operationId: 'operation_100' })),
+    );
     await disconnect(store);
     const reopened = await connect();
-    await rejectsCode(() => reopened.claimOperation(claimInput(run, { operationId: 'operation_101' })));
+    await rejectsCode(() =>
+      reopened.claimOperation(claimInput(run, { operationId: 'operation_101' })),
+    );
   });
 
   it('starts the active deadline at approval, excluding the preceding wait', async () => {
@@ -429,7 +520,9 @@ describe('independent durable control: bounds and terminal states', () => {
     now += fifteenMinutes - 1;
     expect((await store.claimOperation(claimInput(run))).kind).toBe('dispatch');
     now += 1;
-    await rejectsCode(() => store.claimOperation(claimInput(run, { operationId: 'after_deadline' })));
+    await rejectsCode(() =>
+      store.claimOperation(claimInput(run, { operationId: 'after_deadline' })),
+    );
   });
 
   it('retains the active deadline across restart', async () => {
@@ -441,7 +534,13 @@ describe('independent durable control: bounds and terminal states', () => {
     await rejectsCode(() => reopened.claimOperation(claimInput(run)));
   });
 
-  it.each(['prepare_fixture', 'change_test_subscription', 'await_period_end', 'probe_feature', 'cleanup_run'])('rejects a new %s operation after cancellation', async (kind) => {
+  it.each([
+    'prepare_fixture',
+    'change_test_subscription',
+    'await_period_end',
+    'probe_feature',
+    'cleanup_run',
+  ])('rejects a new %s operation after cancellation', async (kind) => {
     const store = await connect();
     const run = await running(store);
     await store.cancelRun(run.id);
@@ -458,10 +557,18 @@ describe('independent durable control: bounds and terminal states', () => {
     expect((await store.getRun(run.id)).status).toBe('canceled');
     const afterStop = await store.events({ runId: run.id, after: 0 });
     expect(afterStop.slice(0, beforeStop.length)).toEqual(beforeStop);
-    await store.confirmOperation({ runId: run.id, operationId: request.operationId, receipt: { dispatchedEffect: 'accounted-for' } });
+    await store.confirmOperation({
+      runId: run.id,
+      operationId: request.operationId,
+      receipt: { dispatchedEffect: 'accounted-for' },
+    });
     expect((await store.getRun(run.id)).status).toBe('canceled');
-    expect((await store.events({ runId: run.id, after: 0 })).length).toBeGreaterThan(afterStop.length);
-    await rejectsCode(() => store.claimOperation(claimInput(run, { operationId: 'new_after_stop' })));
+    expect((await store.events({ runId: run.id, after: 0 })).length).toBeGreaterThan(
+      afterStop.length,
+    );
+    await rejectsCode(() =>
+      store.claimOperation(claimInput(run, { operationId: 'new_after_stop' })),
+    );
     expect((await store.createRun(runInput())).id).not.toBe(run.id);
   });
 
@@ -475,8 +582,11 @@ describe('independent durable control: bounds and terminal states', () => {
   });
 
   it.each<[string[], string]>([
-    [[], 'inconclusive'], [['pass'], 'passed'], [['pass', 'fail'], 'failed'],
-    [['pass', 'unsupported'], 'inconclusive'], [['skipped'], 'inconclusive'],
+    [[], 'inconclusive'],
+    [['pass'], 'passed'],
+    [['pass', 'fail'], 'failed'],
+    [['pass', 'unsupported'], 'inconclusive'],
+    [['skipped'], 'inconclusive'],
     [['inconclusive', 'fail'], 'failed'],
   ])('completes with aggregate outcome for %s', async (verdicts, outcome) => {
     const store = await connect();
@@ -519,7 +629,11 @@ describe('independent durable control: resumable event reads', () => {
     const request = claimInput(run);
     await store.claimOperation(request);
     now += 10;
-    await store.confirmOperation({ runId: run.id, operationId: request.operationId, receipt: { ok: true } });
+    await store.confirmOperation({
+      runId: run.id,
+      operationId: request.operationId,
+      receipt: { ok: true },
+    });
     const all = await store.events({ runId: run.id, after: 0 });
     expect(all.slice(0, creation.length)).toEqual(creation);
     let previous = 0;
@@ -532,7 +646,9 @@ describe('independent durable control: resumable event reads', () => {
       previous = event.sequence;
     }
     const cursor = creation[creation.length - 1]?.sequence;
-    expect(await store.events({ runId: run.id, after: cursor })).toEqual(all.filter((event) => event.sequence > Number(cursor)));
+    expect(await store.events({ runId: run.id, after: cursor })).toEqual(
+      all.filter((event) => event.sequence > Number(cursor)),
+    );
     expect(await store.events({ runId: run.id, after: previous })).toEqual([]);
     expect(await store.events({ runId: run.id, after: Number.MAX_SAFE_INTEGER })).toEqual([]);
     expect(await store.events({ runId: run.id, after: 0 })).toEqual(all);
@@ -547,7 +663,11 @@ describe('independent durable control: resumable event reads', () => {
     const records = await store.events({ runId: run.id, after: 0 });
     const before = JSON.stringify(records);
     for (const event of records) {
-      try { Object.assign(event, { type: 'forged', payload: { forged: true } }); } catch { /* Frozen is acceptable. */ }
+      try {
+        Object.assign(event, { type: 'forged', payload: { forged: true } });
+      } catch {
+        /* Frozen is acceptable. */
+      }
     }
     expect(JSON.stringify(await store.events({ runId: run.id, after: 0 }))).toBe(before);
   });
@@ -565,9 +685,16 @@ describe('independent durable control: resumable event reads', () => {
 
 describe('independent durable control: strict boundaries', () => {
   it.each<[string, unknown]>([
-    ['projectId', ''], ['projectId', ' padded'], ['targetBuild', ''], ['targetBuild', 'padded '],
-    ['mode', 'production'], ['mode', null], ['featureConfigHash', 'b'.repeat(64)],
-    ['featureConfigHash', 'A'.repeat(64)], ['policy', null], ['extra', true],
+    ['projectId', ''],
+    ['projectId', ' padded'],
+    ['targetBuild', ''],
+    ['targetBuild', 'padded '],
+    ['mode', 'production'],
+    ['mode', null],
+    ['featureConfigHash', 'b'.repeat(64)],
+    ['featureConfigHash', 'A'.repeat(64)],
+    ['policy', null],
+    ['extra', true],
   ])('rejects invalid createRun field %s without taking a project lock', async (field, value) => {
     const store = await connect();
     await rejectsCode(() => store.createRun(runInput({ [field]: value })), 'INVALID_INPUT');
@@ -587,38 +714,68 @@ describe('independent durable control: strict boundaries', () => {
     await rejectsCode(() => store.createRun(input), 'INVALID_INPUT');
   });
 
-  it.each(singleCases([null, undefined, [], 'run', 1]))('rejects a nonrecord createRun input', async (input) => {
-    const store = await connect();
-    await rejectsCode(() => store.createRun(input), 'INVALID_INPUT');
-  });
+  it.each(singleCases([null, undefined, [], 'run', 1]))(
+    'rejects a nonrecord createRun input',
+    async (input) => {
+      const store = await connect();
+      await rejectsCode(() => store.createRun(input), 'INVALID_INPUT');
+    },
+  );
 
-  it.each(['', ' ', ' padded', 'padded ', '\tidentifier', 'identifier\n'])('rejects malformed run IDs %s', async (runId) => {
-    const store = await connect();
-    await rejectsCode(() => store.getRun(runId), 'INVALID_INPUT');
-    await rejectsCode(() => store.cancelRun(runId), 'INVALID_INPUT');
-  });
+  it.each(['', ' ', ' padded', 'padded ', '\tidentifier', 'identifier\n'])(
+    'rejects malformed run IDs %s',
+    async (runId) => {
+      const store = await connect();
+      await rejectsCode(() => store.getRun(runId), 'INVALID_INPUT');
+      await rejectsCode(() => store.cancelRun(runId), 'INVALID_INPUT');
+    },
+  );
 
   it.each<[string, unknown]>([
-    ['decision', 'approve'], ['decision', true], ['approvalId', ''], ['bindingHash', ''],
-    ['runId', ' padded'], ['extra', true],
+    ['decision', 'approve'],
+    ['decision', true],
+    ['approvalId', ''],
+    ['bindingHash', ''],
+    ['runId', ' padded'],
+    ['extra', true],
   ])('rejects malformed approval field %s', async (field, value) => {
     const store = await connect();
     const run = await store.createRun(runInput());
-    await rejectsCode(() => store.decidePlan(planDecision(run, { [field]: value })), 'INVALID_INPUT');
+    await rejectsCode(
+      () => store.decidePlan(planDecision(run, { [field]: value })),
+      'INVALID_INPUT',
+    );
     expect((await store.getRun(run.id)).approval.decision).toBe('pending');
   });
 
   it.each<[string, unknown]>([
-    ['operationId', ''], ['operationId', ' padded'], ['kind', 'arbitrary_http'],
-    ['approvalId', ''], ['leaseMs', 0], ['leaseMs', 30_001], ['leaseMs', 1.5],
-    ['leaseMs', NaN], ['leaseMs', Infinity], ['leaseMs', Number.MAX_SAFE_INTEGER + 1],
-    ['leaseMs', '1000'], ['args', null], ['args', []], ['args', 'arbitrary'], ['extra', true],
-  ])('rejects malformed claim field %s without reserving its operation ID', async (field, value) => {
-    const store = await connect();
-    const run = await running(store);
-    await rejectsCode(() => store.claimOperation(claimInput(run, { [field]: value })), 'INVALID_INPUT');
-    expect((await store.claimOperation(claimInput(run))).kind).toBe('dispatch');
-  });
+    ['operationId', ''],
+    ['operationId', ' padded'],
+    ['kind', 'arbitrary_http'],
+    ['approvalId', ''],
+    ['leaseMs', 0],
+    ['leaseMs', 30_001],
+    ['leaseMs', 1.5],
+    ['leaseMs', NaN],
+    ['leaseMs', Infinity],
+    ['leaseMs', Number.MAX_SAFE_INTEGER + 1],
+    ['leaseMs', '1000'],
+    ['args', null],
+    ['args', []],
+    ['args', 'arbitrary'],
+    ['extra', true],
+  ])(
+    'rejects malformed claim field %s without reserving its operation ID',
+    async (field, value) => {
+      const store = await connect();
+      const run = await running(store);
+      await rejectsCode(
+        () => store.claimOperation(claimInput(run, { [field]: value })),
+        'INVALID_INPUT',
+      );
+      expect((await store.claimOperation(claimInput(run))).kind).toBe('dispatch');
+    },
+  );
 
   it.each([1, 30_000])('accepts lease boundary %s milliseconds', async (leaseMs) => {
     const store = await connect();
@@ -632,8 +789,17 @@ describe('independent durable control: strict boundaries', () => {
     const cycle: Record<string, unknown> = {};
     cycle.self = cycle;
     const accessor = Object.defineProperty({}, 'value', { enumerable: true, get: () => 'hidden' });
-    class Args { value = 'untrusted'; }
-    const invalid = [cycle, accessor, new Args(), { value: undefined }, { value: Infinity }, { value: () => 'code' }];
+    class Args {
+      value = 'untrusted';
+    }
+    const invalid = [
+      cycle,
+      accessor,
+      new Args(),
+      { value: undefined },
+      { value: Infinity },
+      { value: () => 'code' },
+    ];
     for (const args of invalid) {
       await rejectsCode(() => store.claimOperation(claimInput(run, { args })), 'INVALID_INPUT');
     }
@@ -648,50 +814,79 @@ describe('independent durable control: strict boundaries', () => {
     await rejectsCode(() => store.claimOperation(claimInput(run, { args })), 'INVALID_INPUT');
   });
 
-  it.each(singleCases([undefined, NaN, Infinity, () => 'receipt', { field: undefined }, new Date(0)]))('rejects non-JSON receipts without confirming the operation', async (receipt) => {
+  it.each(
+    singleCases([undefined, NaN, Infinity, () => 'receipt', { field: undefined }, new Date(0)]),
+  )('rejects non-JSON receipts without confirming the operation', async (receipt) => {
     const store = await connect();
     const run = await running(store);
     const request = claimInput(run);
     await store.claimOperation(request);
-    await rejectsCode(() => store.confirmOperation({ runId: run.id, operationId: request.operationId, receipt }), 'INVALID_INPUT');
+    await rejectsCode(
+      () => store.confirmOperation({ runId: run.id, operationId: request.operationId, receipt }),
+      'INVALID_INPUT',
+    );
     expect((await store.claimOperation(request)).kind).toBe('in_flight');
   });
 
-  it.each(singleCases([null, false, 0, 'synthetic_receipt', [1, 'two'], { nested: [null, true] }]))('accepts JSON receipt values without imposing a provider-specific shape', async (receipt) => {
-    const store = await connect();
-    const run = await running(store);
-    const request = claimInput(run);
-    await store.claimOperation(request);
-    await store.confirmOperation({ runId: run.id, operationId: request.operationId, receipt });
-    expect((await store.claimOperation(request)).operation.receipt).toEqual(receipt);
-  });
+  it.each(singleCases([null, false, 0, 'synthetic_receipt', [1, 'two'], { nested: [null, true] }]))(
+    'accepts JSON receipt values without imposing a provider-specific shape',
+    async (receipt) => {
+      const store = await connect();
+      const run = await running(store);
+      const request = claimInput(run);
+      await store.claimOperation(request);
+      await store.confirmOperation({ runId: run.id, operationId: request.operationId, receipt });
+      expect((await store.claimOperation(request)).operation.receipt).toEqual(receipt);
+    },
+  );
 
   it('rejects unknown confirmation and finish fields', async () => {
     const store = await connect();
     const run = await running(store);
     const request = claimInput(run);
     await store.claimOperation(request);
-    await rejectsCode(() => store.confirmOperation({ runId: run.id, operationId: request.operationId, receipt: {}, extra: true }), 'INVALID_INPUT');
-    await rejectsCode(() => store.finishRun({ runId: run.id, verdicts: ['pass'], outcome: 'passed' }), 'INVALID_INPUT');
+    await rejectsCode(
+      () =>
+        store.confirmOperation({
+          runId: run.id,
+          operationId: request.operationId,
+          receipt: {},
+          extra: true,
+        }),
+      'INVALID_INPUT',
+    );
+    await rejectsCode(
+      () => store.finishRun({ runId: run.id, verdicts: ['pass'], outcome: 'passed' }),
+      'INVALID_INPUT',
+    );
     expect((await store.getRun(run.id)).status).toBe('running');
   });
 
-  it.each(singleCases([null, 'pass', ['passed'], ['fail', 'invalid'], [undefined]]))('rejects malformed completion verdicts', async (verdicts) => {
-    const store = await connect();
-    const run = await running(store);
-    await rejectsCode(() => store.finishRun({ runId: run.id, verdicts }), 'INVALID_INPUT');
-    expect((await store.getRun(run.id)).status).toBe('running');
-  });
+  it.each(singleCases([null, 'pass', ['passed'], ['fail', 'invalid'], [undefined]]))(
+    'rejects malformed completion verdicts',
+    async (verdicts) => {
+      const store = await connect();
+      const run = await running(store);
+      await rejectsCode(() => store.finishRun({ runId: run.id, verdicts }), 'INVALID_INPUT');
+      expect((await store.getRun(run.id)).status).toBe('running');
+    },
+  );
 
-  it.each([-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '0', null])('rejects invalid event cursor %s', async (after) => {
-    const store = await connect();
-    const run = await store.createRun(runInput());
-    await rejectsCode(() => store.events({ runId: run.id, after }), 'INVALID_INPUT');
-  });
+  it.each([-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '0', null])(
+    'rejects invalid event cursor %s',
+    async (after) => {
+      const store = await connect();
+      const run = await store.createRun(runInput());
+      await rejectsCode(() => store.events({ runId: run.id, after }), 'INVALID_INPUT');
+    },
+  );
 
   it('rejects unknown event-query fields', async () => {
     const store = await connect();
     const run = await store.createRun(runInput());
-    await rejectsCode(() => store.events({ runId: run.id, after: 0, extra: true }), 'INVALID_INPUT');
+    await rejectsCode(
+      () => store.events({ runId: run.id, after: 0, extra: true }),
+      'INVALID_INPUT',
+    );
   });
 });

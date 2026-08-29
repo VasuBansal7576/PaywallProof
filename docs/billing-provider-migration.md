@@ -12,19 +12,19 @@ The migration cannot be declared complete until the same actual subscription pas
 
 ## Required contract changes
 
-| Area | Required replacement behavior |
-| --- | --- |
-| Environment | Only `https://sandbox-api.polar.sh`, with `X-Polar-Sandbox: 1` and a pinned supported API version. No configurable production origin or redirect following. A token prefix alone cannot prove sandbox origin. |
-| Identity | Bind an approved organization, product and one positive fixed monthly price. Confirm all three through authenticated provider reads. Reject wrong organizations, ad hoc prices, trials, metering and unsupported extra active prices. |
+| Area          | Required replacement behavior                                                                                                                                                                                                                                         |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Environment   | Only `https://sandbox-api.polar.sh`, with `X-Polar-Sandbox: 1` and a pinned supported API version. No configurable production origin or redirect following. A token prefix alone cannot prove sandbox origin.                                                         |
+| Identity      | Bind an approved organization, product and one positive fixed monthly price. Confirm all three through authenticated provider reads. Reject wrong organizations, ad hoc prices, trials, metering and unsupported extra active prices.                                 |
 | First payment | Complete an actual sandbox checkout using an official test card. Confirm the initial paid order belongs to the exact customer, subscription and product. A free subscription, trial, checkout success page, locally assigned flag or later renewal cannot prove this. |
-| Time | Replace test-clock advancement with a recorded provider billing-period update, readback and bounded wait for actual expiry. Never move the host clock, invent provider time, or revoke immediately to impersonate period-end cancellation. |
-| Cancellation | `cancel_at_period_end: true` preserves access before the confirmed end. A cancellation-request event is not evidence that access should already be removed. Require the actual terminal state after the boundary. |
-| Webhooks | Use Polar's Standard Webhooks verification over the exact body, timestamp and delivery ID. Deduplicate and reconcile with current provider reads. Keep replay credentials and routes separate. |
-| Retry safety | Persist mutation intent and ownership before dispatch. An uncertain create is reconciled by reading provider state; it is never blindly dispatched a second time. Do not assume Stripe idempotency guarantees apply to another API. |
-| Cleanup | Act only on resources recorded for this run and revalidated through provider reads. Record retained provider history honestly if deletion is unavailable. Never label archival or cancellation as deletion. |
-| Evidence | Introduce explicit Polar provenance and a new configuration/policy version. Historical Stripe observations retain their original source and hashes; they cannot be relabeled, merged into a new run or silently replayed as Polar evidence. |
-| Repair | Preserve the original frozen evidence and unchanged host oracle. Update provider-specific payloads and negative signature/ownership controls without allowing the repair agent to edit the verifier. |
-| Availability | Keep local evidence for the configured 60 days. Do not promise a provider retention period that has not been verified. No paid plan, bank account, live card or credit redemption is permitted. |
+| Time          | Replace test-clock advancement with a recorded provider billing-period update, readback and bounded wait for actual expiry. Never move the host clock, invent provider time, or revoke immediately to impersonate period-end cancellation.                            |
+| Cancellation  | `cancel_at_period_end: true` preserves access before the confirmed end. A cancellation-request event is not evidence that access should already be removed. Require the actual terminal state after the boundary.                                                     |
+| Webhooks      | Use Polar's Standard Webhooks verification over the exact body, timestamp and delivery ID. Deduplicate and reconcile with current provider reads. Keep replay credentials and routes separate.                                                                        |
+| Retry safety  | Persist mutation intent and ownership before dispatch. An uncertain create is reconciled by reading provider state; it is never blindly dispatched a second time. Do not assume Stripe idempotency guarantees apply to another API.                                   |
+| Cleanup       | Act only on resources recorded for this run and revalidated through provider reads. Record retained provider history honestly if deletion is unavailable. Never label archival or cancellation as deletion.                                                           |
+| Evidence      | Introduce explicit Polar provenance and a new configuration/policy version. Historical Stripe observations retain their original source and hashes; they cannot be relabeled, merged into a new run or silently replayed as Polar evidence.                           |
+| Repair        | Preserve the original frozen evidence and unchanged host oracle. Update provider-specific payloads and negative signature/ownership controls without allowing the repair agent to edit the verifier.                                                                  |
+| Availability  | Keep local evidence for the configured 60 days. Do not promise a provider retention period that has not been verified. No paid plan, bank account, live card or credit redemption is permitted.                                                                       |
 
 ## Test and verification obligations
 

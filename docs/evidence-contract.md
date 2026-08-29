@@ -2,7 +2,7 @@
 
 Independent test input specification. Do not read implementation when authoring tests.
 
-`packages/evidence/src/index.ts` exports `EvidenceStore`, `evaluateEvidence`, and `redact`.
+`src/evidence/index.ts` exports `EvidenceStore`, `evaluateEvidence`, and `redact`.
 
 Construct `new EvidenceStore(databasePath, secrets?)` using a real temporary SQLite path. `record(input)` accepts `{runId,scenarioId,subjectId,source,policyHash,targetBuild,observedAt,billingTime,mode,payload}`. scenarioId is SC01..SC04, source is billing_provider/application/api_probe/browser, mode is polar_sandbox/local_replay. observedAt is real Unix milliseconds, billingTime is Unix seconds or null. Payload is finite plain JSON, nesting maximum32. Other fields reject unknowns. `record` returns same fields with generated id and sha256 of stored redacted payload. `get(id)` returns the persisted record and verifies hash, `list(runId)` returns only that run's observations, `close` closes storage. Caller mutations to returned records must never change stored evidence. Never overwrite an existing observation. These methods are trusted collectors only; no public HTTP/MCP write-evidence method exists.
 

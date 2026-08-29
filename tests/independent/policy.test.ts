@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  aggregateVerdicts,
-  createPolicy,
-  evaluateProbe,
-  expectedAccess,
-} from '../../packages/core/src/index.ts';
+import { aggregateVerdicts, createPolicy, evaluateProbe, expectedAccess } from '#domain';
 
 // Independent specification tests. Inputs are synthetic; no provider was contacted.
 // Source of expectations: PRD.md and docs/public-contracts.md, version 1.
@@ -108,13 +103,15 @@ describe('independent contract: immutable policy creation', () => {
     ['syncWindowSeconds', 61],
     ['predicateVersion', 'export-v2'],
   ])('binds the hash to %s', (field, value) => {
-    expect(createPolicy(policyInput({ [field]: value })).hash)
-      .not.toBe(createPolicy(policyInput()).hash);
+    expect(createPolicy(policyInput({ [field]: value })).hash).not.toBe(
+      createPolicy(policyInput()).hash,
+    );
   });
 
   it.each([5, 60, 300])('accepts the synchronization window %s', (seconds) => {
-    expect(createPolicy(policyInput({ syncWindowSeconds: seconds })).syncWindowSeconds)
-      .toBe(seconds);
+    expect(createPolicy(policyInput({ syncWindowSeconds: seconds })).syncWindowSeconds).toBe(
+      seconds,
+    );
   });
 
   it('does not let mutations of its input change the approved policy', () => {
@@ -147,15 +144,25 @@ describe('independent contract: immutable policy creation', () => {
   });
 
   it.each<[string, unknown]>([
-    ['schemaVersion', 1], ['schemaVersion', '1'],
-    ['cancellation', 'deny_immediately'], ['requireInitialPaymentConfirmed', false],
-    ['syncWindowSeconds', 4], ['syncWindowSeconds', 301],
-    ['syncWindowSeconds', 5.5], ['syncWindowSeconds', '60'],
-    ['syncWindowSeconds', NaN], ['syncWindowSeconds', Infinity],
-    ['syncWindowSeconds', null], ['syncWindowSeconds', undefined],
-    ['featureConfigHash', 'A'.repeat(64)], ['featureConfigHash', 'a'.repeat(63)],
-    ['featureConfigHash', 'g'.repeat(64)], ['featureConfigHash', ` ${'a'.repeat(64)}`],
-    ['hash', '0'.repeat(64)], ['unexpected', true], ['constructor', 'untrusted'],
+    ['schemaVersion', 1],
+    ['schemaVersion', '1'],
+    ['cancellation', 'deny_immediately'],
+    ['requireInitialPaymentConfirmed', false],
+    ['syncWindowSeconds', 4],
+    ['syncWindowSeconds', 301],
+    ['syncWindowSeconds', 5.5],
+    ['syncWindowSeconds', '60'],
+    ['syncWindowSeconds', NaN],
+    ['syncWindowSeconds', Infinity],
+    ['syncWindowSeconds', null],
+    ['syncWindowSeconds', undefined],
+    ['featureConfigHash', 'A'.repeat(64)],
+    ['featureConfigHash', 'a'.repeat(63)],
+    ['featureConfigHash', 'g'.repeat(64)],
+    ['featureConfigHash', ` ${'a'.repeat(64)}`],
+    ['hash', '0'.repeat(64)],
+    ['unexpected', true],
+    ['constructor', 'untrusted'],
   ])('rejects invalid or unapproved policy field %s = %s', (field, value) => {
     expect(() => createPolicy(policyInput({ [field]: value }))).toThrow();
   });
@@ -173,15 +180,19 @@ describe('independent contract: immutable policy creation', () => {
     expect(() => createPolicy(input)).toThrow();
   });
 
-  it.each(singleCases([null, undefined, [], 'policy', 1, true]))('rejects a nonrecord input: %s', (input) => {
-    expect(() => createPolicy(input)).toThrow();
-  });
+  it.each(singleCases([null, undefined, [], 'policy', 1, true]))(
+    'rejects a nonrecord input: %s',
+    (input) => {
+      expect(() => createPolicy(input)).toThrow();
+    },
+  );
 });
 
 describe('independent contract: expected access', () => {
   it.each([null, 'cus_owned'])('denies a confirmed free user with customer %s', (customerId) => {
-    expect(accessFor(billing({ customerId, subscription: null, noSubscriptionConfirmed: true })))
-      .toEqual({ kind: 'deny' });
+    expect(
+      accessFor(billing({ customerId, subscription: null, noSubscriptionConfirmed: true })),
+    ).toEqual({ kind: 'deny' });
   });
 
   it('allows an active matching subscription with a paid initial invoice', () => {
@@ -189,32 +200,56 @@ describe('independent contract: expected access', () => {
   });
 
   it('keeps scheduled cancellation authorized before the boundary', () => {
-    expect(accessFor(billing({ subscription: subscription({ cancelAtPeriodEnd: true, billingTime: 1_999 }) })))
-      .toEqual({ kind: 'allow' });
+    expect(
+      accessFor(
+        billing({ subscription: subscription({ cancelAtPeriodEnd: true, billingTime: 1_999 }) }),
+      ),
+    ).toEqual({ kind: 'allow' });
   });
 
   it.each([2_000, 2_001, Number.MAX_SAFE_INTEGER])(
     'does not assume cancellation from an active subscription at time %s',
-    (billingTime) => expectUnknown(billing({ subscription: subscription({ cancelAtPeriodEnd: true, billingTime }) })),
+    (billingTime) =>
+      expectUnknown(
+        billing({ subscription: subscription({ cancelAtPeriodEnd: true, billingTime }) }),
+      ),
   );
 
-  it.each([true, false])('denies confirmed cancellation even with invoice paid = %s', (initialPaymentConfirmed) => {
-    expect(accessFor(billing({ subscription: subscription({ status: 'canceled', initialPaymentConfirmed }) })))
-      .toEqual({ kind: 'deny' });
-  });
+  it.each([true, false])(
+    'denies confirmed cancellation even with invoice paid = %s',
+    (initialPaymentConfirmed) => {
+      expect(
+        accessFor(
+          billing({ subscription: subscription({ status: 'canceled', initialPaymentConfirmed }) }),
+        ),
+      ).toEqual({ kind: 'deny' });
+    },
+  );
 
   it('does not invent a paid entitlement for an active unpaid subscription', () => {
     expectUnknown(billing({ subscription: subscription({ initialPaymentConfirmed: false }) }));
   });
 
-  it.each(['trialing', 'past_due', 'unpaid', 'incomplete', 'incomplete_expired', 'paused', 'deleted', 'ACTIVE', 'future_status'])(
-    'keeps unsupported subscription status %s unknown',
-    (status) => expectUnknown(billing({ subscription: subscription({ status }) })),
+  it.each([
+    'trialing',
+    'past_due',
+    'unpaid',
+    'incomplete',
+    'incomplete_expired',
+    'paused',
+    'deleted',
+    'ACTIVE',
+    'future_status',
+  ])('keeps unsupported subscription status %s unknown', (status) =>
+    expectUnknown(billing({ subscription: subscription({ status }) })),
   );
 
-  it.each([null, 'cus_owned'])('requires confirmation before treating missing subscription as free: %s', (customerId) => {
-    expectUnknown(billing({ customerId, subscription: null, noSubscriptionConfirmed: false }));
-  });
+  it.each([null, 'cus_owned'])(
+    'requires confirmation before treating missing subscription as free: %s',
+    (customerId) => {
+      expectUnknown(billing({ customerId, subscription: null, noSubscriptionConfirmed: false }));
+    },
+  );
 
   for (const status of ['active', 'canceled']) {
     it.each<[string, Record<string, unknown>]>([
@@ -234,42 +269,68 @@ describe('independent contract: expected access', () => {
 
   it.each([{ livemode: true }, { identityResolved: false }])(
     'does not turn unsafe free-user evidence into a denial',
-    (change) => expectUnknown(billing({ subscription: null, noSubscriptionConfirmed: true, ...change })),
+    (change) =>
+      expectUnknown(billing({ subscription: null, noSubscriptionConfirmed: true, ...change })),
   );
 
   it.each([0, Number.MAX_SAFE_INTEGER])('accepts valid safe-integer time %s', (time) => {
-    expect(accessFor(billing({ subscription: subscription({ periodEnd: time, billingTime: time }) })))
-      .toEqual({ kind: 'allow' });
+    expect(
+      accessFor(billing({ subscription: subscription({ periodEnd: time, billingTime: time }) })),
+    ).toEqual({ kind: 'allow' });
   });
 
   for (const field of ['periodEnd', 'billingTime']) {
-    it.each([-1, 1.5, NaN, Infinity, -Infinity, Number.MAX_SAFE_INTEGER + 1, '1000', null, undefined])(
-      `rejects structurally invalid ${field}: %s`,
-      (value) => expect(() => accessFor(billing({ subscription: subscription({ [field]: value }) }))).toThrow(),
+    it.each([
+      -1,
+      1.5,
+      NaN,
+      Infinity,
+      -Infinity,
+      Number.MAX_SAFE_INTEGER + 1,
+      '1000',
+      null,
+      undefined,
+    ])(`rejects structurally invalid ${field}: %s`, (value) =>
+      expect(() =>
+        accessFor(billing({ subscription: subscription({ [field]: value }) })),
+      ).toThrow(),
     );
   }
 
   for (const field of ['id', 'customerId', 'priceId']) {
     it.each(['', ' ', ' padded', 'padded ', 1, null, undefined])(
       `rejects invalid subscription ${field}: %s`,
-      (value) => expect(() => accessFor(billing({ subscription: subscription({ [field]: value }) }))).toThrow(),
+      (value) =>
+        expect(() =>
+          accessFor(billing({ subscription: subscription({ [field]: value }) })),
+        ).toThrow(),
     );
   }
 
-  it.each(['', ' ', ' padded', 'padded ', 1, false])('rejects invalid billing customerId: %s', (customerId) => {
-    expect(() => accessFor(billing({ customerId }))).toThrow();
-  });
+  it.each(['', ' ', ' padded', 'padded ', 1, false])(
+    'rejects invalid billing customerId: %s',
+    (customerId) => {
+      expect(() => accessFor(billing({ customerId }))).toThrow();
+    },
+  );
 
   it.each<[string, unknown]>([
-    ['livemode', 'false'], ['identityResolved', 1], ['noSubscriptionConfirmed', null],
-    ['subscription', []], ['subscription', 'active'], ['extra', 'unapproved'],
+    ['livemode', 'false'],
+    ['identityResolved', 1],
+    ['noSubscriptionConfirmed', null],
+    ['subscription', []],
+    ['subscription', 'active'],
+    ['extra', 'unapproved'],
   ])('rejects malformed billing field %s', (field, value) => {
     expect(() => accessFor(billing({ [field]: value }))).toThrow();
   });
 
   it.each<[string, unknown]>([
-    ['status', null], ['status', 1], ['initialPaymentConfirmed', 'true'],
-    ['cancelAtPeriodEnd', 1], ['extra', true],
+    ['status', null],
+    ['status', 1],
+    ['initialPaymentConfirmed', 'true'],
+    ['cancelAtPeriodEnd', 1],
+    ['extra', true],
   ])('rejects malformed subscription field %s', (field, value) => {
     expect(() => accessFor(billing({ subscription: subscription({ [field]: value }) }))).toThrow();
   });
@@ -289,12 +350,17 @@ describe('independent contract: expected access', () => {
   it('rejects unknown evaluator envelope and policy fields', () => {
     const policy = createPolicy(policyInput());
     expect(() => expectedAccess({ policy, billing: billing(), override: 'allow' })).toThrow();
-    expect(() => expectedAccess({ policy: { ...policy, override: true }, billing: billing() })).toThrow();
+    expect(() =>
+      expectedAccess({ policy: { ...policy, override: true }, billing: billing() }),
+    ).toThrow();
   });
 
-  it.each(singleCases([null, undefined, [], 'snapshot']))('rejects a malformed evaluator envelope: %s', (input) => {
-    expect(() => expectedAccess(input)).toThrow();
-  });
+  it.each(singleCases([null, undefined, [], 'snapshot']))(
+    'rejects a malformed evaluator envelope: %s',
+    (input) => {
+      expect(() => expectedAccess(input)).toThrow();
+    },
+  );
 
   it('does not mutate the supplied billing snapshot', () => {
     const snapshot = billing();
@@ -330,7 +396,9 @@ describe('independent contract: verdict aggregation', () => {
   );
 
   it('finds a failure late in a large local collection', () => {
-    expect(aggregateVerdicts([...Array.from({ length: 10_000 }, () => 'pass'), 'fail'])).toBe('failed');
+    expect(aggregateVerdicts([...Array.from({ length: 10_000 }, () => 'pass'), 'fail'])).toBe(
+      'failed',
+    );
   });
 
   it.each(singleCases(['passed', 'failed', '', 'PASS', null, undefined, 0, {}, []]))(
@@ -355,7 +423,10 @@ describe('independent contract: verdict aggregation', () => {
 
 describe('independent contract: protected feature probe', () => {
   it('passes exact protected output for an allowed user', () => {
-    expectProbe(probeInput({ kind: 'allow' }, { status: 200, body: { fixtureMarker: marker } }), 'pass');
+    expectProbe(
+      probeInput({ kind: 'allow' }, { status: 200, body: { fixtureMarker: marker } }),
+      'pass',
+    );
   });
 
   it.each([401, 403])('passes an approved %s denial for a denied user', (status) => {
@@ -367,7 +438,10 @@ describe('independent contract: protected feature probe', () => {
   });
 
   it('fails protected access for a denied user', () => {
-    expectProbe(probeInput({ kind: 'deny' }, { status: 200, body: { fixtureMarker: marker } }), 'fail');
+    expectProbe(
+      probeInput({ kind: 'deny' }, { status: 200, body: { fixtureMarker: marker } }),
+      'fail',
+    );
   });
 
   const leakBodies = [
@@ -379,45 +453,82 @@ describe('independent contract: protected feature probe', () => {
     `prefix${marker}suffix`,
   ];
   for (const status of [100, 200, 302, 401, 403, 500, 599]) {
-    it.each(singleCases(leakBodies))(`fails leaked data at HTTP ${status}, regardless of response shape`, (body) => {
-      expectProbe(probeInput({ kind: 'deny' }, { status, body }), 'fail');
-    });
+    it.each(singleCases(leakBodies))(
+      `fails leaked data at HTTP ${status}, regardless of response shape`,
+      (body) => {
+        expectProbe(probeInput({ kind: 'deny' }, { status, body }), 'fail');
+      },
+    );
   }
 
   it('finds decoded markers containing escaped characters in both values and keys', () => {
     const escapedMarker = 'fixture"quoted\nline\\path';
-    const valueBody = JSON.parse(JSON.stringify({ error: 'ACCESS_DENIED', nested: [`prefix${escapedMarker}suffix`] }));
-    const keyBody = JSON.parse(JSON.stringify({ error: 'ACCESS_DENIED', nested: { [`prefix${escapedMarker}suffix`]: null } }));
+    const valueBody = JSON.parse(
+      JSON.stringify({ error: 'ACCESS_DENIED', nested: [`prefix${escapedMarker}suffix`] }),
+    );
+    const keyBody = JSON.parse(
+      JSON.stringify({
+        error: 'ACCESS_DENIED',
+        nested: { [`prefix${escapedMarker}suffix`]: null },
+      }),
+    );
     expectProbe(probeInput({ kind: 'deny' }, { body: valueBody }, escapedMarker), 'fail');
     expectProbe(probeInput({ kind: 'deny' }, { body: keyBody }, escapedMarker), 'fail');
   });
 
   it('does not treat a similar but nonmatching marker as leaked protected data', () => {
-    expectProbe(probeInput({ kind: 'deny' }, { body: { error: 'ACCESS_DENIED', note: marker.slice(0, -1) } }), 'pass');
+    expectProbe(
+      probeInput({ kind: 'deny' }, { body: { error: 'ACCESS_DENIED', note: marker.slice(0, -1) } }),
+      'pass',
+    );
   });
 
-  it.each(singleCases([
-    {}, { error: 'SERVER_ERROR' }, { fixtureMarker: 'another-run' },
-    { fixtureMarker: `prefix${marker}` }, { nested: { fixtureMarker: marker } },
-    '<html>success</html>', null, true, 123, [marker],
-  ]))('does not infer successful allowance from an unexpected HTTP 200 body', (body) => {
+  it.each(
+    singleCases([
+      {},
+      { error: 'SERVER_ERROR' },
+      { fixtureMarker: 'another-run' },
+      { fixtureMarker: `prefix${marker}` },
+      { nested: { fixtureMarker: marker } },
+      '<html>success</html>',
+      null,
+      true,
+      123,
+      [marker],
+    ]),
+  )('does not infer successful allowance from an unexpected HTTP 200 body', (body) => {
     expectProbe(probeInput({ kind: 'allow' }, { status: 200, body }), 'inconclusive');
   });
 
   it.each([201, 204, 302, 403, 500])('requires HTTP 200 for allowance, not %s', (status) => {
-    expectProbe(probeInput({ kind: 'allow' }, { status, body: { fixtureMarker: marker } }), 'inconclusive');
+    expectProbe(
+      probeInput({ kind: 'allow' }, { status, body: { fixtureMarker: marker } }),
+      'inconclusive',
+    );
   });
 
-  it.each(singleCases([
-    {}, { error: 'ACCESS_DENIED ' }, { error: 'FORBIDDEN' }, { error: true },
-    'ACCESS_DENIED', null, false, 0, [{ error: 'ACCESS_DENIED' }],
-  ]))('does not infer trustworthy denial from an unexpected body', (body) => {
+  it.each(
+    singleCases([
+      {},
+      { error: 'ACCESS_DENIED ' },
+      { error: 'FORBIDDEN' },
+      { error: true },
+      'ACCESS_DENIED',
+      null,
+      false,
+      0,
+      [{ error: 'ACCESS_DENIED' }],
+    ]),
+  )('does not infer trustworthy denial from an unexpected body', (body) => {
     expectProbe(probeInput({ kind: 'deny' }, { body }), 'inconclusive');
   });
 
-  it.each([100, 200, 302, 402, 404, 500, 599])('requires an approved denial status, not %s', (status) => {
-    expectProbe(probeInput({ kind: 'deny' }, { status }), 'inconclusive');
-  });
+  it.each([100, 200, 302, 402, 404, 500, 599])(
+    'requires an approved denial status, not %s',
+    (status) => {
+      expectProbe(probeInput({ kind: 'deny' }, { status }), 'inconclusive');
+    },
+  );
 
   it('honors a valid configured denial status instead of hardcoding 401/403', () => {
     expectProbe(probeInput({ kind: 'deny' }, { status: 418, denialStatuses: [418] }), 'pass');
@@ -425,7 +536,10 @@ describe('independent contract: protected feature probe', () => {
 
   for (const body of [{ fixtureMarker: marker }, { error: 'ACCESS_DENIED', leak: marker }]) {
     it('keeps unknown expectations inconclusive even when a marker is present', () => {
-      expectProbe(probeInput({ kind: 'unknown', code: 'IDENTITY_UNRESOLVED' }, { status: 200, body }), 'inconclusive');
+      expectProbe(
+        probeInput({ kind: 'unknown', code: 'IDENTITY_UNRESOLVED' }, { status: 200, body }),
+        'inconclusive',
+      );
     });
 
     it('keeps transport errors inconclusive even when a marker is present', () => {
@@ -438,19 +552,49 @@ describe('independent contract: protected feature probe', () => {
   });
 
   it('keeps transport errors inconclusive on an otherwise valid allowance', () => {
-    expectProbe(probeInput({ kind: 'allow' }, { transportError: true, status: 200, body: { fixtureMarker: marker } }), 'inconclusive');
+    expectProbe(
+      probeInput(
+        { kind: 'allow' },
+        { transportError: true, status: 200, body: { fixtureMarker: marker } },
+      ),
+      'inconclusive',
+    );
   });
 
   it('allows an absent HTTP status only for an explicit transport failure', () => {
-    expectProbe(probeInput({ kind: 'deny' }, { transportError: true, status: null, body: null }), 'inconclusive');
-    expect(() => evaluateProbe(probeInput({ kind: 'deny' }, { transportError: false, status: null, body: null }))).toThrow();
+    expectProbe(
+      probeInput({ kind: 'deny' }, { transportError: true, status: null, body: null }),
+      'inconclusive',
+    );
+    expect(() =>
+      evaluateProbe(
+        probeInput({ kind: 'deny' }, { transportError: false, status: null, body: null }),
+      ),
+    ).toThrow();
   });
 
-  it.each([99, 600, 200.5, NaN, Infinity, '200', null, undefined])('rejects invalid HTTP status %s', (status) => {
-    expect(() => evaluateProbe(probeInput({ kind: 'deny' }, { status }))).toThrow();
-  });
+  it.each([99, 600, 200.5, NaN, Infinity, '200', null, undefined])(
+    'rejects invalid HTTP status %s',
+    (status) => {
+      expect(() => evaluateProbe(probeInput({ kind: 'deny' }, { status }))).toThrow();
+    },
+  );
 
-  it.each(singleCases([[], [403, 403], [399], [500], [200], [403.5], ['403'], [NaN], [Infinity], null, '403']))('rejects invalid denialStatuses %s', (denialStatuses) => {
+  it.each(
+    singleCases([
+      [],
+      [403, 403],
+      [399],
+      [500],
+      [200],
+      [403.5],
+      ['403'],
+      [NaN],
+      [Infinity],
+      null,
+      '403',
+    ]),
+  )('rejects invalid denialStatuses %s', (denialStatuses) => {
     expect(() => evaluateProbe(probeInput({ kind: 'deny' }, { denialStatuses }))).toThrow();
   });
 
@@ -458,11 +602,21 @@ describe('independent contract: protected feature probe', () => {
     expectProbe(probeInput({ kind: 'deny' }, { status, denialStatuses: [status] }), 'pass');
   });
 
-  it.each(['', ' ', ' padded', 'padded ', '\tvalue', 'value\n', null, undefined, 1, false])('rejects invalid fixture marker %s', (fixtureMarker) => {
-    expect(() => evaluateProbe({ ...probeInput(), fixtureMarker })).toThrow();
-  });
+  it.each(['', ' ', ' padded', 'padded ', '\tvalue', 'value\n', null, undefined, 1, false])(
+    'rejects invalid fixture marker %s',
+    (fixtureMarker) => {
+      expect(() => evaluateProbe({ ...probeInput(), fixtureMarker })).toThrow();
+    },
+  );
 
-  it.each([null, {}, { kind: 'maybe' }, { kind: 'unknown' }, { kind: 'unknown', code: 1 }, { kind: 'allow', code: 'extra' }])('rejects malformed expected access %s', (expected) => {
+  it.each([
+    null,
+    {},
+    { kind: 'maybe' },
+    { kind: 'unknown' },
+    { kind: 'unknown', code: 1 },
+    { kind: 'allow', code: 'extra' },
+  ])('rejects malformed expected access %s', (expected) => {
     expect(() => evaluateProbe(probeInput(expected))).toThrow();
   });
 
@@ -470,39 +624,60 @@ describe('independent contract: protected feature probe', () => {
     expect(() => evaluateProbe({ ...probeInput(), extra: true })).toThrow();
     expect(() => evaluateProbe(probeInput({ kind: 'deny', extra: true }))).toThrow();
     expect(() => evaluateProbe(probeInput({ kind: 'deny' }, { extra: true }))).toThrow();
-    expectProbe(probeInput({ kind: 'deny' }, { body: { error: 'ACCESS_DENIED', extra: true } }), 'pass');
+    expectProbe(
+      probeInput({ kind: 'deny' }, { body: { error: 'ACCESS_DENIED', extra: true } }),
+      'pass',
+    );
   });
 
-  it.each(['expected', 'probe', 'fixtureMarker'])('rejects missing probe-envelope field %s', (field) => {
-    const input: Record<string, unknown> = probeInput();
-    delete input[field];
-    expect(() => evaluateProbe(input)).toThrow();
-  });
+  it.each(['expected', 'probe', 'fixtureMarker'])(
+    'rejects missing probe-envelope field %s',
+    (field) => {
+      const input: Record<string, unknown> = probeInput();
+      delete input[field];
+      expect(() => evaluateProbe(input)).toThrow();
+    },
+  );
 
-  it.each(['status', 'body', 'transportError', 'denialStatuses'])('rejects missing probe field %s', (field) => {
-    const input = probeInput();
-    const probe: Record<string, unknown> = { ...input.probe };
-    delete probe[field];
-    expect(() => evaluateProbe({ ...input, probe })).toThrow();
-  });
+  it.each(['status', 'body', 'transportError', 'denialStatuses'])(
+    'rejects missing probe field %s',
+    (field) => {
+      const input = probeInput();
+      const probe: Record<string, unknown> = { ...input.probe };
+      delete probe[field];
+      expect(() => evaluateProbe({ ...input, probe })).toThrow();
+    },
+  );
 
-  it.each(singleCases([null, undefined, [], 'probe', false]))('rejects malformed probe envelope %s', (input) => {
-    expect(() => evaluateProbe(input)).toThrow();
-  });
+  it.each(singleCases([null, undefined, [], 'probe', false]))(
+    'rejects malformed probe envelope %s',
+    (input) => {
+      expect(() => evaluateProbe(input)).toThrow();
+    },
+  );
 
-  it.each([null, 0, 'false', undefined])('rejects nonboolean transportError %s', (transportError) => {
-    expect(() => evaluateProbe(probeInput({ kind: 'deny' }, { transportError }))).toThrow();
-  });
+  it.each([null, 0, 'false', undefined])(
+    'rejects nonboolean transportError %s',
+    (transportError) => {
+      expect(() => evaluateProbe(probeInput({ kind: 'deny' }, { transportError }))).toThrow();
+    },
+  );
 
   it.each([undefined, NaN, Infinity, -Infinity, () => marker, Symbol('body'), BigInt(1)])(
     'rejects non-JSON scalar bodies',
     (body) => expect(() => evaluateProbe(probeInput({ kind: 'deny' }, { body }))).toThrow(),
   );
 
-  it.each(singleCases([
-    { nested: undefined }, { nested: NaN }, { nested: Infinity },
-    { nested: () => marker }, { nested: Symbol('value') }, [undefined],
-  ]))('rejects non-JSON values nested inside a body', (body) => {
+  it.each(
+    singleCases([
+      { nested: undefined },
+      { nested: NaN },
+      { nested: Infinity },
+      { nested: () => marker },
+      { nested: Symbol('value') },
+      [undefined],
+    ]),
+  )('rejects non-JSON values nested inside a body', (body) => {
     expect(() => evaluateProbe(probeInput({ kind: 'deny' }, { body }))).toThrow();
   });
 
@@ -540,7 +715,11 @@ describe('independent contract: protected feature probe', () => {
   });
 
   it('rejects bodies whose toJSON function would hide protected data', () => {
-    const body = { error: 'ACCESS_DENIED', secret: marker, toJSON: () => ({ error: 'ACCESS_DENIED' }) };
+    const body = {
+      error: 'ACCESS_DENIED',
+      secret: marker,
+      toJSON: () => ({ error: 'ACCESS_DENIED' }),
+    };
     expect(() => evaluateProbe(probeInput({ kind: 'deny' }, { body }))).toThrow();
   });
 
@@ -555,6 +734,8 @@ describe('independent contract: protected feature probe', () => {
   });
 
   it('still validates malformed structure when the expectation is unknown', () => {
-    expect(() => evaluateProbe(probeInput({ kind: 'unknown', code: 'UNKNOWN' }, { body: undefined }))).toThrow();
+    expect(() =>
+      evaluateProbe(probeInput({ kind: 'unknown', code: 'UNKNOWN' }, { body: undefined })),
+    ).toThrow();
   });
 });

@@ -4,11 +4,13 @@ Use the current [verification record](verification-status.md) when describing wh
 
 ## Architecture
 
-TrueForge owns the persisted session, run-scoped tools, sandbox execution and approval pauses. The controller binds a run to the target build, feature configuration and immutable billing policy. API requests, actual browser actions and application-state reads produce separate observations for each scenario.
+TrueForge owns persisted sessions, run-scoped tools, sandbox execution and approval pauses. The controller binds a run to the target build, feature configuration and immutable billing policy. API requests, actual browser actions and application-state reads produce separate observations for each scenario. A completed run can start a separate skill-backed evidence review with dynamic subagents. Its two reviewers can only read the bound report and submit a bounded review receipt; they cannot change the primary verdict.
 
 The selected Luna bridge provides structured decisions through the existing Codex subscription. It has no application tools or host-test access. TrueForge executes approved proposals. Source repairs go into a restricted checkout; the evaluator and its security controls stay outside that writable checkout. Publication requires the exact verified diff and destination to be approved. There is no automatic merge or deployment.
 
 ## Record the actual workspace
+
+The [recorded walkthrough](media/paywallproof-walkthrough.mp4) is included in the repository with [SRT captions](media/paywallproof-walkthrough.srt). It runs 180.003 seconds. No account secrets or private checkout links appear; login was excluded from the recording.
 
 After a successful `pnpm exec tsx scripts/verify-local-workflow.ts`, with the local app running:
 
@@ -22,9 +24,9 @@ Outputs are under `.local/submission/<timestamp>/`: an MP4 with a default subtit
 
 ## Organizer requirements still to confirm
 
-- A representative reviewed PR must be merged. The existing permission covers pushing source for Qodo review, not merging or deploying.
+- A representative reviewed PR must pass Qodo review and be merged. The owner has authorized that review-and-merge workflow; production deployment remains out of scope.
 - Original project code is under the [MIT license](../LICENSE). Dependencies retain their own licenses and notices.
-- Supply the actual video file or an approved public video URL. A local file does not create a hosted submission link.
+- Supply the committed video link in the hackathon submission. The repository copy needs no paid video hosting.
 - Keep sandbox tokens, operator credentials, customer email and private checkout links out of the repository and recording.
 
 The owner must be able to explain the implementation and its limitations. Codex assistance and the distinction between independent tests and implementation-aware regressions are disclosed in the README.

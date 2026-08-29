@@ -4,7 +4,7 @@ Version 2. These contracts are written before product implementation. They defin
 
 ## First boundary: policy and result evaluation
 
-The public module will be `packages/core/src/index.ts`. It exports these functions:
+The public module is `src/domain/index.ts`. It exports these functions:
 
 ### createPolicy(input)
 

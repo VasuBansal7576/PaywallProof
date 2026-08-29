@@ -1,6 +1,6 @@
 # Frozen repair replay contract
 
-The trusted host owns `packages/repair/src/oracle.ts`. Its code and test evaluator are never transferred into writable target files. No function in this module calls the Polar API.
+The trusted host owns `src/repair/oracle.ts`. Its code and test evaluator are never transferred into writable target files. No function in this module calls the Polar API.
 
 `createRepairReplayPlan({runId,targetBuild,policy,observations})` accepts the original run identity, its exact target build, its immutable validated AccessPolicy, and recorded Observation values as defined in the evidence contract. It returns a detached plan with schemaVersion2, mode `local_replay`, a fresh UUID runId, the original policyHash, fresh UUID free/paid fixture markers, and `states` with Billing values for SC01 through SC04.
 

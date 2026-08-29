@@ -1,6 +1,6 @@
 # Local replay adapter contract
 
-`packages/adapters/src/replay.ts` exports `LocalReplayAdapter`. This is synthetic billing replay, never Stripe retrieval or verification.
+`src/integrations/replay.ts` exports `LocalReplayAdapter`. This is synthetic billing replay, never Stripe retrieval or verification.
 
 Construct with trusted `{databasePath,priceId,adapterToken,replaySecret,transport,beforeMutation?}`. `transport` is a real `TargetTransport` from the network contract pointed at an explicitly authorized local target. `beforeMutation(runId)` runs immediately before each signed target request and may reject it. No Stripe API or key is accepted.
 

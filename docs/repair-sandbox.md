@@ -1,6 +1,6 @@
 # Repair sandbox runner contract
 
-`packages/repair/src/sandbox.ts` exports `RepairSandboxRunner`, `SandboxRunError`, and their input/result types. This module does not create repair verification receipts, approve publication, or call GitHub or a billing provider. Only the trusted controller may construct its inputs.
+`src/repair/sandbox.ts` exports `RepairSandboxRunner`, `SandboxRunError`, and their input/result types. This module does not create repair verification receipts, approve publication, or call GitHub or a billing provider. Only the trusted controller may construct its inputs.
 
 ```ts
 const runner = new RepairSandboxRunner({ baseUrl?, model?, nodeExecutable?,
@@ -51,7 +51,7 @@ For negative authorization controls, the bridge also forwards the single fixed h
 
 ## Trusted reference launcher
 
-`packages/repair/src/launcher.ts` exports `createReferenceLauncher({ buildId, priceId })`, returning `{ file: SandboxFile, fixedCommand: FixedSandboxCommand }`. `file` is `_trusted/reference.cjs` with role `launcher`; the command is `{ interpreter: 'node', script: '_trusted/reference.cjs' }`. `buildId` must be a lowercase 40-character Git commit and `priceId` a Polar UUID or a local replay `price_` identifier followed by 1–200 alphanumeric/underscore characters. The factory generates deterministic bytes; it does not read, import, or execute target code on the host.
+`src/repair/launcher.ts` exports `createReferenceLauncher({ buildId, priceId })`, returning `{ file: SandboxFile, fixedCommand: FixedSandboxCommand }`. `file` is `_trusted/reference.cjs` with role `launcher`; the command is `{ interpreter: 'node', script: '_trusted/reference.cjs' }`. `buildId` must be a lowercase 40-character Git commit and `priceId` a Polar UUID or a local replay `price_` identifier followed by 1–200 alphanumeric/underscore characters. The factory generates deterministic bytes; it does not read, import, or execute target code on the host.
 
 Add the returned file to the exact source/dependency payload and pass the returned command to `run` with a reverse-HTTP target. The launcher uses the actual transferred Next application through `next({ dev: true, webpack: true, dir, hostname: 'sandbox.invalid', port: 3001 })`, `app.prepare()`, and `app.getRequestHandler()`. It never calls `listen()`. Development mode preserves the reference application's staging hooks. The bridge module is resolved from the operation workspace, not from the `_trusted` directory. `app.close()` runs after bridge completion or failure.
 

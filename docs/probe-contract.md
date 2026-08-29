@@ -1,6 +1,6 @@
 # Shared scenario collection contract
 
-`packages/evidence/src/probe.ts` exports `observeScenario(options)`. Both original and repaired targets use this same trusted orchestration, with unchanged policy and evidence evaluation. The target cannot replace this module.
+`src/evidence/probe.ts` exports `observeScenario(options)`. Both original and repaired targets use this same trusted orchestration, with unchanged policy and evidence evaluation. The target cannot replace this module.
 
 Options are `scenarioId`, `policy`, `billing`, `collect`, and optional trusted `assertActive`, `now`, and `wait` callbacks. `scenarioId` is SC01 through SC04; `policy` is a validated AccessPolicy. `billing()` returns a Billing snapshot. `collect(notBefore)` returns an EvidenceEvaluation from actual provider, application, API and browser observations. `assertActive()` throws when authorization or the deadline no longer permits work. `now()` returns Unix milliseconds and defaults to Date.now; `wait(milliseconds)` defaults to a real asynchronous timer. Injected clocks are only a test boundary, never input accepted from the model or HTTP.
 

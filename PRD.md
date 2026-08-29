@@ -12,8 +12,6 @@ Working name: PaywallProof. Name availability has not been checked.
 
 **August 29 model decision:** The owner selected Luna through the existing Codex subscription. The [subscription bridge](docs/codex-subscription.md) must require ChatGPT authentication, included quota, zero extra credits, a pinned Luna model and no paid fallback. Codex proposes actions without host environment access; TrueForge retains execution and approval enforcement. Host tests and the independent repair evaluator remain unavailable to the generator. Consent must disclose OpenAI processing and subscription usage. No capability is removed.
 
-**August 28 model decision (retained alternative):** Ollama is not required and must not be restored on the owner's Mac. A free hosted model may supply inference through the [zero-price policy gateway](docs/free-model.md). Require a dedicated $0-capped key including BYOK usage, current zero-price checks, no paid fallback, explicit remote-processing consent and unchanged evidence/repair acceptance. TrueForge, Qodo and all product capabilities remain required. Local sandbox execution is separate from model inference. North Mini Code now passes actual hosted inference, sandbox execution and approval-transport probes. That installation evidence does not establish generated-repair or provider-lifecycle acceptance.
-
 > Check whether your SaaS gives the right people access to paid features. Reproduce failures, show the evidence, and propose a tested repair.
 
 ### How to read this document
@@ -86,20 +84,20 @@ Existing tools already automate checkout tests. PaywallProof's proposed focus is
 
 ### 2.1 Fixed MVP decisions
 
-| Decision | MVP choice | Reason |
-| --- | --- | --- |
-| Billing provider | Polar sandbox only | Supports real test objects and subscription simulations without moving funds |
-| Account model | One isolated Polar sandbox organization | Bind organization, product, price and run-owned resources |
-| Application | Next.js and TypeScript reference integration | Keeps code inspection and repair bounded |
-| Plans | Free and one monthly Pro plan | Sufficient to expose incorrect grants and incorrect denials |
-| Protected feature | One real API-backed feature | Gives the checker an observable outcome |
-| Authentication | Ordinary test-user sessions through a staging adapter | Admin credentials must not influence access probes |
-| Test control | One run at a time per project | Avoid conflicting fixtures, patches, and period changes |
-| Agent runtime | TrueForge, with the official TypeScript SDK | Required by the hackathon |
-| Generated-code execution | TrueForge's verified local sandbox provider, or Daytona with independently confirmed no-charge access | Preserve generated-code isolation and verify the actual runtime boundary |
-| Development review | Qodo on every substantive GitHub PR | Required by the hackathon |
-| Product deployment | Single operator, local/private control interface | Public multi-tenant operation is outside the MVP |
-| Finding publication | Local report first, GitHub PR only with approval | A scan must remain useful without write permission |
+| Decision                 | MVP choice                                                                                            | Reason                                                                       |
+| ------------------------ | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Billing provider         | Polar sandbox only                                                                                    | Supports real test objects and subscription simulations without moving funds |
+| Account model            | One isolated Polar sandbox organization                                                               | Bind organization, product, price and run-owned resources                    |
+| Application              | Next.js and TypeScript reference integration                                                          | Keeps code inspection and repair bounded                                     |
+| Plans                    | Free and one monthly Pro plan                                                                         | Sufficient to expose incorrect grants and incorrect denials                  |
+| Protected feature        | One real API-backed feature                                                                           | Gives the checker an observable outcome                                      |
+| Authentication           | Ordinary test-user sessions through a staging adapter                                                 | Admin credentials must not influence access probes                           |
+| Test control             | One run at a time per project                                                                         | Avoid conflicting fixtures, patches, and period changes                      |
+| Agent runtime            | TrueForge, with the official TypeScript SDK                                                           | Required by the hackathon                                                    |
+| Generated-code execution | TrueForge's verified local sandbox provider, or Daytona with independently confirmed no-charge access | Preserve generated-code isolation and verify the actual runtime boundary     |
+| Development review       | Qodo on every substantive GitHub PR                                                                   | Required by the hackathon                                                    |
+| Product deployment       | Single operator, local/private control interface                                                      | Public multi-tenant operation is outside the MVP                             |
+| Finding publication      | Local report first, GitHub PR only with approval                                                      | A scan must remain useful without write permission                           |
 
 Polar's test infrastructure does not move funds. TrueForge's sandbox documentation describes Daytona; its pinned 0.1.4 release also supplies a local provider based on sandbox-runtime. The local option adds a permitted provider without removing sandbox execution, credential separation, network isolation, or acceptance requirements. Installation probes alone do not complete product acceptance. See [the provider decision and evidence](docs/decisions.md). [Polar](https://polar.sh/docs/integrate/sandbox) · [TrueForge](https://trueforge.dev/sandbox)
 
@@ -150,14 +148,14 @@ Show the test plan and its permitted side effects before execution. Approval aut
 
 The run screen shows a short task timeline, not a wall of model reasoning:
 
-| Stage | Example visible message |
-| --- | --- |
-| Preparing | "Creating run-owned users and a Polar sandbox customer" |
-| Waiting | "Polar has canceled the subscription. Waiting for the app to update" |
-| Checking | "Calling the protected export endpoint as the canceled user" |
-| Finding | "The export succeeded, but the approved policy requires denial" |
-| Needs approval | "Publish this tested patch to a new branch?" |
-| Blocked | "The webhook endpoint is unreachable. Access could not be evaluated" |
+| Stage          | Example visible message                                              |
+| -------------- | -------------------------------------------------------------------- |
+| Preparing      | "Creating run-owned users and a Polar sandbox customer"              |
+| Waiting        | "Polar has canceled the subscription. Waiting for the app to update" |
+| Checking       | "Calling the protected export endpoint as the canceled user"         |
+| Finding        | "The export succeeded, but the approved policy requires denial"      |
+| Needs approval | "Publish this tested patch to a new branch?"                         |
+| Blocked        | "The webhook endpoint is unreachable. Access could not be evaluated" |
 
 The user can stop the run. Reloading the page reconnects to the same run. It MUST NOT create another subscription or start another agent turn just to restore the display.
 
@@ -189,12 +187,12 @@ The owner separately approves **Publish PR**. Publishing does not merge the PR o
 
 ### 3.6 Screen inventory
 
-| Screen | Required content |
-| --- | --- |
-| Project setup | Connections, target identity, capability checks, ownership confirmation |
-| Policy and plan | Plain-language rules, feature mapping, permitted side effects, approve or cancel |
-| Run | Scenario rows, progress, period boundary, elapsed time, stop, reconnect status, pending approvals |
-| Finding and repair | Expected and actual behavior, evidence, reproduction, diff, checks, publication state |
+| Screen             | Required content                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------- |
+| Project setup      | Connections, target identity, capability checks, ownership confirmation                           |
+| Policy and plan    | Plain-language rules, feature mapping, permitted side effects, approve or cancel                  |
+| Run                | Scenario rows, progress, period boundary, elapsed time, stop, reconnect status, pending approvals |
+| Finding and repair | Expected and actual behavior, evidence, reproduction, diff, checks, publication state             |
 
 Use text and icons as well as color. Keep controls keyboard accessible. Collapse raw traces by default. Show "Untested", "Inconclusive", and "Blocked" as distinct labels.
 
@@ -213,24 +211,24 @@ UI verification covers the real local workspace plus separately intercepted, non
 
 ## 4. Product requirements
 
-| ID | Requirement | Completion evidence |
-| --- | --- | --- |
-| R01 | Verify target ownership, connection identity, adapter capability, and Polar sandbox before mutations | Preflight report with explicit failures and no writes on failure |
-| R02 | Save an immutable, owner-approved policy and plan | Policy hash and approval attached to every run |
-| R03 | Create only isolated test fixtures with recorded ownership | Resource inventory maps every created object to a run |
-| R04 | Execute the core lifecycle scenarios against real Polar test objects | Polar receipts and application observations for SC01 through SC04 |
-| R05 | Probe the protected API as a normal user and verify browser behavior | User-scoped API evidence and screenshots, with no admin bypass |
-| R06 | Compute verdicts from deterministic predicates | Unit tests reject missing, stale, or contradictory evidence |
-| R07 | Keep the runtime and run display recoverable | Reconnect test does not duplicate external actions |
-| R08 | Respect approvals, cancellation, and execution limits | Denied and expired approvals cause no new write |
-| R09 | Produce a useful report without requiring repository write access | Downloadable Markdown and JSON report |
-| R10 | Prepare a bounded patch and retest it in isolation | Diff hash, before and after evidence, and regression results |
-| R11 | Publish a PR only after approval of the exact patch and destination | PR URL verified by a subsequent provider read |
-| R12 | Clean up only run-owned fixtures and disclose leftovers | Cleanup receipts or a precise unresolved-resource list |
-| R13 | Use TrueForge for real tool orchestration, sandbox work, approvals, and session continuation | Runtime trace and integration tests |
-| R14 | Carry a meaningful Qodo development review trail | Public merged PR, decisions, and review against final code |
-| R15 | Disclose coverage, execution mode, versions, and limitations | Report distinguishes live sandbox, local replay, and untested cases |
-| R16 | Remain usable on a passing application and when infrastructure fails | Known-good, known-bad, and unavailable-target acceptance tests |
+| ID  | Requirement                                                                                          | Completion evidence                                                 |
+| --- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| R01 | Verify target ownership, connection identity, adapter capability, and Polar sandbox before mutations | Preflight report with explicit failures and no writes on failure    |
+| R02 | Save an immutable, owner-approved policy and plan                                                    | Policy hash and approval attached to every run                      |
+| R03 | Create only isolated test fixtures with recorded ownership                                           | Resource inventory maps every created object to a run               |
+| R04 | Execute the core lifecycle scenarios against real Polar test objects                                 | Polar receipts and application observations for SC01 through SC04   |
+| R05 | Probe the protected API as a normal user and verify browser behavior                                 | User-scoped API evidence and screenshots, with no admin bypass      |
+| R06 | Compute verdicts from deterministic predicates                                                       | Unit tests reject missing, stale, or contradictory evidence         |
+| R07 | Keep the runtime and run display recoverable                                                         | Reconnect test does not duplicate external actions                  |
+| R08 | Respect approvals, cancellation, and execution limits                                                | Denied and expired approvals cause no new write                     |
+| R09 | Produce a useful report without requiring repository write access                                    | Downloadable Markdown and JSON report                               |
+| R10 | Prepare a bounded patch and retest it in isolation                                                   | Diff hash, before and after evidence, and regression results        |
+| R11 | Publish a PR only after approval of the exact patch and destination                                  | PR URL verified by a subsequent provider read                       |
+| R12 | Clean up only run-owned fixtures and disclose leftovers                                              | Cleanup receipts or a precise unresolved-resource list              |
+| R13 | Use TrueForge for real tool orchestration, sandbox work, approvals, and session continuation         | Runtime trace and integration tests                                 |
+| R14 | Carry a meaningful Qodo development review trail                                                     | Public merged PR, decisions, and review against final code          |
+| R15 | Disclose coverage, execution mode, versions, and limitations                                         | Report distinguishes live sandbox, local replay, and untested cases |
+| R16 | Remain usable on a passing application and when infrastructure fails                                 | Known-good, known-bad, and unavailable-target acceptance tests      |
 
 ## 5. Access policy and result rules
 
@@ -250,13 +248,13 @@ The evaluator accepts observation IDs from the authoritative store, never model-
 
 The owner approves these rules for one Pro price and one feature:
 
-| Condition | Expected protected access |
-| --- | --- |
-| Authenticated user has no subscription | Deny |
-| Subscription for the configured price is active and the initial order is paid | Allow |
-| That subscription is active with cancellation scheduled for period end, before the boundary | Allow |
-| That subscription has reached its cancellation boundary and Polar confirms canceled | Deny |
-| Subscription status, payment state, identity mapping, or time basis cannot be resolved | Unknown, not deny and not allow |
+| Condition                                                                                   | Expected protected access       |
+| ------------------------------------------------------------------------------------------- | ------------------------------- |
+| Authenticated user has no subscription                                                      | Deny                            |
+| Subscription for the configured price is active and the initial order is paid               | Allow                           |
+| That subscription is active with cancellation scheduled for period end, before the boundary | Allow                           |
+| That subscription has reached its cancellation boundary and Polar confirms canceled         | Deny                            |
+| Subscription status, payment state, identity mapping, or time basis cannot be resolved      | Unknown, not deny and not allow |
 
 Unknown cases produce `inconclusive` or `unsupported`, as defined below. The checker must not copy the target application's entitlement function as its oracle.
 
@@ -278,13 +276,13 @@ The default application synchronization window is 60 real seconds after Polar co
 
 Assertions use exactly these verdicts:
 
-| Verdict | Meaning |
-| --- | --- |
-| `pass` | Required evidence is fresh, complete, correctly scoped, and satisfies the predicate |
-| `fail` | A supported expectation and trustworthy observations contradict each other |
-| `inconclusive` | The scenario ran, but evidence cannot establish an outcome |
-| `unsupported` | A required capability or policy is outside the implemented contract |
-| `skipped` | The scenario was not attempted, with a recorded reason |
+| Verdict        | Meaning                                                                             |
+| -------------- | ----------------------------------------------------------------------------------- |
+| `pass`         | Required evidence is fresh, complete, correctly scoped, and satisfies the predicate |
+| `fail`         | A supported expectation and trustworthy observations contradict each other          |
+| `inconclusive` | The scenario ran, but evidence cannot establish an outcome                          |
+| `unsupported`  | A required capability or policy is outside the implemented contract                 |
+| `skipped`      | The scenario was not attempted, with a recorded reason                              |
 
 Run outcome is `failed` if any assertion fails, `inconclusive` if any required assertion lacks a pass and none fails, and `passed` only if every required assertion passes. Always show counts and coverage beside the outcome.
 
@@ -298,12 +296,12 @@ Severity is based on the observed behavior. Incorrect protected access is high. 
 
 The first implementation uses an API-backed Pro export. The allowed response contains a run-specific fixture marker. A denial must follow the target adapter's approved response contract and must not contain protected data. HTTP 200 alone never proves success.
 
-| ID | Setup and action | Expected result | Required observations |
-| --- | --- | --- | --- |
-| SC01 | Create an authenticated free test user with no subscription; request the Pro feature | API denies; UI offers upgrade or denies the action | Identity receipt, no-subscription baseline, API response, UI evidence |
+| ID   | Setup and action                                                                                                                                                  | Expected result                                                                          | Required observations                                                                    |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| SC01 | Create an authenticated free test user with no subscription; request the Pro feature                                                                              | API denies; UI offers upgrade or denies the action                                       | Identity receipt, no-subscription baseline, API response, UI evidence                    |
 | SC02 | Create a run-owned sandbox customer; link it to a fresh app user; complete one paid monthly sandbox checkout, then shorten its real period before collecting SC02 | After confirmed active status and paid initial order, API allows; UI can use the feature | Polar customer/subscription/initial order, application snapshot, API marker, UI evidence |
-| SC03 | Set `cancel_at_period_end` on SC02's subscription; check access before the period boundary | Access remains available while the paid period continues | Fresh subscription and observation time, application snapshot, API and UI evidence |
-| SC04 | Wait beyond the recorded real period boundary and require Polar to confirm cancellation | After the synchronization window, API denies and UI reflects loss of access | Real boundary crossed, canceled subscription, application snapshot, API and UI evidence |
+| SC03 | Set `cancel_at_period_end` on SC02's subscription; check access before the period boundary                                                                        | Access remains available while the paid period continues                                 | Fresh subscription and observation time, application snapshot, API and UI evidence       |
+| SC04 | Wait beyond the recorded real period boundary and require Polar to confirm cancellation                                                                           | After the synchronization window, API denies and UI reflects loss of access              | Real boundary crossed, canceled subscription, application snapshot, API and UI evidence  |
 
 SC02 through SC04 are an ordered lifecycle on one customer. If an earlier state cannot be established, mark later scenarios skipped with the blocking dependency. Do not reuse these mutated fixtures for a rerun. Create a new lifecycle.
 
@@ -323,13 +321,13 @@ The target's real `/api/polar/webhook` must receive Polar events and verify Stan
 
 ### 6.3 Extension scenarios, not MVP requirements
 
-| ID | Later scenario | Additional capability required |
-| --- | --- | --- |
-| EX01 | Duplicate delivery does not repeat a grant or notification | Delivery control and a meaningful side-effect counter |
-| EX02 | An old event cannot restore access after cancellation | Ordered capture and replay, plus current-state reconciliation |
-| EX03 | Trial expiry changes access correctly | An approved trial policy and equivalent billing time in the app |
-| EX04 | Failed renewal follows the owner's grace-period rule | Invoice failure simulation, recovery settings, and grace policy |
-| EX05 | Upgrade and downgrade change individual features | Multiple price mappings and proration policy |
+| ID   | Later scenario                                             | Additional capability required                                  |
+| ---- | ---------------------------------------------------------- | --------------------------------------------------------------- |
+| EX01 | Duplicate delivery does not repeat a grant or notification | Delivery control and a meaningful side-effect counter           |
+| EX02 | An old event cannot restore access after cancellation      | Ordered capture and replay, plus current-state reconciliation   |
+| EX03 | Trial expiry changes access correctly                      | An approved trial policy and equivalent billing time in the app |
+| EX04 | Failed renewal follows the owner's grace-period rule       | Invoice failure simulation, recovery settings, and grace policy |
+| EX05 | Upgrade and downgrade change individual features           | Multiple price mappings and proration policy                    |
 
 Polar does not guarantee event delivery order, and duplicate deliveries can occur. Do not implement simplistic deduplication by subscription ID plus event type, which would discard legitimate later updates. [Webhook behavior](https://polar.sh/docs/integrate/webhooks/delivery)
 
@@ -405,19 +403,19 @@ The evidence store owns reports. Neither a repository file nor a model tool resp
 
 ### 8.1 Domain terms
 
-| Entity | Meaning and required fields |
-| --- | --- |
-| Project | Owner, repository identity, default ref, staging origin, adapter ID, connection references |
-| Policy | Immutable version, approved access rules, feature predicate, price ID, sync window, hash |
-| Run | Project, policy hash, target commit/build, execution mode, status, outcome, limits, timestamps |
-| Scenario | Catalogue ID, run ID, dependency IDs, stage, assertion IDs |
-| Operation | Stable logical ID, run ID, kind, arguments hash, state, provider receipt, retry data |
-| Resource | Provider ID, parent IDs, run ownership, mode, creation operation, cleanup state |
-| Observation | Source, subject, real time, billing time, content hash, redacted payload reference |
-| Assertion | Expected predicate, observation IDs, verdict, reason code |
-| Finding | Failing assertion IDs, severity, observed impact, reproduction, diagnosis status |
-| Approval | Actor, action scope, arguments hash, target/base commit, expiry, decision, consumed operation |
-| PatchAttempt | Base commit, diff hash, allowed paths, checks, before/after evidence, publication state |
+| Entity       | Meaning and required fields                                                                    |
+| ------------ | ---------------------------------------------------------------------------------------------- |
+| Project      | Owner, repository identity, default ref, staging origin, adapter ID, connection references     |
+| Policy       | Immutable version, approved access rules, feature predicate, price ID, sync window, hash       |
+| Run          | Project, policy hash, target commit/build, execution mode, status, outcome, limits, timestamps |
+| Scenario     | Catalogue ID, run ID, dependency IDs, stage, assertion IDs                                     |
+| Operation    | Stable logical ID, run ID, kind, arguments hash, state, provider receipt, retry data           |
+| Resource     | Provider ID, parent IDs, run ownership, mode, creation operation, cleanup state                |
+| Observation  | Source, subject, real time, billing time, content hash, redacted payload reference             |
+| Assertion    | Expected predicate, observation IDs, verdict, reason code                                      |
+| Finding      | Failing assertion IDs, severity, observed impact, reproduction, diagnosis status               |
+| Approval     | Actor, action scope, arguments hash, target/base commit, expiry, decision, consumed operation  |
+| PatchAttempt | Base commit, diff hash, allowed paths, checks, before/after evidence, publication state        |
 
 ### 8.2 Core TypeScript contracts
 
@@ -427,49 +425,56 @@ Implement these project contracts with runtime schemas. Use ISO 8601 for real ti
 type Verdict = 'pass' | 'fail' | 'inconclusive' | 'unsupported' | 'skipped';
 type RunOutcome = 'passed' | 'failed' | 'inconclusive';
 type RunStatus =
-	| 'draft' | 'preflight' | 'awaiting_plan_approval' | 'running'
-	| 'awaiting_action_approval' | 'stopping' | 'completed'
-	| 'blocked' | 'canceled' | 'error';
+  | 'draft'
+  | 'preflight'
+  | 'awaiting_plan_approval'
+  | 'running'
+  | 'awaiting_action_approval'
+  | 'stopping'
+  | 'completed'
+  | 'blocked'
+  | 'canceled'
+  | 'error';
 
 interface AccessPolicy {
-	readonly schemaVersion: 2;
-	readonly priceId: string;
-	readonly featureId: string;
-	readonly cancellation: 'allow_until_period_end';
-	readonly requireInitialPaymentConfirmed: true;
-	readonly syncWindowSeconds: number;
-	readonly predicateVersion: string;
-	readonly hash: string;
+  readonly schemaVersion: 2;
+  readonly priceId: string;
+  readonly featureId: string;
+  readonly cancellation: 'allow_until_period_end';
+  readonly requireInitialPaymentConfirmed: true;
+  readonly syncWindowSeconds: number;
+  readonly predicateVersion: string;
+  readonly hash: string;
 }
 
 interface ObservationRef {
-	readonly id: string;
-	readonly runId: string;
-	readonly scenarioId: string;
-	readonly subjectId: string;
-	readonly source: 'billing_provider' | 'application' | 'api_probe' | 'browser';
-	readonly observedAt: string;
-	readonly billingTime: number | null;
-	readonly sha256: string;
-	readonly artifactId: string;
+  readonly id: string;
+  readonly runId: string;
+  readonly scenarioId: string;
+  readonly subjectId: string;
+  readonly source: 'billing_provider' | 'application' | 'api_probe' | 'browser';
+  readonly observedAt: string;
+  readonly billingTime: number | null;
+  readonly sha256: string;
+  readonly artifactId: string;
 }
 
 type AssertionResult =
-	| { verdict: 'pass'; observationIds: readonly string[] }
-	| { verdict: 'fail'; code: string; observationIds: readonly string[] }
-	| { verdict: 'inconclusive' | 'unsupported' | 'skipped'; code: string; reason: string };
+  | { verdict: 'pass'; observationIds: readonly string[] }
+  | { verdict: 'fail'; code: string; observationIds: readonly string[] }
+  | { verdict: 'inconclusive' | 'unsupported' | 'skipped'; code: string; reason: string };
 
 interface RunRecord {
-	readonly id: string;
-	readonly projectId: string;
-	readonly policyHash: string;
-	readonly targetCommit: string;
-	readonly mode: 'polar_sandbox' | 'local_replay';
-	readonly status: RunStatus;
-	readonly outcome: RunOutcome | null;
-	readonly trueforgeSessionId: string | null;
-	readonly trueforgeTurnId: string | null;
-	readonly lastSequenceNumber: number | null;
+  readonly id: string;
+  readonly projectId: string;
+  readonly policyHash: string;
+  readonly targetCommit: string;
+  readonly mode: 'polar_sandbox' | 'local_replay';
+  readonly status: RunStatus;
+  readonly outcome: RunOutcome | null;
+  readonly trueforgeSessionId: string | null;
+  readonly trueforgeTurnId: string | null;
+  readonly lastSequenceNumber: number | null;
 }
 ```
 
@@ -505,19 +510,19 @@ Use error codes including `LIVE_MODE_REJECTED`, `OWNERSHIP_MISMATCH`, `APPROVAL_
 
 ### 9.2 Restricted tool catalogue
 
-| Tool | Allowed work | Write authorization |
-| --- | --- | --- |
-| `inspect_project` | Read allowlisted source and validated target metadata | None beyond project read consent |
-| `check_connections` | Read sandbox resource, adapter capability, and provider identity | No provider mutation |
-| `prepare_fixture` | Create run-owned users and a sandbox customer; link identity | Approved test plan |
-| `change_test_subscription` | Create one subscription or schedule period-end cancellation on run-owned resources | Approved test plan |
-| `await_period_end` | Wait for the frozen real period end and confirmed provider cancellation | Approved test plan |
-| `observe_billing` | Read run-owned Polar objects and normalized application state | Read scope |
-| `probe_feature` | Execute the approved API/browser probe as the test user | Approved test plan and feature scope |
-| `evaluate_assertions` | Execute pure predicates on authoritative observations | No external mutation |
-| `prepare_repair` | Generate a patch in a disposable checkout and run checks | Owner's explicit repair request |
-| `publish_repair_pr` | Push the approved diff to a new branch and create or recover its PR | Fresh approval of exact destination and diff |
-| `cleanup_run` | Remove or cancel only inventoried test resources | Cleanup permission in approved test plan |
+| Tool                       | Allowed work                                                                       | Write authorization                          |
+| -------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------- |
+| `inspect_project`          | Read allowlisted source and validated target metadata                              | None beyond project read consent             |
+| `check_connections`        | Read sandbox resource, adapter capability, and provider identity                   | No provider mutation                         |
+| `prepare_fixture`          | Create run-owned users and a sandbox customer; link identity                       | Approved test plan                           |
+| `change_test_subscription` | Create one subscription or schedule period-end cancellation on run-owned resources | Approved test plan                           |
+| `await_period_end`         | Wait for the frozen real period end and confirmed provider cancellation            | Approved test plan                           |
+| `observe_billing`          | Read run-owned Polar objects and normalized application state                      | Read scope                                   |
+| `probe_feature`            | Execute the approved API/browser probe as the test user                            | Approved test plan and feature scope         |
+| `evaluate_assertions`      | Execute pure predicates on authoritative observations                              | No external mutation                         |
+| `prepare_repair`           | Generate a patch in a disposable checkout and run checks                           | Owner's explicit repair request              |
+| `publish_repair_pr`        | Push the approved diff to a new branch and create or recover its PR                | Fresh approval of exact destination and diff |
+| `cleanup_run`              | Remove or cancel only inventoried test resources                                   | Cleanup permission in approved test plan     |
 
 Expose no tool that sets a test user's paid plan directly during the core scenarios. That would bypass the behavior being tested.
 
@@ -525,15 +530,15 @@ Expose no tool that sets a test user's paid plan directly during the core scenar
 
 The target adapter MUST provide these capabilities:
 
-| Capability | Contract |
-| --- | --- |
-| `describeTarget` | Build/commit identity, adapter version, environment marker, feature IDs, supported billing-time model |
-| `createTestUser` | Create a new run-owned ordinary user and fixture data; return an opaque principal reference |
-| `linkCustomer` | Bind the new user to the run-owned customer before subscription events arrive; never set entitlement |
-| `getUserSession` | Create a short-lived ordinary-user session; return it only to the trusted browser/API runner |
-| `readBillingSnapshot` | Read user/customer mapping and stored billing state; make no repair or synchronization writes |
-| `describeFeatureProbe` | Approved method, route, input, allow predicate, denial predicate, and browser steps |
-| `cleanupTestUser` | Remove only this run's users and data according to the approved scope |
+| Capability             | Contract                                                                                              |
+| ---------------------- | ----------------------------------------------------------------------------------------------------- |
+| `describeTarget`       | Build/commit identity, adapter version, environment marker, feature IDs, supported billing-time model |
+| `createTestUser`       | Create a new run-owned ordinary user and fixture data; return an opaque principal reference           |
+| `linkCustomer`         | Bind the new user to the run-owned customer before subscription events arrive; never set entitlement  |
+| `getUserSession`       | Create a short-lived ordinary-user session; return it only to the trusted browser/API runner          |
+| `readBillingSnapshot`  | Read user/customer mapping and stored billing state; make no repair or synchronization writes         |
+| `describeFeatureProbe` | Approved method, route, input, allow predicate, denial predicate, and browser steps                   |
+| `cleanupTestUser`      | Remove only this run's users and data according to the approved scope                                 |
 
 Only the reference adapter's fixed implementation is supported automatically. User-supplied executable adapters require operator review; the model cannot install one from an untrusted repository.
 
@@ -553,18 +558,18 @@ Record stable mutation intents before dispatch and owned resources after verifie
 
 ### 9.5 Product HTTP API
 
-| Method and route | Purpose |
-| --- | --- |
-| `POST /api/projects` | Save validated project and connection references |
-| `POST /api/projects/:id/preflight` | Run read-only capability and safety checks |
-| `POST /api/projects/:id/policies` | Save a proposed immutable policy version |
-| `POST /api/runs` | Create a run for a policy and target commit |
-| `GET /api/runs/:id` | Return persisted status, assertions, and pending approvals |
-| `GET /api/runs/:id/events` | Stream product events with a resumable cursor |
-| `POST /api/runs/:id/approvals/:approvalId` | Approve or deny the exact pending action |
-| `POST /api/runs/:id/cancel` | Request stop and bounded cleanup |
-| `POST /api/runs/:id/repairs` | Request a new isolated repair attempt |
-| `GET /api/runs/:id/report` | Download Markdown or JSON with evidence references |
+| Method and route                           | Purpose                                                    |
+| ------------------------------------------ | ---------------------------------------------------------- |
+| `POST /api/projects`                       | Save validated project and connection references           |
+| `POST /api/projects/:id/preflight`         | Run read-only capability and safety checks                 |
+| `POST /api/projects/:id/policies`          | Save a proposed immutable policy version                   |
+| `POST /api/runs`                           | Create a run for a policy and target commit                |
+| `GET /api/runs/:id`                        | Return persisted status, assertions, and pending approvals |
+| `GET /api/runs/:id/events`                 | Stream product events with a resumable cursor              |
+| `POST /api/runs/:id/approvals/:approvalId` | Approve or deny the exact pending action                   |
+| `POST /api/runs/:id/cancel`                | Request stop and bounded cleanup                           |
+| `POST /api/runs/:id/repairs`               | Request a new isolated repair attempt                      |
+| `GET /api/runs/:id/report`                 | Download Markdown or JSON with evidence references         |
 
 Mutation endpoints require an authenticated operator, CSRF protection for browser sessions, and a client request ID for duplicate submission handling. Return `409` for a conflicting active run or stale approval. Return typed validation errors for invalid policy and adapter inputs.
 
@@ -622,20 +627,20 @@ If a generated repair PR also receives Qodo review, show that as extra evidence.
 
 ### 11.1 Non-negotiable controls
 
-| ID | Control |
-| --- | --- |
-| S01 | Reject live billing mode before mutations and on every relevant resource read |
-| S02 | Act only on configured targets owned or explicitly authorized by the operator |
-| S03 | Mutate only run-owned Polar resources and run-owned target users |
-| S04 | Separate ordinary-user access probes from privileged inspection and fixture provisioning |
+| ID  | Control                                                                                          |
+| --- | ------------------------------------------------------------------------------------------------ |
+| S01 | Reject live billing mode before mutations and on every relevant resource read                    |
+| S02 | Act only on configured targets owned or explicitly authorized by the operator                    |
+| S03 | Mutate only run-owned Polar resources and run-owned target users                                 |
+| S04 | Separate ordinary-user access probes from privileged inspection and fixture provisioning         |
 | S05 | Keep provider secrets out of prompts, evidence, generated code, source control, and public demos |
-| S06 | Require server-validated, scope-bound approval for the test plan and each PR publication |
-| S07 | Reject approval after its policy, target, base commit, diff, or arguments change |
-| S08 | Never merge or deploy a repair automatically |
-| S09 | Execute repository code in a disposable sandbox with restricted filesystem and network access |
-| S10 | Enforce deadlines, operation limits, and cancellation outside the model |
-| S11 | Treat repository text, tool output, and web content as untrusted data, never authorization |
-| S12 | Preserve signature verification on real Polar webhook paths and use the raw request body |
+| S06 | Require server-validated, scope-bound approval for the test plan and each PR publication         |
+| S07 | Reject approval after its policy, target, base commit, diff, or arguments change                 |
+| S08 | Never merge or deploy a repair automatically                                                     |
+| S09 | Execute repository code in a disposable sandbox with restricted filesystem and network access    |
+| S10 | Enforce deadlines, operation limits, and cancellation outside the model                          |
+| S11 | Treat repository text, tool output, and web content as untrusted data, never authorization       |
+| S12 | Preserve signature verification on real Polar webhook paths and use the raw request body         |
 
 Polar requires the raw request body for signature verification and documents duplicate and unordered delivery. A generated repair must not "fix" webhook failures by removing verification. [Webhook documentation](https://polar.sh/docs/integrate/webhooks/delivery)
 
@@ -681,22 +686,22 @@ A repair may use its remaining authorized attempt after a terminal model failure
 
 These are initial product limits, not measured performance claims:
 
-| Limit | Default |
-| --- | --- |
-| Concurrent active runs per project | 1 |
-| Core lifecycle customers per run | 1 Polar customer, plus ordinary app test users |
-| Ordinary app test users per core run | 2, one free user and one subscription user |
-| Checkouts and subscriptions per core run | 1 each |
-| Active execution deadline | 15 minutes, excluding owner approval waits |
-| Polar request deadline | 10 seconds |
-| Retryable read attempts | 3 with bounded backoff |
-| Application synchronization window | 60 seconds, owner-configurable before approval |
-| Repair attempts | 2 maximum |
-| Free space before a full local repair | 4 GiB on each source, artifact and runtime volume |
-| Model calls per run | 30 maximum |
-| Tool operations per run | 100 maximum, excluding bounded internal polling |
-| Approval expiry | 15 minutes |
-| Cleanup deadline | 2 minutes, followed by visible leftovers |
+| Limit                                    | Default                                           |
+| ---------------------------------------- | ------------------------------------------------- |
+| Concurrent active runs per project       | 1                                                 |
+| Core lifecycle customers per run         | 1 Polar customer, plus ordinary app test users    |
+| Ordinary app test users per core run     | 2, one free user and one subscription user        |
+| Checkouts and subscriptions per core run | 1 each                                            |
+| Active execution deadline                | 15 minutes, excluding owner approval waits        |
+| Polar request deadline                   | 10 seconds                                        |
+| Retryable read attempts                  | 3 with bounded backoff                            |
+| Application synchronization window       | 60 seconds, owner-configurable before approval    |
+| Repair attempts                          | 2 maximum                                         |
+| Free space before a full local repair    | 4 GiB on each source, artifact and runtime volume |
+| Model calls per run                      | 30 maximum                                        |
+| Tool operations per run                  | 100 maximum, excluding bounded internal polling   |
+| Approval expiry                          | 15 minutes                                        |
+| Cleanup deadline                         | 2 minutes, followed by visible leftovers          |
 
 The worker enforces wall time and operation limits regardless of model cooperation. Bound internal polling separately so it cannot bypass the tool-operation limit. Track token usage and estimated provider cost when available. Missing usage is "unknown", not zero.
 
@@ -758,36 +763,36 @@ Integration tests connect TrueForge, the restricted tools, the evidence store, a
 
 ### 14.2 Required acceptance tests
 
-| ID | Requirements | Given and expected result |
-| --- | --- | --- |
-| AT01 | R01, S01 | A live key or live Price is supplied; preflight rejects it and no mutation is called |
-| AT02 | R02, S06 | The owner has not approved the policy and plan; no test user or Polar object is created |
-| AT03 | R03, S03 | A tool receives another run's customer ID; it rejects the request before dispatch |
-| AT04 | R04, R05 | Known-good reference app runs SC01 through SC04; every required assertion passes |
-| AT05 | R05, R06 | Broken API guard allows a free user to obtain protected fixture data; SC01 fails even if the UI hides the feature |
-| AT06 | R04, R06 | Broken cancellation handling leaves a canceled user authorized; SC04 fails with evidence from both provider and feature |
-| AT07 | R04, R06 | Broken activation handling denies a confirmed paying user; SC02 fails as incorrect denial |
-| AT08 | R04, R06 | Correct scheduled cancellation preserves access before period end; SC03 passes |
-| AT09 | R06, R16 | Target or provider is unreachable; result is inconclusive, not a pass or invented billing failure |
-| AT10 | R06 | An endpoint returns 200 with an error page or missing fixture marker; the assertion does not pass |
-| AT11 | R07 | Browser reload and worker reconnect restore the same run without another customer, subscription, or active turn |
-| AT12 | R07, S03 | Polar creates an object but the response is lost; read-only reconciliation finds that one owned object or leaves it unknown without a duplicate write |
-| AT13 | R08, S07 | A diff, destination, policy, or base commit changes after approval; execution requires new approval |
-| AT14 | R08 | Owner denies publication; no branch or PR is created and the local report remains available |
-| AT15 | R08, S10 | Owner stops during an in-flight request; no subsequent scenario starts and the uncertain effect is reconciled |
-| AT16 | R09, S05 | Seeded synthetic secrets occur in logs and errors; exported reports and model-visible outputs redact them |
-| AT17 | R10 | Repair makes the original failure pass without changing the policy or oracle and preserves passing controls |
-| AT18 | R11 | PR creation response is lost; retry recovers the same matching PR rather than creating another |
-| AT19 | R12 | Cleanup meets an unowned or uncertain resource; it leaves it untouched and reports it |
-| AT20 | R13 | A real TrueForge tool, approval pause, sandbox execution, and continuation appear in the same workflow |
-| AT21 | R14 | Every substantive implementation merge has Qodo review and the README links a representative final review trail |
-| AT22 | R15 | Local replay and missing credentialed tests remain visibly different from a real Polar sandbox run |
-| AT23 | S04, S12 | Probe session has no admin privilege; malformed webhook signatures are rejected by the target |
-| AT24 | S09, S11 | Repository prompt injection or a proposed arbitrary host cannot expand tool scope or read a synthetic secret canary |
-| AT25 | R04, R06 | The provider boundary passes but application time or provider cancellation cannot be established; do not infer a pass |
-| AT26 | R06 | App billing state is stale but protected access is correct; report state drift without claiming a proven access leak |
-| AT27 | R02, R06 | Target build changes or observations come from another user, scenario, or policy; reject the comparison and do not pass it |
-| AT28 | R01, S02, S08 | An unapproved target or repository is requested; reject it, and prove that no available tool can merge a PR or deploy production |
+| ID   | Requirements  | Given and expected result                                                                                                                             |
+| ---- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AT01 | R01, S01      | A live key or live Price is supplied; preflight rejects it and no mutation is called                                                                  |
+| AT02 | R02, S06      | The owner has not approved the policy and plan; no test user or Polar object is created                                                               |
+| AT03 | R03, S03      | A tool receives another run's customer ID; it rejects the request before dispatch                                                                     |
+| AT04 | R04, R05      | Known-good reference app runs SC01 through SC04; every required assertion passes                                                                      |
+| AT05 | R05, R06      | Broken API guard allows a free user to obtain protected fixture data; SC01 fails even if the UI hides the feature                                     |
+| AT06 | R04, R06      | Broken cancellation handling leaves a canceled user authorized; SC04 fails with evidence from both provider and feature                               |
+| AT07 | R04, R06      | Broken activation handling denies a confirmed paying user; SC02 fails as incorrect denial                                                             |
+| AT08 | R04, R06      | Correct scheduled cancellation preserves access before period end; SC03 passes                                                                        |
+| AT09 | R06, R16      | Target or provider is unreachable; result is inconclusive, not a pass or invented billing failure                                                     |
+| AT10 | R06           | An endpoint returns 200 with an error page or missing fixture marker; the assertion does not pass                                                     |
+| AT11 | R07           | Browser reload and worker reconnect restore the same run without another customer, subscription, or active turn                                       |
+| AT12 | R07, S03      | Polar creates an object but the response is lost; read-only reconciliation finds that one owned object or leaves it unknown without a duplicate write |
+| AT13 | R08, S07      | A diff, destination, policy, or base commit changes after approval; execution requires new approval                                                   |
+| AT14 | R08           | Owner denies publication; no branch or PR is created and the local report remains available                                                           |
+| AT15 | R08, S10      | Owner stops during an in-flight request; no subsequent scenario starts and the uncertain effect is reconciled                                         |
+| AT16 | R09, S05      | Seeded synthetic secrets occur in logs and errors; exported reports and model-visible outputs redact them                                             |
+| AT17 | R10           | Repair makes the original failure pass without changing the policy or oracle and preserves passing controls                                           |
+| AT18 | R11           | PR creation response is lost; retry recovers the same matching PR rather than creating another                                                        |
+| AT19 | R12           | Cleanup meets an unowned or uncertain resource; it leaves it untouched and reports it                                                                 |
+| AT20 | R13           | A real TrueForge tool, approval pause, sandbox execution, and continuation appear in the same workflow                                                |
+| AT21 | R14           | Every substantive implementation merge has Qodo review and the README links a representative final review trail                                       |
+| AT22 | R15           | Local replay and missing credentialed tests remain visibly different from a real Polar sandbox run                                                    |
+| AT23 | S04, S12      | Probe session has no admin privilege; malformed webhook signatures are rejected by the target                                                         |
+| AT24 | S09, S11      | Repository prompt injection or a proposed arbitrary host cannot expand tool scope or read a synthetic secret canary                                   |
+| AT25 | R04, R06      | The provider boundary passes but application time or provider cancellation cannot be established; do not infer a pass                                 |
+| AT26 | R06           | App billing state is stale but protected access is correct; report state drift without claiming a proven access leak                                  |
+| AT27 | R02, R06      | Target build changes or observations come from another user, scenario, or policy; reject the comparison and do not pass it                            |
+| AT28 | R01, S02, S08 | An unapproved target or repository is requested; reject it, and prove that no available tool can merge a PR or deploy production                      |
 
 ### 14.3 Controls that make results credible
 
@@ -803,6 +808,16 @@ The MVP passes all required automated tests and the manual Qodo review check. A 
 
 Target a normal core run of under ten minutes after connections are ready. Measure cold sandbox startup separately. These are goals to measure, not promises for the landing page.
 
+### 14.5 Supplementary public-demo audits
+
+PaywallProof MAY use an unrelated SaaS's public demo or vendor-provided sandbox as supplementary black-box evidence when the vendor explicitly permits fictional test activity and the workflow cannot charge anyone. This adds external product evidence without weakening the owned staging requirements.
+
+Public-demo audits MUST use only the application's supported UI, fictional data, reserved non-delivery email domains, and visibly test-mode payment behavior. Do not enter a card, create a live subscription, load-test the service, bypass access controls, or inspect private state. Stop before any screen that could create a real charge.
+
+Label the result `black_box_public_sandbox`, record the exact browser observations and cleanup attempts, redact bearer links, and preserve screenshots with hashes. API, provider, database, source, and controller assertions remain false unless each was actually collected. A public browser audit cannot be promoted to a PaywallProof pass or replace AT04, the second owned application proof, or the Polar lifecycle gate.
+
+If the supported cleanup path fails, record the leftover and the vendor's reset behavior. Do not alter unrelated records or invent cleanup. A failed refund followed by an archive action that requires that refund is a valid workflow finding when both outcomes are reproduced and the customer link is checked again.
+
 ## 15. Implementation sequence
 
 ### 15.1 Instructions for the coding agent
@@ -815,16 +830,16 @@ Create decisions in `docs/decisions.md` when a verified SDK or environment const
 
 ### 15.2 Ordered work packages
 
-| Package | Work | Exit condition |
-| --- | --- | --- |
-| IP00 | Set up repository, Qodo, supported runtime versions, and an integration spike | TrueForge executes one restricted MCP read, a sandbox command, an approval denial, and a reconnect; Polar sandbox read succeeds |
-| IP01 | Implement contracts, policies, durable run state, operations, and approvals | Pure unit tests pass; duplicate approvals and invalid transitions fail safely |
-| IP02 | Build reference Free/Pro target and staging adapter | An ordinary free user is denied and a seeded authorized user is allowed in target tests; seeded setup is not used as scan evidence |
-| IP03 | Implement owned fixture creation, Polar lifecycle, and webhook connectivity | Real SC02 through SC04 provider states are observed with resource inventory and cleanup |
-| IP04 | Add protected API/browser probes, deterministic assertions, and reports | Known-good suite passes; three known-bad variants are detected with actual observations |
-| IP05 | Connect TrueForge investigation and repair to the working runner | Agent explains an observed failure, generates a bounded patch, and retests it without altering the oracle |
-| IP06 | Add project/policy/run/finding UI, reconnect, cancellation, and approved PR publication | Owner completes the full workflow; deny and reconnect paths pass |
-| IP07 | Run acceptance suite, review Qodo feedback, document setup, and record the demo | Required evidence exists, limitations are explicit, and a stranger can reproduce the supported path |
+| Package | Work                                                                                    | Exit condition                                                                                                                     |
+| ------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| IP00    | Set up repository, Qodo, supported runtime versions, and an integration spike           | TrueForge executes one restricted MCP read, a sandbox command, an approval denial, and a reconnect; Polar sandbox read succeeds    |
+| IP01    | Implement contracts, policies, durable run state, operations, and approvals             | Pure unit tests pass; duplicate approvals and invalid transitions fail safely                                                      |
+| IP02    | Build reference Free/Pro target and staging adapter                                     | An ordinary free user is denied and a seeded authorized user is allowed in target tests; seeded setup is not used as scan evidence |
+| IP03    | Implement owned fixture creation, Polar lifecycle, and webhook connectivity             | Real SC02 through SC04 provider states are observed with resource inventory and cleanup                                            |
+| IP04    | Add protected API/browser probes, deterministic assertions, and reports                 | Known-good suite passes; three known-bad variants are detected with actual observations                                            |
+| IP05    | Connect TrueForge investigation and repair to the working runner                        | Agent explains an observed failure, generates a bounded patch, and retests it without altering the oracle                          |
+| IP06    | Add project/policy/run/finding UI, reconnect, cancellation, and approved PR publication | Owner completes the full workflow; deny and reconnect paths pass                                                                   |
+| IP07    | Run acceptance suite, review Qodo feedback, document setup, and record the demo         | Required evidence exists, limitations are explicit, and a stranger can reproduce the supported path                                |
 
 Each substantive package uses PRs reviewed by Qodo before merge. Small PRs are preferred, but don't split a change into fragments that cannot be tested.
 
@@ -846,15 +861,15 @@ Provide documented scripts for `lint`, `typecheck`, `test`, `test:acceptance`, `
 
 ### 16.1 Three-minute demo plan
 
-| Time | What the judge sees |
-| --- | --- |
-| 0:00 to 0:20 | The question: a canceled user still gets a paid feature |
-| 0:20 to 0:45 | Connected sandbox, approved policy, and bounded test-plan approval |
-| 0:45 to 1:20 | Real billing state and the protected feature disagree; evidence opens |
-| 1:20 to 1:40 | Refresh/reconnect preserves the run; deny a publication request and show no write |
+| Time         | What the judge sees                                                                      |
+| ------------ | ---------------------------------------------------------------------------------------- |
+| 0:00 to 0:20 | The question: a canceled user still gets a paid feature                                  |
+| 0:20 to 0:45 | Connected sandbox, approved policy, and bounded test-plan approval                       |
+| 0:45 to 1:20 | Real billing state and the protected feature disagree; evidence opens                    |
+| 1:20 to 1:40 | Refresh/reconnect preserves the run; deny a publication request and show no write        |
 | 1:40 to 2:20 | Agent's isolated repair, exact diff, and passing reproduction with its verification mode |
-| 2:20 to 2:45 | Approve publication; open the resulting PR and show Qodo development review evidence |
-| 2:45 to 3:00 | Coverage, known-good control, and limitations |
+| 2:20 to 2:45 | Approve publication; open the resulting PR and show Qodo development review evidence     |
+| 2:45 to 3:00 | Coverage, known-good control, and limitations                                            |
 
 A three-minute video may use an honestly labeled time cut or a completed run's saved trace. Do not label a replay as live execution or imply that Qodo completed a review instantly. Keep a reproducible live path available.
 
@@ -878,17 +893,17 @@ Before claiming demand, ask a prospective user to supply an owned staging app, i
 
 ### 17.2 Risks and decisions
 
-| Risk | Mitigation or decision |
-| --- | --- |
-| Integration setup takes longer than the scan saves | Ship one documented adapter and measure setup time on a second app |
-| Expectations are guessed from the same buggy code | Owner-approved policy and a separate deterministic oracle |
-| Checker appears useful only on its own demo | Test a second owned app before claiming broad utility |
+| Risk                                                   | Mitigation or decision                                                                                                   |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| Integration setup takes longer than the scan saves     | Ship one documented adapter and measure setup time on a second app                                                       |
+| Expectations are guessed from the same buggy code      | Owner-approved policy and a separate deterministic oracle                                                                |
+| Checker appears useful only on its own demo            | Test a second owned app before claiming broad utility                                                                    |
 | Billing state is correct but a cached session is stale | Probe both the current session and a fresh session when diagnosing; keep the required assertion's session behavior fixed |
-| Subscription API passes but checkout is broken | Explicitly exclude hosted checkout UI coverage in every report |
-| Automated repair removes protection | Immutable oracle, restricted edit paths, negative controls, and human review |
-| Sandbox or provider access blocks the build | Resolve in IP00 and disclose the blocker; no simulated replacement presented as real |
-| Account data or credentials leak through evidence | Synthetic users, structured redaction, secret canaries, and review before sharing |
-| Existing QA products add the same feature | Compete on low setup cost, trustworthy findings, and a narrow useful workflow; no assumed technical moat |
+| Subscription API passes but checkout is broken         | Explicitly exclude hosted checkout UI coverage in every report                                                           |
+| Automated repair removes protection                    | Immutable oracle, restricted edit paths, negative controls, and human review                                             |
+| Sandbox or provider access blocks the build            | Resolve in IP00 and disclose the blocker; no simulated replacement presented as real                                     |
+| Account data or credentials leak through evidence      | Synthetic users, structured redaction, secret canaries, and review before sharing                                        |
+| Existing QA products add the same feature              | Compete on low setup cost, trustworthy findings, and a narrow useful workflow; no assumed technical moat                 |
 
 ### 17.3 Inputs needed before implementation
 
@@ -900,21 +915,21 @@ The first integration spike must settle the exact SDK versions, sandbox network 
 
 Primary documentation was inspected on August 27, 2026. Product APIs and hackathon rules can change. Pin installed versions and recheck the relevant source during IP00.
 
-| Source | Used for |
-| --- | --- |
-| [Hackathon rules](https://www.wemakedevs.org/hackathons/trueforge/rules) | Required tools, Qodo evidence, public submission, deadline, authorized data |
-| [TrueForge SDK recipes](https://trueforge.dev/api/use-agent) | Sessions, turn streaming, approvals, cancellation, reconnect |
-| [TrueForge sandbox](https://trueforge.dev/sandbox) | Daytona support, sandbox lifecycle, credential separation |
-| [TrueForge MCP setup](https://trueforge.dev/mcp-servers) | Connector configuration and authentication |
-| [Qodo PR reviews](https://docs.qodo.ai/code-review/use-qodo-in-prs) | Automatic reviews and manual review command |
-| [Polar testing](https://polar.sh/docs/integrate/sandbox) | Isolated sandbox and test payment details |
-| [Polar period management](https://polar.sh/docs/features/subscriptions/manage) | Real period updates, cancellation and status readback |
-| [Polar subscription simulation](https://polar.sh/docs/integrate/sandbox) | Simulation behavior and cleanup |
-| [Polar cancellation](https://polar.sh/docs/features/subscriptions/manage) | Scheduled versus effective cancellation and events |
-| [Polar subscription webhooks](https://polar.sh/docs/integrate/webhooks/events) | Subscription state transitions and asynchronous processing |
-| [Polar webhooks](https://polar.sh/docs/integrate/webhooks/delivery) | Raw-body verification, retries, duplicates, ordering, endpoint requirements |
-| [Polar API contract](https://polar.sh/docs/api-reference/introduction) | Authentication and API contract; no assumed write retry guarantee |
-| [Kortix/Suna reconciliation PR](https://github.com/kortix-ai/suna/pull/6669) | Concrete example of Polar/application state drift |
+| Source                                                                                | Used for                                                                    |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| [Hackathon rules](https://www.wemakedevs.org/hackathons/trueforge/rules)              | Required tools, Qodo evidence, public submission, deadline, authorized data |
+| [TrueForge SDK recipes](https://trueforge.dev/api/use-agent)                          | Sessions, turn streaming, approvals, cancellation, reconnect                |
+| [TrueForge sandbox](https://trueforge.dev/sandbox)                                    | Daytona support, sandbox lifecycle, credential separation                   |
+| [TrueForge MCP setup](https://trueforge.dev/mcp-servers)                              | Connector configuration and authentication                                  |
+| [Qodo PR reviews](https://docs.qodo.ai/code-review/use-qodo-in-prs)                   | Automatic reviews and manual review command                                 |
+| [Polar testing](https://polar.sh/docs/integrate/sandbox)                              | Isolated sandbox and test payment details                                   |
+| [Polar period management](https://polar.sh/docs/features/subscriptions/manage)        | Real period updates, cancellation and status readback                       |
+| [Polar subscription simulation](https://polar.sh/docs/integrate/sandbox)              | Simulation behavior and cleanup                                             |
+| [Polar cancellation](https://polar.sh/docs/features/subscriptions/manage)             | Scheduled versus effective cancellation and events                          |
+| [Polar subscription webhooks](https://polar.sh/docs/integrate/webhooks/events)        | Subscription state transitions and asynchronous processing                  |
+| [Polar webhooks](https://polar.sh/docs/integrate/webhooks/delivery)                   | Raw-body verification, retries, duplicates, ordering, endpoint requirements |
+| [Polar API contract](https://polar.sh/docs/api-reference/introduction)                | Authentication and API contract; no assumed write retry guarantee           |
+| [Kortix/Suna reconciliation PR](https://github.com/kortix-ai/suna/pull/6669)          | Concrete example of Polar/application state drift                           |
 | [Autonoma checkout testing](https://getautonoma.com/blog/how-to-test-stripe-checkout) | Competitor positioning only, not authority for Polar implementation details |
 
 ## 19. Owner constraints and independent verification

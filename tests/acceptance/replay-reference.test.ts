@@ -4,9 +4,9 @@ import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createReferenceApp } from '../../packages/reference/src/index.ts';
-import { TargetTransport } from '../../packages/adapters/src/network.ts';
-import { LocalReplayAdapter } from '../../packages/adapters/src/replay.ts';
+import { createReferenceApp } from '#reference';
+import { TargetTransport } from '#integrations/network';
+import { LocalReplayAdapter } from '#integrations/replay';
 
 // Signed synthetic LocalReplayAdapter delivery through actual reference handlers.
 // The only listening server binds an ephemeral loopback port. No Stripe SDK,
@@ -42,9 +42,14 @@ async function exposeReference(app: Reference) {
       if (value !== undefined) headers.set(key, Array.isArray(value) ? value.join(',') : value);
     }
     const chunks: Uint8Array[] = [];
-    for await (const chunk of request) chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+    for await (const chunk of request)
+      chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
     const localRequest = new Request(`${origin}${path}`, {
-      method, headers, ...(method === 'GET' || method === 'HEAD' ? {} : { body: Buffer.concat(chunks).toString('utf8') }),
+      method,
+      headers,
+      ...(method === 'GET' || method === 'HEAD'
+        ? {}
+        : { body: Buffer.concat(chunks).toString('utf8') }),
     });
     const result = await app.app.fetch(localRequest);
     response.writeHead(result.status, Object.fromEntries(result.headers.entries()));
@@ -59,17 +64,25 @@ async function exposeReference(app: Reference) {
   const listening = server;
   await new Promise<void>((resolve, reject) => {
     listening.once('error', reject);
-    listening.listen(0, '127.0.0.1', () => { listening.removeListener('error', reject); resolve(); });
+    listening.listen(0, '127.0.0.1', () => {
+      listening.removeListener('error', reject);
+      resolve();
+    });
   });
   const address = listening.address();
-  if (address === null || typeof address === 'string') throw new Error('Expected ephemeral IPv4 listener');
+  if (address === null || typeof address === 'string')
+    throw new Error('Expected ephemeral IPv4 listener');
   origin = `http://127.0.0.1:${address.port}`;
 }
 
 function openAdapter(overrides: Record<string, unknown> = {}) {
   const adapter = new LocalReplayAdapter({
-    databasePath: join(directory, 'replay.sqlite'), priceId, adapterToken, replaySecret,
-    transport: new TargetTransport({ origin, allowLoopback: true, timeoutMs: 2_000 }), ...overrides,
+    databasePath: join(directory, 'replay.sqlite'),
+    priceId,
+    adapterToken,
+    replaySecret,
+    transport: new TargetTransport({ origin, allowLoopback: true, timeoutMs: 2_000 }),
+    ...overrides,
   });
   adapters.add(adapter);
   return adapter;
@@ -83,17 +96,27 @@ async function closeAdapter(adapter: LocalReplayAdapter) {
 async function staging(app: Reference, path: string, method = 'GET', body?: unknown) {
   return app.app.request(path, {
     method,
-    headers: { authorization: `Bearer ${adapterToken}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
+    headers: {
+      authorization: `Bearer ${adapterToken}`,
+      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+    },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
 }
 
 async function createAndLink(app: Reference, runId: string, customerId: string) {
   const fixtureMarker = `SYNTHETIC_FIXTURE_${runId}`;
-  const created = await staging(app, '/staging/users', 'POST', { runId, operationId: `create_${runId}`, fixtureMarker });
+  const created = await staging(app, '/staging/users', 'POST', {
+    runId,
+    operationId: `create_${runId}`,
+    fixtureMarker,
+  });
   expect(created.status).toBe(201);
   const principalId = field(await created.json(), 'principalId');
-  const linked = await staging(app, `/staging/users/${principalId}/customer`, 'POST', { runId, customerId });
+  const linked = await staging(app, `/staging/users/${principalId}/customer`, 'POST', {
+    runId,
+    customerId,
+  });
   expect(linked.status).toBe(200);
   const session = await staging(app, `/staging/users/${principalId}/session`, 'POST', { runId });
   expect(session.status).toBe(200);
@@ -103,12 +126,18 @@ async function createAndLink(app: Reference, runId: string, customerId: string) 
 async function checkAccess(app: Reference, cookie: string, status: number, fixtureMarker: string) {
   const response = await app.app.request('/api/export', { headers: { cookie } });
   expect(response.status).toBe(status);
-  expect(await response.json()).toEqual(status === 200 ? { fixtureMarker } : { error: 'ACCESS_DENIED' });
+  expect(await response.json()).toEqual(
+    status === 200 ? { fixtureMarker } : { error: 'ACCESS_DENIED' },
+  );
 }
 
 async function expectRejected(action: () => unknown) {
   let caught: unknown;
-  try { await action(); } catch (error) { caught = error; }
+  try {
+    await action();
+  } catch (error) {
+    caught = error;
+  }
   expect(caught).toBeInstanceOf(Error);
 }
 
@@ -117,8 +146,13 @@ beforeEach(async () => {
   directory = mkdtempSync(join(tmpdir(), 'paywallproof-independent-replay-'));
   dispatched = [];
   target = createReferenceApp({
-    databasePath: join(directory, 'reference.sqlite'), stagingEnabled: true, adapterToken, replaySecret,
-    webhookSecret: ['whsec', 'SYNTHETIC_SEPARATE_WEBHOOK_SECRET'].join('_'), priceId, buildId,
+    databasePath: join(directory, 'reference.sqlite'),
+    stagingEnabled: true,
+    adapterToken,
+    replaySecret,
+    webhookSecret: ['whsec', 'SYNTHETIC_SEPARATE_WEBHOOK_SECRET'].join('_'),
+    priceId,
+    buildId,
   });
   await exposeReference(target);
 });
@@ -128,7 +162,7 @@ afterEach(async () => {
   if (server) {
     const listening = server;
     await new Promise<void>((resolve, reject) => {
-      listening.close((error) => error ? reject(error) : resolve());
+      listening.close((error) => (error ? reject(error) : resolve()));
       listening.closeAllConnections();
     });
   }
@@ -156,15 +190,27 @@ describe('vertical synthetic replay adapter to actual reference handlers', () =>
     expect(created).toMatchObject({ mode: 'local_replay' });
     const active = await adapter.observe(runId);
     expect(active).toMatchObject({
-      livemode: false, identityResolved: true, noSubscriptionConfirmed: false, customerId: customer.customerId,
-      subscription: { customerId: customer.customerId, priceId, status: 'active', initialPaymentConfirmed: true, cancelAtPeriodEnd: false },
+      livemode: false,
+      identityResolved: true,
+      noSubscriptionConfirmed: false,
+      customerId: customer.customerId,
+      subscription: {
+        customerId: customer.customerId,
+        priceId,
+        status: 'active',
+        initialPaymentConfirmed: true,
+        cancelAtPeriodEnd: false,
+      },
     });
     await checkAccess(target, user.cookie, 200, user.fixtureMarker);
 
     const scheduled = await adapter.scheduleCancellation(runId, `schedule_${runId}`);
     expect(scheduled).toMatchObject({ mode: 'local_replay' });
     const pending = await adapter.observe(runId);
-    expect(pending).toMatchObject({ customerId: customer.customerId, subscription: { status: 'active', initialPaymentConfirmed: true, cancelAtPeriodEnd: true } });
+    expect(pending).toMatchObject({
+      customerId: customer.customerId,
+      subscription: { status: 'active', initialPaymentConfirmed: true, cancelAtPeriodEnd: true },
+    });
     await checkAccess(target, user.cookie, 200, user.fixtureMarker);
     await closeAdapter(adapter);
     const reopened = openAdapter();
@@ -174,12 +220,25 @@ describe('vertical synthetic replay adapter to actual reference handlers', () =>
     const canceled = await reopened.awaitPeriodEnd(runId, `advance_${runId}`);
     expect(canceled).toMatchObject({ mode: 'local_replay' });
     const finalBilling = await reopened.observe(runId);
-    expect(finalBilling).toMatchObject({ customerId: customer.customerId, subscription: { status: 'canceled', initialPaymentConfirmed: true } });
+    expect(finalBilling).toMatchObject({
+      customerId: customer.customerId,
+      subscription: { status: 'canceled', initialPaymentConfirmed: true },
+    });
     await checkAccess(target, user.cookie, 403, user.fixtureMarker);
-    const snapshot = await staging(target, `/staging/users/${user.principalId}/billing?runId=${encodeURIComponent(runId)}`);
-    expect(await snapshot.json()).toMatchObject({ customerId: customer.customerId, status: 'canceled', initialPaymentConfirmed: true, buildId });
+    const snapshot = await staging(
+      target,
+      `/staging/users/${user.principalId}/billing?runId=${encodeURIComponent(runId)}`,
+    );
+    expect(await snapshot.json()).toMatchObject({
+      customerId: customer.customerId,
+      status: 'canceled',
+      initialPaymentConfirmed: true,
+      buildId,
+    });
     expect(dispatched).toEqual([
-      { method: 'POST', path: '/staging/replay' }, { method: 'POST', path: '/staging/replay' }, { method: 'POST', path: '/staging/replay' },
+      { method: 'POST', path: '/staging/replay' },
+      { method: 'POST', path: '/staging/replay' },
+      { method: 'POST', path: '/staging/replay' },
     ]);
   }, 20_000);
 
@@ -198,7 +257,8 @@ describe('vertical synthetic replay adapter to actual reference handlers', () =>
     expect(dispatched).toEqual([]);
     await closeAdapter(adapter);
     const reopened = openAdapter();
-    for (const [index, runId] of ids.entries()) expect((await reopened.createCustomer(runId)).customerId).toBe(customers[index]);
+    for (const [index, runId] of ids.entries())
+      expect((await reopened.createCustomer(runId)).customerId).toBe(customers[index]);
   }, 20_000);
 
   it('refuses clock advancement before cancellation has been scheduled', async () => {
@@ -219,9 +279,14 @@ describe('vertical synthetic replay adapter to actual reference handlers', () =>
     const runId = randomUUID();
     const gateCalls: string[] = [];
     let revoked = false;
-    const adapter = openAdapter({ beforeMutation: (requestedRunId: string) => {
-      if (revoked) { gateCalls.push(requestedRunId); throw new Error('Synthetic approval revoked'); }
-    } });
+    const adapter = openAdapter({
+      beforeMutation: (requestedRunId: string) => {
+        if (revoked) {
+          gateCalls.push(requestedRunId);
+          throw new Error('Synthetic approval revoked');
+        }
+      },
+    });
     const customer = await adapter.createCustomer(runId);
     const user = await createAndLink(target, runId, customer.customerId);
     revoked = true;
@@ -231,18 +296,31 @@ describe('vertical synthetic replay adapter to actual reference handlers', () =>
     await checkAccess(target, user.cookie, 403, user.fixtureMarker);
   }, 20_000);
 
-  it.each(['signing_secret', 'adapter_authorization'])('does not report successful delivery when target rejects %s', async (failure) => {
-    if (!target) throw new Error('Expected local reference fixture');
-    const runId = randomUUID();
-    const adapter = openAdapter(failure === 'signing_secret'
-      ? { replaySecret: 'SYNTHETIC_WRONG_SIGNING_SECRET' }
-      : { adapterToken: 'SYNTHETIC_WRONG_ADAPTER_TOKEN' });
-    const customer = await adapter.createCustomer(runId);
-    const user = await createAndLink(target, runId, customer.customerId);
-    await expectRejected(() => adapter.createSubscription(runId, 'rejected_delivery'));
-    expect(dispatched).toEqual([{ method: 'POST', path: '/staging/replay' }]);
-    const snapshot = await staging(target, `/staging/users/${user.principalId}/billing?runId=${encodeURIComponent(runId)}`);
-    expect(await snapshot.json()).toMatchObject({ customerId: customer.customerId, status: 'none', initialPaymentConfirmed: false });
-    await checkAccess(target, user.cookie, 403, user.fixtureMarker);
-  }, 20_000);
+  it.each(['signing_secret', 'adapter_authorization'])(
+    'does not report successful delivery when target rejects %s',
+    async (failure) => {
+      if (!target) throw new Error('Expected local reference fixture');
+      const runId = randomUUID();
+      const adapter = openAdapter(
+        failure === 'signing_secret'
+          ? { replaySecret: 'SYNTHETIC_WRONG_SIGNING_SECRET' }
+          : { adapterToken: 'SYNTHETIC_WRONG_ADAPTER_TOKEN' },
+      );
+      const customer = await adapter.createCustomer(runId);
+      const user = await createAndLink(target, runId, customer.customerId);
+      await expectRejected(() => adapter.createSubscription(runId, 'rejected_delivery'));
+      expect(dispatched).toEqual([{ method: 'POST', path: '/staging/replay' }]);
+      const snapshot = await staging(
+        target,
+        `/staging/users/${user.principalId}/billing?runId=${encodeURIComponent(runId)}`,
+      );
+      expect(await snapshot.json()).toMatchObject({
+        customerId: customer.customerId,
+        status: 'none',
+        initialPaymentConfirmed: false,
+      });
+      await checkAccess(target, user.cookie, 403, user.fixtureMarker);
+    },
+    20_000,
+  );
 });

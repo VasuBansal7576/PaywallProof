@@ -11,7 +11,7 @@ pnpm model:codex
 pnpm dev:codex-model
 ```
 
-Setup checks metadata and registers `paywallproof-codex/luna`; it does not generate tokens or change billing. The bridge binds `127.0.0.1:8792` and requires a private capability. Restart the worker after changing model selection. OpenRouter remains an explicitly selectable option; neither connection falls back to the other.
+Setup checks metadata and registers `paywallproof-codex/luna`; it does not generate tokens or change billing. The bridge binds `127.0.0.1:8792` and requires a private capability. The selected connection does not fall back to another model or a paid API.
 
 ## Spending policy
 
