@@ -46,13 +46,16 @@ export type ControllerConfig = {
   runtimeUrl: string;
   model: string;
 };
-export const coverageLimitCodes = [
+const baseCoverageLimitCodes = [
   'SINGLE_TARGET_SINGLE_PRICE_SINGLE_FEATURE',
   'PRODUCTION_BILLING_VARIANTS_NOT_TESTED',
-  'LOCAL_REPLAY_NOT_NATIVE_PROVIDER_DELIVERY',
   'BUILD_SCOPED_NOT_SECURITY_CERTIFICATE',
 ] as const;
-const coverageLimitText: Record<(typeof coverageLimitCodes)[number], string> = {
+const localReplayCoverageLimitCode = 'LOCAL_REPLAY_NOT_NATIVE_PROVIDER_DELIVERY' as const;
+const coverageLimitText: Record<
+  (typeof baseCoverageLimitCodes)[number] | typeof localReplayCoverageLimitCode,
+  string
+> = {
   SINGLE_TARGET_SINGLE_PRICE_SINGLE_FEATURE:
     'One configured staging target, one monthly price, one API-backed export feature.',
   PRODUCTION_BILLING_VARIANTS_NOT_TESTED:
@@ -62,7 +65,17 @@ const coverageLimitText: Record<(typeof coverageLimitCodes)[number], string> = {
   BUILD_SCOPED_NOT_SECURITY_CERTIFICATE:
     'A passing report covers only the listed scenarios and target build. It is not a security certificate.',
 };
-export const coverageLimits = coverageLimitCodes.map((code) => coverageLimitText[code]);
+export function coverageForMode(mode: 'polar_sandbox' | 'local_replay') {
+  const coverageLimitCodes = [
+    ...baseCoverageLimitCodes,
+    ...(mode === 'local_replay' ? [localReplayCoverageLimitCode] : []),
+  ];
+  return {
+    coverageLimitCodes,
+    coverageLimits: coverageLimitCodes.map((code) => coverageLimitText[code]),
+  };
+}
+export const { coverageLimitCodes, coverageLimits } = coverageForMode('local_replay');
 const projectSchema = z.strictObject({
   id: identifier,
   name: identifier,
@@ -1096,7 +1109,7 @@ export class Controller {
       cleanup: context.cleanup,
       repairs: this.repairs.view(runId),
       evidenceReview: this.reviews.view(runId),
-      coverageLimits,
+      ...coverageForMode(run.mode),
     };
   }
   checkoutUrl(runId: string) {
@@ -1122,7 +1135,6 @@ export class Controller {
       ...view,
       parentRunId: null,
       project: this.project(view.run.projectId),
-      coverageLimitCodes,
       versions: {
         polarApi: POLAR_API_VERSION,
         webhookVerifier: 'standardwebhooks@1.0.0',

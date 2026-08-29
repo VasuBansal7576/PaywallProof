@@ -22,12 +22,12 @@ Prerequisites: Node.js, pnpm, Git, the local TrueForge stack for live-runtime ch
 - [x] G4: Pull requests run formatting, type, lint, test, build, repository-shape, and skill-validation checks; Qodo review instructions require `/agentic_review`, disposition of every finding, and a follow-up review.
       CHECK: pnpm check:delivery
       EXPECT: /delivery configuration passed/
-      EVIDENCE: Passed locally on 2026-08-29; `pnpm verify:ci` also passed 1,811 tests and the production web build.
+      EVIDENCE: Passed locally on 2026-08-29; `pnpm verify:ci` also passed 1,812 tests and the production web build.
 
 - [x] G5: The final implementation passes the complete local verification pipeline, including the production web build and browser contract.
       CHECK: pnpm verify
       EXPECT: /PaywallProof verification passed/
-      EVIDENCE: Passed locally on 2026-08-29 with 1,811 tests, the production Next.js build, and all ten live browser-contract groups.
+      EVIDENCE: Passed locally on 2026-08-29 with 1,812 tests, the production Next.js build, and all ten live browser-contract groups.
 
 - [ ] G6: Qodo has reviewed the final implementation commit, every valid finding has been fixed, deferred or invalid findings have an explanation, the follow-up review is clean, and the representative PR is merged.
       EVIDENCE: pending; this is complete only after the remote Qodo/GitHub workflow finishes.

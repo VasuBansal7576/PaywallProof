@@ -3,7 +3,7 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Controller, type ControllerConfig } from './controller.ts';
+import { Controller, coverageForMode, type ControllerConfig } from './controller.ts';
 import { createControlApp } from './http.ts';
 import { createPolicy, hashValue } from '#domain';
 import { observeFeature } from '#evidence/probe';
@@ -29,6 +29,20 @@ const feature = {
   actionTestId: 'export-button',
   resultTestId: 'export-result',
 } as const;
+
+describe('mode-specific coverage limits', () => {
+  it('labels synthetic replay without mislabeling native Polar sandbox evidence', () => {
+    expect(coverageForMode('local_replay').coverageLimitCodes).toContain(
+      'LOCAL_REPLAY_NOT_NATIVE_PROVIDER_DELIVERY',
+    );
+    expect(coverageForMode('polar_sandbox').coverageLimitCodes).not.toContain(
+      'LOCAL_REPLAY_NOT_NATIVE_PROVIDER_DELIVERY',
+    );
+    expect(coverageForMode('polar_sandbox').coverageLimits.join(' ')).not.toMatch(
+      /local replay|synthetic signed billing/i,
+    );
+  });
+});
 function setup(http = false, overrides: Pick<ControllerConfig, 'artifactRetentionMs'> = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'pp-startup-'));
   const config = {
