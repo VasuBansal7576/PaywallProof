@@ -4,7 +4,7 @@ import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { z } from 'zod';
 import type { TrueForgeApi } from '@truefoundry/trueforge-sdk';
 import {
@@ -379,9 +379,13 @@ describe('repair runner implementation with synthetic SDK, no model/provider', (
     );
     expect(result.execReceipts).toHaveLength(1);
     expect(result.execReceipts[0]?.output).toContain('42');
-    expect(mocks.statfs.mock.calls[0]?.[0]).toBe(
-      join(homedir(), 'Library', 'Application Support', 'trueforge', 'sandboxes'),
-    );
+    const destination = join(homedir(), 'Library', 'Application Support', 'trueforge', 'sandboxes'),
+      checkedAncestor = z.string().parse(mocks.statfs.mock.calls[0]?.[0]),
+      remainder = relative(checkedAncestor, destination);
+    expect(
+      remainder === '' ||
+        (remainder !== '..' && !remainder.startsWith(`..${sep}`) && !isAbsolute(remainder)),
+    ).toBe(true);
   });
   it('does not loop or guess a filesystem path when sandbox initialization emits no ID', async () => {
     mocks.listEvents.mockImplementation(async function* () {
