@@ -38,6 +38,7 @@ function fixture() {
     id: 'review-session',
   }));
   const beginTurn = vi.fn<ReviewRuntime['beginTurn']>(async () => ({ id: 'review-turn' }));
+  const cancel = vi.fn<ReviewRuntime['cancel']>(async () => undefined);
   const resumeStream = vi.fn<ReviewRuntime['resumeStream']>(() => new Promise<never>(() => {}));
   const inspectTurn = vi.fn<ReviewRuntime['inspectTurn']>();
   const runtime = {
@@ -45,6 +46,7 @@ function fixture() {
     registerMcpServer,
     createSession,
     beginTurn,
+    cancel,
     resumeStream,
     inspectTurn,
   };
@@ -94,6 +96,21 @@ describe('skill-backed evidence review', () => {
         sandbox: true,
       }),
     );
+  });
+
+  it('persists and cancels a created session when the first turn fails', async () => {
+    const { coordinator, runtime } = fixture();
+    runtime.beginTurn.mockRejectedValueOnce(new Error('synthetic begin failure'));
+
+    await expect(coordinator.start(runId)).rejects.toThrow('synthetic begin failure');
+
+    expect(runtime.cancel).toHaveBeenCalledWith({ sessionId: 'review-session' });
+    expect(coordinator.view(runId)).toMatchObject({
+      status: 'error',
+      sessionId: 'review-session',
+      turnId: null,
+      error: 'synthetic begin failure',
+    });
   });
 
   it('serves the bound report and records two distinct grounded reviews', async () => {

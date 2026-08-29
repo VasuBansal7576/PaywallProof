@@ -97,6 +97,7 @@ export type ReviewRuntime = {
   ): Promise<unknown>;
   createSession(options: Parameters<TrueForgeAdapter['createSession']>[0]): Promise<{ id: string }>;
   beginTurn(options: Parameters<TrueForgeAdapter['beginTurn']>[0]): Promise<{ id: string }>;
+  cancel(options: Parameters<TrueForgeAdapter['cancel']>[0]): Promise<unknown>;
   resumeStream(
     options: Parameters<TrueForgeAdapter['resumeStream']>[0],
   ): Promise<{ withMetadata(): AsyncIterable<unknown> }>;
@@ -219,14 +220,15 @@ export class EvidenceReviewCoordinator {
         iterationLimit: 12,
         maxTokens: 4096,
       });
+      const sessionStarting = startingStateSchema.parse({ ...starting, sessionId: session.id });
+      this.options.documents.put('evidence-review', runId, sessionStarting);
       const turn = await this.options.runtime.beginTurn({
         sessionId: session.id,
         input: `Review run ${runId}. Read the bound report, delegate both independent reviewer contracts, then record one conservative synthesis. Do not finish before record_evidence_review succeeds.`,
       });
       const running = runningStateSchema.parse({
-        ...starting,
+        ...sessionStarting,
         status: 'running',
-        sessionId: session.id,
         turnId: turn.id,
       });
       this.options.documents.put('evidence-review', runId, running);
@@ -234,12 +236,14 @@ export class EvidenceReviewCoordinator {
       return running;
     } catch (error) {
       const current = this.view(runId);
-      if (current && current.status !== 'completed')
+      if (current && current.status !== 'completed') {
+        await this.cancelSession(current.sessionId);
         this.options.documents.put('evidence-review', runId, {
           ...current,
           status: 'error',
           error: error instanceof Error ? error.message.slice(0, 500) : 'EVIDENCE_REVIEW_FAILED',
         });
+      }
       throw error;
     } finally {
       this.starts.delete(runId);
@@ -299,12 +303,14 @@ export class EvidenceReviewCoordinator {
     for (const value of this.options.documents.list('evidence-review')) {
       const state = evidenceReviewStateSchema.parse(value);
       if (state.status === 'running') void this.watch(state);
-      if (state.status === 'starting')
+      if (state.status === 'starting') {
+        await this.cancelSession(state.sessionId);
         this.options.documents.put('evidence-review', state.runId, {
           ...state,
           status: 'error',
           error: 'EVIDENCE_REVIEW_START_INTERRUPTED',
         });
+      }
     }
   }
 
@@ -350,6 +356,7 @@ export class EvidenceReviewCoordinator {
       });
       const error =
         turn.state.status === 'error' ? turn.state.message : 'EVIDENCE_REVIEW_NOT_RECORDED';
+      await this.cancelSession(state.sessionId);
       this.options.documents.put('evidence-review', state.runId, {
         ...state,
         status: 'error',
@@ -357,6 +364,7 @@ export class EvidenceReviewCoordinator {
       });
     } catch (error) {
       if (this.view(state.runId)?.status === 'completed') return;
+      await this.cancelSession(state.sessionId);
       this.options.documents.put('evidence-review', state.runId, {
         ...state,
         status: 'error',
@@ -366,5 +374,10 @@ export class EvidenceReviewCoordinator {
     } finally {
       this.watchers.delete(state.runId);
     }
+  }
+
+  private async cancelSession(sessionId: string | null): Promise<void> {
+    if (!sessionId) return;
+    await this.options.runtime.cancel({ sessionId }).catch(() => undefined);
   }
 }
