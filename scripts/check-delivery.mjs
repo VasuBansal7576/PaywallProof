@@ -18,7 +18,10 @@ const requiredScripts = [
 ];
 const failures = requiredScripts.filter((name) => typeof packageJson.scripts?.[name] !== 'string');
 if (!workflow.includes('pnpm verify:ci')) failures.push('CI does not run verify:ci');
-if (!workflow.includes('pnpm exec playwright install --with-deps chromium')) {
+if (!workflow.includes('runs-on: macos-14')) {
+  failures.push('CI does not run on the supported macOS sandbox platform');
+}
+if (!workflow.includes('pnpm exec playwright install chromium')) {
   failures.push('CI does not install the pinned Playwright Chromium runtime');
 }
 if (!qodo.includes('/agentic_review')) failures.push('Qodo agentic review command is missing');
