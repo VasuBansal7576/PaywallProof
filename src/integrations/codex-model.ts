@@ -45,6 +45,59 @@ export type CodexBackend = {
     signal: AbortSignal,
   ): Promise<CodexGeneration>;
 };
+
+class SerialModelQueue {
+  private active = false;
+  private readonly waiters: Array<{
+    resolve: () => void;
+    reject: (error: Error) => void;
+    signal: AbortSignal;
+    abort: () => void;
+  }> = [];
+
+  async acquire(signal: AbortSignal): Promise<() => void> {
+    signal.throwIfAborted();
+    if (!this.active) {
+      this.active = true;
+      return this.releaseOnce();
+    }
+    if (this.waiters.length >= 8) throw new CodexSubscriptionError('CODEX_QUEUE_FULL');
+    await new Promise<void>((resolve, reject) => {
+      const waiter = {
+        resolve,
+        reject,
+        signal,
+        abort: () => {
+          const index = this.waiters.indexOf(waiter);
+          if (index >= 0) this.waiters.splice(index, 1);
+          reject(new CodexSubscriptionError('CODEX_REQUEST_CANCELLED'));
+        },
+      };
+      signal.addEventListener('abort', waiter.abort, { once: true });
+      this.waiters.push(waiter);
+    });
+    return this.releaseOnce();
+  }
+
+  private releaseOnce() {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      for (;;) {
+        const waiter = this.waiters.shift();
+        if (!waiter) {
+          this.active = false;
+          return;
+        }
+        waiter.signal.removeEventListener('abort', waiter.abort);
+        if (waiter.signal.aborted) continue;
+        waiter.resolve();
+        return;
+      }
+    };
+  }
+}
 const backend: CodexBackend = {
   check: (signal) => withCodexClient(signal, verifyCodexSubscription),
   generate: (prompt, schema, signal) =>
@@ -217,7 +270,7 @@ export function createCodexModelGateway(gatewayToken: string, model: CodexBacken
   if (!/^[A-Za-z0-9_-]{32,256}$/.test(gatewayToken))
     throw new CodexSubscriptionError('CODEX_GATEWAY_TOKEN_INVALID');
   const authorization = Buffer.from(`Bearer ${gatewayToken}`);
-  let busy = false;
+  const queue = new SerialModelQueue();
   const app = new Hono();
   app.onError((error, c) =>
     c.json(
@@ -243,16 +296,15 @@ export function createCodexModelGateway(gatewayToken: string, model: CodexBacken
     c.json(await model.check(AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(30000)]))),
   );
   app.post('/v1/chat/completions', async (c) => {
-    if (busy) return c.json({ error: 'CODEX_BUSY' }, 429);
     if (c.req.header('content-type')?.split(';')[0]?.trim() !== 'application/json')
       return c.json({ error: 'CODEX_JSON_REQUIRED' }, 415);
-    busy = true;
     const signal = AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(180000)]);
+    const parsed = requestSchema.safeParse(
+      await boundedJson(c.req.raw.body, 2 * 1024 * 1024, signal),
+    );
+    if (!parsed.success) return c.json({ error: 'CODEX_REQUEST_REJECTED' }, 400);
+    const release = await queue.acquire(signal);
     try {
-      const parsed = requestSchema.safeParse(
-        await boundedJson(c.req.raw.body, 2 * 1024 * 1024, signal),
-      );
-      if (!parsed.success) return c.json({ error: 'CODEX_REQUEST_REJECTED' }, 400);
       const request = parsed.data;
       const prompt = codexDecisionPrompt(request),
         schema = decisionOutputSchema(request);
@@ -340,7 +392,7 @@ export function createCodexModelGateway(gatewayToken: string, model: CodexBacken
         { headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-store' } },
       );
     } finally {
-      busy = false;
+      release();
     }
   });
   return app;

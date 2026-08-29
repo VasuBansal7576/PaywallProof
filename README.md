@@ -72,10 +72,14 @@ chmod 700 .local
 Start TrueForge in one terminal:
 
 ```sh
-HOST=127.0.0.1 SQLITE_PATH=.local/trueforge.sqlite pnpm exec trueforge --port 8790
+HOST=127.0.0.1 \
+SQLITE_PATH=.local/trueforge.sqlite \
+PAYWALLPROOF_LOCAL_PYTHON=/absolute/path/to/python3 \
+PAYWALLPROOF_LOCAL_GIT_ROOT=/Library/Developer/CommandLineTools \
+pnpm exec trueforge --port 8790
 ```
 
-If Python is not discoverable, set `PAYWALLPROOF_LOCAL_PYTHON` to the absolute path of your existing Python 3.11+ executable before starting TrueForge. The committed runtime patch adds only that interpreter prefix to sandbox reads; it does not permit arbitrary host access.
+Set `PAYWALLPROOF_LOCAL_PYTHON` to the absolute path of a Python 3.11–3.13 executable with `venv`. On macOS, set `PAYWALLPROOF_LOCAL_GIT_ROOT` to the exact directory returned by `xcode-select -p`; the example shows the default location. The committed runtime patch adds only those validated runtime roots to sandbox reads. It rejects `/`, the home directory, relative paths, and other broad roots.
 
 In a second terminal, register the guarded subscription connection and keep its bridge running:
 

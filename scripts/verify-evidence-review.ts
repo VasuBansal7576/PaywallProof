@@ -53,10 +53,12 @@ const completedReview = z.object({
     dynamicSubAgents: z.literal(true),
   }),
 });
-const reviewState = z.object({
-  status: z.enum(['starting', 'running', 'completed', 'error']),
-  error: z.string().nullable(),
-});
+const reviewState = z
+  .object({
+    status: z.enum(['starting', 'running', 'completed', 'error']),
+    error: z.string().nullable(),
+  })
+  .passthrough();
 
 await call(`/api/runs/${runId}/evidence-review`, {});
 const deadline = Date.now() + 10 * 60 * 1000;

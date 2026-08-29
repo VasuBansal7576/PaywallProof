@@ -975,7 +975,7 @@ describe('Codex decision protocol gateway', () => {
     expect(await response.text()).toContain('CODEX_EXACT_EXEC_PROPOSAL_REJECTED');
     expect(f.model.generate).toHaveBeenCalledTimes(2);
   });
-  it('permits only one in-flight generation', async () => {
+  it('serializes concurrent dynamic-subagent generations through a bounded queue', async () => {
     let complete: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {
       complete = resolve;
@@ -986,8 +986,13 @@ describe('Codex decision protocol gateway', () => {
     });
     const first = f.post();
     await vi.waitFor(() => expect(f.model.generate).toHaveBeenCalledOnce());
-    expect((await f.post()).status).toBe(429);
+    const second = f.post();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(f.model.generate).toHaveBeenCalledOnce();
     complete?.();
-    expect((await first).status).toBe(200);
+    expect((await Promise.all([first, second])).map((response) => response.status)).toEqual([
+      200, 200,
+    ]);
+    expect(f.model.generate).toHaveBeenCalledTimes(2);
   });
 });
