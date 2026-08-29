@@ -1,6 +1,6 @@
 # Agent Harness Hackathon sponsor requirements
 
-Research date: August 29, 2026; repository status updated August 30. This note uses organizer, TrueForge, Qodo, and repository-owned primary sources only. It separates qualification rules from optional sponsor features and competitive judging signals.
+Research date: August 29, 2026. This note uses organizer, TrueForge, Qodo, and repository-owned primary sources only. It separates qualification rules from optional sponsor features and competitive judging signals.
 
 ## Executive conclusion
 

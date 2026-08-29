@@ -29,8 +29,8 @@ Prerequisites: Node.js, pnpm, Git, the local TrueForge stack for live-runtime ch
       EXPECT: /PaywallProof verification passed/
       EVIDENCE: Passed locally on 2026-08-29 with the production Next.js build and all ten live browser-contract groups.
 
-- [x] G6: Qodo has reviewed the final implementation commit, every valid finding has been fixed, the follow-up review is clean, and the representative PR is merged.
-      EVIDENCE: PR #2 fixed all three Qodo findings and merged as `32664e0`; PR #3 received a zero-finding review and merged as `deba7bf`. Both final heads and both post-merge `main` revisions passed CI.
+- [x] G6: Qodo reviewed the representative lifecycle implementation, every valid finding was fixed, the follow-up review was clean, and the PR was merged.
+      EVIDENCE: PR #2 fixed all three Qodo findings and merged as `32664e0`. PR #3 then received a zero-finding review and merged as `deba7bf`. Each later substantive pull request creates its own review record; this historical gate does not claim to review future heads.
 
 ## Submission-only follow-ups
 
