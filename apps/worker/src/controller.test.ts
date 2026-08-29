@@ -5,8 +5,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   Controller,
-  continuationDisposition,
-  persistConfirmedCheckoutContinuation,
   runtimeStatusAfterTurn,
   coverageForMode,
   coverageLimits,
@@ -54,12 +52,6 @@ describe('mode-specific coverage limits', () => {
 });
 
 describe('external checkout runtime boundary', () => {
-  it('reconciles an uncertain continuation instead of dispatching it again', () => {
-    expect(continuationDisposition('checkout_observed')).toBe('dispatch');
-    expect(continuationDisposition('dispatched')).toBe('reconcile');
-    expect(continuationDisposition('confirmed')).toBe('complete');
-  });
-
   it('persists a waiting state instead of failing an intentional terminal turn', () => {
     expect(
       runtimeStatusAfterTurn({
@@ -80,37 +72,6 @@ describe('external checkout runtime boundary', () => {
         subscriptionCreated: false,
       }),
     ).toBe('done');
-  });
-
-  it('commits confirmation and resumed runtime state atomically', () => {
-    const { controller } = setup();
-    const runId = randomUUID();
-    controller.put('checkout-continuation', runId, {
-      status: 'dispatched',
-      sessionId: 'session-1',
-      previousTurnId: 'turn-1',
-    });
-    controller.database.exec(`
-      CREATE TRIGGER reject_runtime_insert
-      BEFORE INSERT ON control_documents
-      WHEN NEW.kind = 'runtime'
-      BEGIN
-        SELECT RAISE(ABORT, 'synthetic runtime write failure');
-      END;
-    `);
-
-    expect(() =>
-      persistConfirmedCheckoutContinuation(controller.database, {
-        runId,
-        sessionId: 'session-1',
-        previousTurnId: 'turn-1',
-        turnId: 'turn-2',
-      }),
-    ).toThrow('synthetic runtime write failure');
-    expect(controller.get('checkout-continuation', runId)).toMatchObject({
-      status: 'dispatched',
-    });
-    expect(controller.get('runtime', runId)).toBeNull();
   });
 
   it('exposes an authenticated, request-idempotent continuation endpoint', async () => {

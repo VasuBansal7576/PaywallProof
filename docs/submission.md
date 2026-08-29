@@ -8,6 +8,20 @@ TrueForge owns persisted sessions, run-scoped tools, sandbox execution and appro
 
 The selected Luna bridge provides structured decisions through the existing Codex subscription. It has no application tools or host-test access. TrueForge executes approved proposals. Source repairs go into a restricted checkout; the evaluator and its security controls stay outside that writable checkout. Publication requires the exact verified diff and destination to be approved. There is no automatic merge or deployment.
 
+### Code map
+
+| Path                                    | Ownership                                                                                                           |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `apps/web`                              | Operator workspace and presentation-only report formatting                                                          |
+| `apps/worker`                           | HTTP entry point, run orchestration, durable control documents, checkout continuation, repairs, and evidence review |
+| `src/domain`, `src/run`, `src/evidence` | Policies, run state, observations, and verdict computation                                                          |
+| `src/integrations`                      | TrueForge, Polar, browser, network, replay, and Codex adapters                                                      |
+| `src/reference`, `src/repair`           | Owned demonstration target and isolated repair machinery                                                            |
+| `tests/independent`, `tests/acceptance` | Public-contract tests and application acceptance tests                                                              |
+| `scripts`                               | Development entry points and executable verification workflows                                                      |
+
+`apps/worker/src/controller.ts` coordinates the run. It does not own SQLite document serialization or checkout continuation persistence. `control-documents.ts` owns the former; `checkout-continuation.ts` owns the latter and commits confirmation with runtime resumption in one transaction.
+
 ## Record the actual workspace
 
 The [recorded walkthrough](media/paywallproof-walkthrough.mp4) is included in the repository with [SRT captions](media/paywallproof-walkthrough.srt). It runs 180.003 seconds. No account secrets or private checkout links appear; login was excluded from the recording.
@@ -22,12 +36,12 @@ This uses the existing Playwright browser and local FFmpeg installation. It reco
 
 Outputs are under `.local/submission/<timestamp>/`: an MP4 with a default subtitle track, separate SRT captions, the original browser recording and `recording.json` with the source run identity, chapter timing and video hash. Enable the subtitle track in the player. The captions identify this as a recorded local-replay walkthrough, not live payment-provider acceptance. Review the video before uploading it anywhere.
 
-## Organizer requirements still to confirm
+## Final submission actions
 
 - The native Polar lifecycle is complete and preserved as an ignored, hash-addressed local receipt. The submission may state 12/12 sandbox assertions, signed webhooks, canceled terminal state, and zero live charges; it must not publish customer or provider identifiers.
-- The final lifecycle-hardening PR must pass Qodo review and CI before merge. PR #1 already satisfies the representative merged-PR requirement; this new substantive head still receives its own review.
+- Lifecycle PR #2 and CI PR #3 passed Qodo review and final-head CI before merge. The public threads retain the findings, fixes, and clean follow-up results.
 - Original project code is under the [MIT license](../LICENSE). Dependencies retain their own licenses and notices.
-- Supply the committed video link in the hackathon submission. The repository copy needs no paid video hosting.
+- Supply the committed video link and repository URL in the hackathon submission. The repository copy needs no paid video hosting.
 - Keep sandbox tokens, operator credentials, customer email and private checkout links out of the repository and recording.
 
 The owner must be able to explain the implementation and its limitations. Codex assistance and the distinction between independent tests and implementation-aware regressions are disclosed in the README.

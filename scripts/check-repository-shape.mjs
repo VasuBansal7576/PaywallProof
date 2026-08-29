@@ -43,6 +43,11 @@ walk(join(root, 'scripts'));
 walk(join(root, 'src'));
 walk(join(root, 'tests'));
 
+const controller = readFileSync(join(root, 'apps/worker/src/controller.ts'), 'utf8');
+if (controller.includes('control_documents')) {
+  failures.push('worker controller bypasses the control-document module');
+}
+
 if (failures.length) {
   process.stderr.write(`${failures.join('\n')}\n`);
   process.exit(1);

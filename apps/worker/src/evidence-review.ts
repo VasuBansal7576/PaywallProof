@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { hashValue, identifier, parseJson } from '#domain';
 import type { RuntimeTurn, TrueForgeAdapter } from '#integrations/trueforge';
+import type { ControlDocuments } from './control-documents.ts';
 
 export const EVIDENCE_REVIEW_SKILL = 'paywallproof-evidence-review';
 export const EVIDENCE_REVIEW_TOOLS = ['read_run_report', 'record_evidence_review'] as const;
@@ -357,11 +358,6 @@ export const evidenceReviewStateSchema = z.union([
 ]);
 export type EvidenceReviewState = z.infer<typeof evidenceReviewStateSchema>;
 
-type Documents = {
-  put(kind: string, id: string, value: unknown): void;
-  get(kind: string, id: string): unknown;
-  list(kind: string): unknown[];
-};
 export type ReviewRuntime = {
   registerSkill(options: Parameters<TrueForgeAdapter['registerSkill']>[0]): Promise<unknown>;
   registerMcpServer(
@@ -390,7 +386,7 @@ export class EvidenceReviewCoordinator {
   constructor(
     private readonly options: {
       runtime: ReviewRuntime;
-      documents: Documents;
+      documents: ControlDocuments;
       report(runId: string): Report;
       workerOrigin: string;
       repository: string;

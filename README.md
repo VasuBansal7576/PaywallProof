@@ -20,11 +20,9 @@ The terminal receipt for run `7563883e-62d1-45a3-86e7-5bd09f8cbfb3` has SHA-256 
 
 ## Qodo Code Review Evidence
 
-[Implementation PR #1](https://github.com/VasuBansal7576/PaywallProof/pull/1) was reviewed repeatedly by Qodo through final head `b93f15c`, passed CI, and was squash-merged as `fc1a626e2eec3fd86cd72654e1b83d765cab4a7a`.
+[Lifecycle PR #2](https://github.com/VasuBansal7576/PaywallProof/pull/2) contains the native Polar and TrueForge continuation work. Qodo found three real defects: a split persistence commit, an unbounded chunked webhook body, and a cross-scenario evidence citation gap. All three received focused regression tests and fixes on final head `87788cb`; Qodo then marked every finding resolved and the PR passed CI before merge commit `32664e030e2612b0e39e3783a373c192c3b24dac`.
 
-The [Qodo review thread](https://github.com/VasuBansal7576/PaywallProof/pull/1#issuecomment-5441252429) identified cancellation races, unsafe path collisions, stale browser timestamps, missing live-gateway checks, and a newest-turn pagination bug. Each valid finding now has a focused regression test. The pagination test uses a multi-page SDK iterator so a one-item mock cannot hide the fault again.
-
-Valid Qodo findings led to focused regressions for cancellation races, review-session cleanup, unsafe paths, prompt-injection boundaries, stale timestamps, gateway checks, and TrueForge turn pagination. Findings contradicted by the final committed code have public evidence-based dispositions in the same thread. The representative merged-PR requirement is satisfied; later substantive changes still go through their own Qodo-reviewed pull request.
+[CI PR #3](https://github.com/VasuBansal7576/PaywallProof/pull/3) upgraded the GitHub Action runtimes after the merged workflow emitted a Node 20 deprecation annotation. The upgraded workflow passed its own full gate, Qodo reported zero bugs, rule violations, or requirement gaps, and merge commit `deba7bf9ace88023ea6765e109e41fdcf5640177` passed again on `main`.
 
 Current executed checks and remaining acceptance gaps are recorded in [verification status](docs/verification-status.md). Unit test counts and installation probes do not establish a completed product run.
 
@@ -133,4 +131,4 @@ The local workflow verifier saves each receipt under `.local/workflow-<run-id>/`
 - [x] Request `/agentic_review` on the substantive implementation PR.
 - [x] Fix valid findings and explain invalid findings in the public review thread.
 - [x] Request follow-up review through the final commit.
-- [x] Merge the representative reviewed PR; its public link is PR #1 above.
+- [x] Merge the representative reviewed lifecycle PR; its public link is PR #2 above.
