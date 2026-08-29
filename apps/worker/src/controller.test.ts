@@ -3,7 +3,12 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Controller, coverageForMode, type ControllerConfig } from './controller.ts';
+import {
+  Controller,
+  coverageForMode,
+  coverageLimits,
+  type ControllerConfig,
+} from './controller.ts';
 import { createControlApp } from './http.ts';
 import { createPolicy, hashValue } from '#domain';
 import { observeFeature } from '#evidence/probe';
@@ -41,6 +46,7 @@ describe('mode-specific coverage limits', () => {
     expect(coverageForMode('polar_sandbox').coverageLimits.join(' ')).not.toMatch(
       /local replay|synthetic signed billing/i,
     );
+    expect(coverageLimits.join(' ')).not.toMatch(/local replay|synthetic signed billing/i);
   });
 });
 function setup(http = false, overrides: Pick<ControllerConfig, 'artifactRetentionMs'> = {}) {

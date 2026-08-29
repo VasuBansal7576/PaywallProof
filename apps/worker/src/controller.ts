@@ -75,7 +75,8 @@ export function coverageForMode(mode: 'polar_sandbox' | 'local_replay') {
     coverageLimits: coverageLimitCodes.map((code) => coverageLimitText[code]),
   };
 }
-export const { coverageLimitCodes, coverageLimits } = coverageForMode('local_replay');
+// Configuration screens show only universal boundaries; run reports add mode-specific limits.
+export const { coverageLimitCodes, coverageLimits } = coverageForMode('polar_sandbox');
 const projectSchema = z.strictObject({
   id: identifier,
   name: identifier,

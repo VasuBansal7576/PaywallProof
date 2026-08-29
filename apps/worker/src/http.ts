@@ -339,7 +339,7 @@ export function createControlApp(config: ControllerConfig) {
         '',
         '## Coverage limits',
         '',
-        ...coverageLimits.map((limit) => `- ${limit}`),
+        ...report.coverageLimits.map((limit) => `- ${limit}`),
         '',
         '## Evidence and metadata',
         '',
