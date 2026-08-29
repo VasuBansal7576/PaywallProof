@@ -357,6 +357,7 @@ export class EvidenceReviewCoordinator {
       const error =
         turn.state.status === 'error' ? turn.state.message : 'EVIDENCE_REVIEW_NOT_RECORDED';
       await this.cancelSession(state.sessionId);
+      if (!this.isCurrentRunning(state)) return;
       this.options.documents.put('evidence-review', state.runId, {
         ...state,
         status: 'error',
@@ -365,6 +366,7 @@ export class EvidenceReviewCoordinator {
     } catch (error) {
       if (this.view(state.runId)?.status === 'completed') return;
       await this.cancelSession(state.sessionId);
+      if (!this.isCurrentRunning(state)) return;
       this.options.documents.put('evidence-review', state.runId, {
         ...state,
         status: 'error',
@@ -379,5 +381,15 @@ export class EvidenceReviewCoordinator {
   private async cancelSession(sessionId: string | null): Promise<void> {
     if (!sessionId) return;
     await this.options.runtime.cancel({ sessionId }).catch(() => undefined);
+  }
+
+  private isCurrentRunning(state: z.infer<typeof runningStateSchema>): boolean {
+    const current = this.view(state.runId);
+    return (
+      current?.status === 'running' &&
+      current.attempt === state.attempt &&
+      current.sessionId === state.sessionId &&
+      current.turnId === state.turnId
+    );
   }
 }

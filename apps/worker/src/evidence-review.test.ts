@@ -23,6 +23,34 @@ const report = {
   cleanup: [],
   coverageLimits: ['Synthetic contract fixture.'],
 };
+const completedReview = {
+  runId,
+  operationId: 'record-review',
+  verdict: 'confirmed',
+  summary: 'Both independent checks found the saved outcome internally consistent.',
+  reviewers: [
+    {
+      role: 'coverage',
+      verdict: 'confirmed',
+      summary: 'Coverage is internally consistent.',
+      findings: [],
+    },
+    {
+      role: 'binding',
+      verdict: 'confirmed',
+      summary: 'Bindings are internally consistent.',
+      findings: [
+        {
+          code: 'BINDING_OK',
+          severity: 'info',
+          summary: 'The cited observation belongs to this run.',
+          scenarioId: 'SC01',
+          observationIds: ['observation-1'],
+        },
+      ],
+    },
+  ],
+};
 
 function fixture() {
   const values = new Map<string, unknown>();
@@ -127,34 +155,7 @@ describe('skill-backed evidence review', () => {
     });
     expect(read).toMatchObject({ report, reportHash: expect.stringMatching(/^[a-f0-9]{64}$/) });
 
-    const recorded = await coordinator.tool(runId, 'record_evidence_review', {
-      runId,
-      operationId: 'record-review',
-      verdict: 'confirmed',
-      summary: 'Both independent checks found the saved outcome internally consistent.',
-      reviewers: [
-        {
-          role: 'coverage',
-          verdict: 'confirmed',
-          summary: 'Coverage is internally consistent.',
-          findings: [],
-        },
-        {
-          role: 'binding',
-          verdict: 'confirmed',
-          summary: 'Bindings are internally consistent.',
-          findings: [
-            {
-              code: 'BINDING_OK',
-              severity: 'info',
-              summary: 'The cited observation belongs to this run.',
-              scenarioId: 'SC01',
-              observationIds: ['observation-1'],
-            },
-          ],
-        },
-      ],
-    });
+    const recorded = await coordinator.tool(runId, 'record_evidence_review', completedReview);
     expect(recorded).toMatchObject({ runId, status: 'completed', verdict: 'confirmed' });
     expect(coordinator.view(runId)).toEqual(recorded);
   });
@@ -167,6 +168,41 @@ describe('skill-backed evidence review', () => {
     await coordinator.recover();
 
     expect(runtime.resumeStream).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not overwrite a completed review while failed-session cancellation is pending', async () => {
+    const { coordinator, runtime } = fixture();
+    let finishCancellation: ((value: unknown) => void) | undefined;
+    runtime.resumeStream.mockResolvedValueOnce({
+      withMetadata: async function* () {
+        yield* [] as unknown[];
+      },
+    });
+    runtime.inspectTurn.mockResolvedValueOnce({
+      id: 'review-turn',
+      sessionId: 'review-session',
+      previousTurnId: null,
+      createdAt: new Date().toISOString(),
+      state: {
+        status: 'error',
+        message: 'Synthetic terminal failure',
+        completedAt: new Date().toISOString(),
+      },
+    });
+    runtime.cancel.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishCancellation = resolve;
+        }),
+    );
+    await coordinator.start(runId);
+    await vi.waitFor(() => expect(runtime.cancel).toHaveBeenCalledTimes(1));
+
+    const completed = await coordinator.tool(runId, 'record_evidence_review', completedReview);
+    finishCancellation?.(undefined);
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(coordinator.view(runId)).toEqual(completed);
   });
 
   it('archives a failed attempt, revokes its token, and retries the same bound report', async () => {
