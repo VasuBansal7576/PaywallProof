@@ -7,7 +7,7 @@ Prerequisites: Node.js, pnpm, Git, the local TrueForge stack for live-runtime ch
 - [x] G1: TrueForge continuation and approval resume the newest turn even when `listTurns` spans multiple pages.
       CHECK: pnpm test:turn-selection
       EXPECT: /turn-selection contract passed/
-      EVIDENCE: Passed locally on 2026-08-29; the focused implementation suite exercises multi-page continuation, approval, and repair-sandbox recovery.
+      EVIDENCE: Passed locally on 2026-08-29 for ascending and descending multi-page iterators; the live runtime then created a sandbox, executed 42, resumed its stream, and rejected a stale approval.
 
 - [x] G2: A completed run can enter an independent evidence-review stage whose coordinator is skill-backed, enables TrueForge dynamic subagents, exposes only review-scoped MCP tools, and persists the resulting verdict in the run report.
       CHECK: pnpm test:evidence-review
@@ -24,10 +24,10 @@ Prerequisites: Node.js, pnpm, Git, the local TrueForge stack for live-runtime ch
       EXPECT: /delivery configuration passed/
       EVIDENCE: Passed locally on 2026-08-29; `pnpm verify:ci` also passed 1,805 tests and the production web build.
 
-- [ ] G5: The final implementation passes the complete local verification pipeline, including the production web build and browser contract.
+- [x] G5: The final implementation passes the complete local verification pipeline, including the production web build and browser contract.
       CHECK: pnpm verify
       EXPECT: /PaywallProof verification passed/
-      EVIDENCE: pending
+      EVIDENCE: Passed locally on 2026-08-29 with 1,806 tests, the production Next.js build, and all ten live browser-contract groups.
 
 - [ ] G6: Qodo has reviewed the final implementation commit, every valid finding has been fixed, deferred or invalid findings have an explanation, the follow-up review is clean, and the representative PR is merged.
       EVIDENCE: pending; this is complete only after the remote Qodo/GitHub workflow finishes.

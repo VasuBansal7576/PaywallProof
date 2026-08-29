@@ -48,12 +48,13 @@ vi.mock('@truefoundry/trueforge-sdk', () => ({
 function doneTurn(
   id: string,
   requiredActions: Extract<TrueForgeApi.Turn['state'], { status: 'done' }>['requiredActions'] = [],
+  createdAt = '2026-08-29T12:00:00.000Z',
 ): TrueForgeApi.Turn {
   return {
     id,
     sessionId: 'session',
     previousTurnId: null,
-    createdAt: new Date().toISOString(),
+    createdAt,
     state: {
       status: 'done',
       completedAt: new Date().toISOString(),
@@ -71,10 +72,16 @@ beforeEach(() => {
 });
 
 describe('TrueForge newest-turn contract', () => {
-  it('continues from the first item when the SDK paginator auto-fetches older pages', async () => {
+  it.each([
+    ['newest-first', ['newest', 'older']],
+    ['oldest-first', ['older', 'newest']],
+  ] as const)('continues the newest turn from a %s multi-page iterator', async (_, order) => {
+    const turns = {
+      older: doneTurn('older', [], '2026-08-29T12:00:00.000Z'),
+      newest: doneTurn('newest', [], '2026-08-29T12:00:01.000Z'),
+    };
     sdk.listTurns.mockImplementation(async function* () {
-      yield doneTurn('newest');
-      yield doneTurn('older');
+      for (const id of order) yield turns[id];
     });
 
     const adapter = new TrueForgeAdapter({ model: 'local/model' });
@@ -105,8 +112,8 @@ describe('TrueForge newest-turn contract', () => {
       },
     ];
     sdk.listTurns.mockImplementation(async function* () {
-      yield doneTurn('newest', requiredActions);
-      yield doneTurn('older');
+      yield doneTurn('older', [], '2026-08-29T12:00:00.000Z');
+      yield doneTurn('newest', requiredActions, '2026-08-29T12:00:01.000Z');
     });
     sdk.getTurn.mockResolvedValue({ data: doneTurn('newest', requiredActions) });
     sdk.listTurnEvents.mockImplementation(async function* () {

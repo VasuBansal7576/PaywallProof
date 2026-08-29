@@ -7,7 +7,8 @@ This file separates executed evidence from submission requirements. Historical r
 - A full local-replay lifecycle completed through TrueForge with all twelve scenario assertions passing and both run-owned users deleted.
 - An isolated generated repair reproduced the injected SC03 failure, then passed the unchanged twelve-assertion evaluator and fourteen security controls.
 - ProgramFlow completed the same four-state contract against a separate PostgreSQL application. Its compact receipt is retained under `docs/real-world/programflow/`.
-- TypeScript, ESLint, unit/integration tests, the production web build, and browser checks passed before the current submission-hardening change. The final gate must rerun them against the final commit.
+- The submission-hardening gate passes formatting, repository shape, delivery configuration, skill validation, TypeScript, ESLint, 1,806 tests, the production web build, and all ten live browser-contract groups.
+- The live TrueForge runtime created a sandbox, executed Python with output `42`, resumed the same stream, exercised allow/deny approval transport, and rejected replay of a stale approval. Turn selection is covered for both ascending and descending multi-page iterators.
 - Qodo reviewed PR #1 through commit `561867e`. Later commits, including the current TrueForge review feature, still require a fresh `/agentic_review` and follow-up review.
 
 ## Still required

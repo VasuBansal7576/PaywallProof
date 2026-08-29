@@ -1,6 +1,7 @@
 node_modules/
 .pnpm-store/
 .next/
+**/next-env.d.ts
 dist/
 coverage/
 .env
@@ -14,4 +15,3 @@ coverage/
 test-results/
 playwright-report/
 .DS_Store
-

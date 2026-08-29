@@ -20,12 +20,24 @@ export type RuntimeApproval = {
 };
 export type RuntimeCursor = { sessionId: string; turnId: string; afterSequenceNumber?: number };
 
-/** `listTurns` is newest-first and its paginator may fetch every older page. */
+/** Select by persisted creation time because SDK/server versions expose either pagination order. */
 export async function newestTurn(
   turns: AsyncIterable<RuntimeTurn>,
 ): Promise<RuntimeTurn | undefined> {
-  for await (const turn of turns) return turn;
-  return undefined;
+  let newest: RuntimeTurn | undefined;
+  for await (const turn of turns) {
+    const createdAt = Date.parse(turn.createdAt);
+    if (!Number.isFinite(createdAt)) throw new Error('Runtime turn has an invalid creation time.');
+    if (!newest) {
+      newest = turn;
+      continue;
+    }
+    const newestCreatedAt = Date.parse(newest.createdAt);
+    if (createdAt > newestCreatedAt || (createdAt === newestCreatedAt && turn.id > newest.id)) {
+      newest = turn;
+    }
+  }
+  return newest;
 }
 
 function localUrl(value: string): string {
