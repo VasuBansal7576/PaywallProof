@@ -32,7 +32,7 @@ if (typeof packageJson.scripts?.['test:polar:lifecycle'] !== 'string') {
 if (/No substantive implementation PR has been merged yet/i.test(readme)) {
   failures.push('README still describes the representative Qodo PR as unmerged');
 }
-if (!readme.includes('fc1a626e2eec3fd86cd72654e1b83d765cab4a7a')) {
+if (!readme.includes('32664e030e2612b0e39e3783a373c192c3b24dac')) {
   failures.push('README does not identify the representative Qodo-reviewed merge');
 }
 for (const phrase of ['Fixed every valid finding', 'follow-up review', 'merge-ready']) {

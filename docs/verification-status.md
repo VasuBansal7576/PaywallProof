@@ -12,12 +12,13 @@ This file separates executed evidence from submission requirements. Historical r
 - The submission-hardening gate covers formatting, repository shape, delivery configuration, skill validation, TypeScript, ESLint, the complete test suite, the production web build, and live browser-contract groups.
 - The live TrueForge runtime created a sandbox, executed Python with output `42`, resumed the same stream, exercised allow/deny approval transport, and rejected replay of a stale approval. Turn selection is covered for both ascending and descending multi-page iterators.
 - A live evidence-review retry mounted the Git-backed skill through the restricted local TrueForge sandbox and completed with separate dynamic coverage and binding subagents. The compact projection is bound to report hash `4bb30645ee18c30dab3643369fae8e5a4fd2e546e9c443a2fa1ab2fe99255958`. Binding integrity is `confirmed`; the synthesized `needs_attention` verdict records only the intentional single-build/single-price sandbox scope and the absence of production billing coverage.
-- Qodo reviewed PR #1 through its final head, CI passed, and it was squash-merged as `fc1a626e2eec3fd86cd72654e1b83d765cab4a7a`. This lifecycle and review-hardening change set still requires its own final-head `/agentic_review` before merge.
+- Qodo reviewed lifecycle PR #2, identified three valid defects, and marked all three resolved on final head `87788cb`. CI passed and the PR was squash-merged as `32664e030e2612b0e39e3783a373c192c3b24dac`.
+- Qodo found no issues in CI-runtime PR #3. Its upgraded workflow passed before merge and again on `main` at `deba7bf9ace88023ea6765e109e41fdcf5640177`, without the earlier Node 20 runtime annotation.
 
 ## Still required
 
-- The final Qodo review must cover the final implementation commit. Every finding needs a recorded disposition, and the representative PR must be merged.
-- The tracked walkthrough video should move to a stable public release or object-storage URL before the binary is removed from Git.
+- Submit the public repository, README, and committed walkthrough through the hackathon portal.
+- Keep the walkthrough in Git until the submitted link points to another stable public location.
 
 ## Truthfulness rules
 

@@ -25,6 +25,8 @@ import { artifactDownloadMetadata, createArtifactService } from './artifacts.ts'
 import { RepairCoordinator } from './repairs.ts';
 import { oracleFingerprint } from '#repair/oracle';
 import { EvidenceReviewCoordinator } from './evidence-review.ts';
+import { SqliteControlDocuments } from './control-documents.ts';
+import { CheckoutContinuationStore } from './checkout-continuation.ts';
 
 export type ControllerConfig = {
   databasePath: string;
@@ -130,52 +132,6 @@ export function runtimeStatusAfterTurn(input: {
     return 'waiting_external' as const;
   return 'done' as const;
 }
-export function continuationDisposition(status: 'checkout_observed' | 'dispatched' | 'confirmed') {
-  if (status === 'checkout_observed') return 'dispatch' as const;
-  if (status === 'dispatched') return 'reconcile' as const;
-  return 'complete' as const;
-}
-type ConfirmedCheckoutContinuation = {
-  runId: string;
-  sessionId: string;
-  previousTurnId: string;
-  turnId: string;
-};
-/** Commits the continuation receipt and resumable runtime cursor as one recovery boundary. */
-export function persistConfirmedCheckoutContinuation(
-  database: Database.Database,
-  input: ConfirmedCheckoutContinuation,
-) {
-  const write = database.prepare(
-    'INSERT INTO control_documents VALUES(?,?,?) ON CONFLICT(kind,id) DO UPDATE SET value=excluded.value',
-  );
-  database.transaction(() => {
-    write.run(
-      'checkout-continuation',
-      input.runId,
-      JSON.stringify(
-        parseJson({
-          status: 'confirmed',
-          sessionId: input.sessionId,
-          previousTurnId: input.previousTurnId,
-          turnId: input.turnId,
-        }),
-      ),
-    );
-    write.run(
-      'runtime',
-      input.runId,
-      JSON.stringify(
-        parseJson({
-          sessionId: input.sessionId,
-          turnId: input.turnId,
-          lastSequenceNumber: 0,
-          status: 'running',
-        }),
-      ),
-    );
-  })();
-}
 const toolSchema = z.strictObject({
   runId: identifier,
   operationId: identifier,
@@ -210,6 +166,8 @@ export class Controller {
   readonly polar: PolarSandboxAdapter | null;
   readonly replay: LocalReplayAdapter;
   readonly database: Database.Database;
+  readonly documents: SqliteControlDocuments;
+  readonly checkoutContinuations: CheckoutContinuationStore;
   readonly artifacts: ReturnType<typeof createArtifactService>;
   readonly repairs: RepairCoordinator;
   readonly reviews: EvidenceReviewCoordinator;
@@ -237,8 +195,10 @@ export class Controller {
     ];
     this.database = new Database(config.databasePath);
     this.database.pragma('journal_mode = WAL');
+    this.documents = new SqliteControlDocuments(this.database);
+    this.checkoutContinuations = new CheckoutContinuationStore(this.documents);
     this.database.exec(
-      'CREATE TABLE IF NOT EXISTS control_documents(kind TEXT NOT NULL,id TEXT NOT NULL,value TEXT NOT NULL,PRIMARY KEY(kind,id)); CREATE TABLE IF NOT EXISTS http_requests(id TEXT PRIMARY KEY,hash TEXT NOT NULL,response TEXT);',
+      'CREATE TABLE IF NOT EXISTS http_requests(id TEXT PRIMARY KEY,hash TEXT NOT NULL,response TEXT)',
     );
     this.runs = openRunStore({ path: config.databasePath });
     this.evidence = new EvidenceStore(config.databasePath, this.secrets);
@@ -291,11 +251,7 @@ export class Controller {
       runtimeUrl: config.runtimeUrl,
       model: config.model,
       webOrigin: config.webOrigin,
-      documents: {
-        put: (kind, id, value) => this.put(kind, id, value),
-        get: (kind, id) => this.get(kind, id),
-        list: (kind) => this.list(kind),
-      },
+      documents: this.documents,
       source: async (runId) => {
         const run = this.runs.getRun(runId);
         if (run.status !== 'completed') throw new ControlError('REPAIR_REQUIRES_COMPLETED_RUN');
@@ -315,11 +271,7 @@ export class Controller {
     });
     this.reviews = new EvidenceReviewCoordinator({
       runtime: this.runtime,
-      documents: {
-        put: (kind, id, value) => this.put(kind, id, value),
-        get: (kind, id) => this.get(kind, id),
-        list: (kind) => this.list(kind),
-      },
+      documents: this.documents,
       report: (runId) => this.reviewSource(runId),
       workerOrigin: config.workerOrigin,
       repository: config.repository,
@@ -327,24 +279,13 @@ export class Controller {
     });
   }
   put(kind: string, id: string, value: unknown) {
-    this.database
-      .prepare(
-        'INSERT INTO control_documents VALUES(?,?,?) ON CONFLICT(kind,id) DO UPDATE SET value=excluded.value',
-      )
-      .run(kind, id, JSON.stringify(parseJson(value)));
+    this.documents.put(kind, id, value);
   }
   get(kind: string, id: string): unknown {
-    const row = this.database
-      .prepare('SELECT value FROM control_documents WHERE kind=? AND id=?')
-      .get(kind, id);
-    if (!row) return null;
-    return JSON.parse(z.object({ value: z.string() }).parse(row).value);
+    return this.documents.get(kind, id);
   }
   list(kind: string): unknown[] {
-    return this.database
-      .prepare('SELECT value FROM control_documents WHERE kind=? ORDER BY rowid DESC')
-      .all(kind)
-      .map((row) => JSON.parse(z.object({ value: z.string() }).parse(row).value));
+    return this.documents.list(kind);
   }
   createProject(input: unknown) {
     const fields = projectSchema.omit({ id: true }).extend({ targetId: identifier }).parse(input);
@@ -780,11 +721,7 @@ export class Controller {
       this.runs.cancelRun(runId);
       // The SDK has no MCP-registration deletion API. Revoke the local capability
       // so a stale runtime registration cannot authenticate any further request.
-      this.database
-        .prepare(
-          "DELETE FROM control_documents WHERE kind='mcp-token' AND json_extract(value,'$.runId')=?",
-        )
-        .run(runId);
+      this.documents.deleteRunOwned('mcp-token', runId);
     } finally {
       this.stopLocks.delete(runId);
     }
@@ -1252,25 +1189,14 @@ export class Controller {
       const state = runtimeSchema.parse(this.get('runtime', runId));
       if (state.status !== 'waiting_external')
         throw new ControlError('CHECKOUT_CONTINUATION_NOT_READY');
-      const existing = z
-        .object({
-          status: z.enum(['checkout_observed', 'dispatched', 'confirmed']),
-          sessionId: identifier,
-          previousTurnId: identifier,
-          turnId: identifier.optional(),
-        })
-        .nullable()
-        .parse(this.get('checkout-continuation', runId));
-      let continuation = existing;
+      let continuation = this.checkoutContinuations.load(runId);
       if (!continuation) {
         if (!(await this.polar.checkoutCompleted(runId)))
           throw new ControlError('CHECKOUT_PENDING');
-        continuation = {
-          status: 'checkout_observed',
+        continuation = this.checkoutContinuations.observe(runId, {
           sessionId: state.sessionId,
           previousTurnId: state.turnId,
-        };
-        this.put('checkout-continuation', runId, continuation);
+        });
       }
       const externalWait = z
         .object({
@@ -1291,47 +1217,36 @@ export class Controller {
         this.put('external-wait', runId, { ...externalWait, status: 'credited', endedAt });
         this.armWatchdog(runId);
       }
-      const disposition = continuationDisposition(continuation.status);
-      if (disposition === 'complete' && continuation.turnId) {
-        persistConfirmedCheckoutContinuation(this.database, {
-          runId,
-          sessionId: continuation.sessionId,
-          previousTurnId: continuation.previousTurnId,
-          turnId: continuation.turnId,
-        });
+      if (continuation.status === 'confirmed') {
+        this.checkoutContinuations.restore(runId, continuation);
         void this.watchRuntime(runId);
         return { status: 'resumed', turnId: continuation.turnId } as const;
       }
       let turn;
-      if (disposition === 'reconcile') {
+      let pending = continuation;
+      if (continuation.status === 'dispatched') {
         turn = await this.runtime.findContinuation({
           sessionId: continuation.sessionId,
           previousTurnId: continuation.previousTurnId,
         });
         if (!turn) throw new ControlError('RUNTIME_CONTINUATION_UNKNOWN');
       } else {
-        continuation = { ...continuation, status: 'dispatched' };
-        this.put('checkout-continuation', runId, continuation);
+        pending = this.checkoutContinuations.dispatch(runId, continuation);
         try {
           turn = await this.runtime.continueTurn({
-            sessionId: continuation.sessionId,
-            previousTurnId: continuation.previousTurnId,
+            sessionId: pending.sessionId,
+            previousTurnId: pending.previousTurnId,
             input: `The owned Polar sandbox checkout for runId ${runId} is now provider-confirmed. Call change_test_subscription with operationId step_confirm and action confirm. Then follow every returned nextAction through cleanup_run. Do not repeat checkout creation. Do not stop early. /no_think`,
           });
         } catch {
           turn = await this.runtime.findContinuation({
-            sessionId: continuation.sessionId,
-            previousTurnId: continuation.previousTurnId,
+            sessionId: pending.sessionId,
+            previousTurnId: pending.previousTurnId,
           });
           if (!turn) throw new ControlError('RUNTIME_CONTINUATION_UNKNOWN');
         }
       }
-      persistConfirmedCheckoutContinuation(this.database, {
-        runId,
-        sessionId: continuation.sessionId,
-        previousTurnId: continuation.previousTurnId,
-        turnId: turn.id,
-      });
+      this.checkoutContinuations.confirm(runId, pending, turn.id);
       void this.watchRuntime(runId);
       return {
         status: 'resumed',
@@ -1382,16 +1297,9 @@ export class Controller {
       }
       const state = runtimeSchema.safeParse(this.get('runtime', id));
       if (state.success && state.data.status === 'waiting_external') {
-        const continuation = z
-          .object({
-            status: z.literal('confirmed'),
-            sessionId: identifier,
-            previousTurnId: identifier,
-            turnId: identifier,
-          })
-          .safeParse(this.get('checkout-continuation', id));
-        if (continuation.success) {
-          persistConfirmedCheckoutContinuation(this.database, { runId: id, ...continuation.data });
+        const continuation = this.checkoutContinuations.load(id);
+        if (continuation?.status === 'confirmed') {
+          this.checkoutContinuations.restore(id, continuation);
           this.armWatchdog(id);
           void this.watchRuntime(id);
           continue;

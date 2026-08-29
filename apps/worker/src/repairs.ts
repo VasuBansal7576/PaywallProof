@@ -34,6 +34,7 @@ import {
   REPAIR_MIN_FREE_BYTES,
 } from '#repair/capacity';
 import { isUnexecutedRuntimeFailure } from '#repair/runtime-continuation';
+import type { ControlDocuments } from './control-documents.ts';
 
 const execute = promisify(execFile);
 type ScenarioId = (typeof CORE_SCENARIOS)[number];
@@ -61,11 +62,6 @@ export type RepairJob = {
   error: string | null;
   runtimeOperations: SandboxRuntimeState[];
   checks: unknown[];
-};
-type Documents = {
-  put: (kind: string, id: string, value: unknown) => void;
-  get: (kind: string, id: string) => unknown;
-  list: (kind: string) => unknown[];
 };
 const jobSchema = z.object({
   id: z.string().uuid(),
@@ -111,7 +107,7 @@ type Config = {
   runtimeUrl: string;
   model: string;
   webOrigin: string;
-  documents: Documents;
+  documents: ControlDocuments;
   source: (runId: string) => Promise<RepairSource>;
 };
 
