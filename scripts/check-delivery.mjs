@@ -18,6 +18,9 @@ const requiredScripts = [
 ];
 const failures = requiredScripts.filter((name) => typeof packageJson.scripts?.[name] !== 'string');
 if (!workflow.includes('pnpm verify:ci')) failures.push('CI does not run verify:ci');
+if (!workflow.includes('pnpm exec playwright install --with-deps chromium')) {
+  failures.push('CI does not install the pinned Playwright Chromium runtime');
+}
 if (!qodo.includes('/agentic_review')) failures.push('Qodo agentic review command is missing');
 for (const phrase of ['Fixed every valid finding', 'follow-up review', 'merge-ready']) {
   if (!template.includes(phrase)) failures.push(`PR checklist is missing: ${phrase}`);
