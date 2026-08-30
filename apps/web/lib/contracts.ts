@@ -1,8 +1,6 @@
 import { z } from 'zod';
-import {
-  adapterDoctorReportSchema,
-  targetFeatureSchema,
-} from '../../../src/adapter-doctor/report.ts';
+import { adapterDoctorReportSchema } from '#adapter-doctor';
+import { targetFeatureSchema } from '#integrations/target-contract';
 
 export const modeSchema = z.enum(['polar_sandbox', 'local_replay']);
 export type Mode = z.infer<typeof modeSchema>;

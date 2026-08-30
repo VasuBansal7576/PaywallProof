@@ -129,7 +129,9 @@ Implement the authenticated routes in the [target adapter contract](docs/contrac
 
 Adapter Doctor makes at most three read-only requests before PaywallProof creates a fixture. It checks the strict contract version, source-build identity, staging authentication, credential separation, response type, cache policy, and the declared feature descriptor. A compatible Doctor report is a preflight result. It does not prove fixture behavior, the subscription lifecycle, browser behavior, cleanup, production lockout, or Polar delivery.
 
-On August 30, 2026, the generic lifecycle runner completed AT29 against the owned [Revenue Intelligence OS](https://github.com/VasuBansal7576/revenue-intelligence-os) staging target at commit `49e69922c37446bc229ea14571bba58db34a56ce`. Adapter Doctor bound `pipeline_export` and `/admin` to that build. SC01 through SC04 passed at the API, browser, and application-state layers with protected-endpoint statuses `403`, `200`, `200`, and `403`; both run-owned users were then confirmed deleted. The run used synthetic local replay with provider credentials removed, so it proves contract-v1 lifecycle portability—not Polar delivery or repair portability.
+On August 30, 2026, TrueForge run `593081b1-b770-4784-b146-f4782d431029` completed AT29 against the owned [Revenue Intelligence OS](https://github.com/VasuBansal7576/revenue-intelligence-os) staging target. It bound source commit `49e69922c37446bc229ea14571bba58db34a56ce` to feature `pipeline_export` and browser path `/admin`. The run passed 12/12 API, browser, and application-state assertions. Cleanup deleted both run-owned fixtures. The TrueForge session reached `done`. The report has SHA-256 `be91a885a2624829dcd77cbfc96ebd52f150e804dc030001d0e257a75913ca71`.
+
+This run used `local_replay` with provider credentials removed. It proves contract-v1 lifecycle portability, not Polar delivery or repair portability. A post-run bridge check confirmed zero extra credits and no paid fallback.
 
 Contract-v1 compatibility does not grant repair access. Automated repair remains limited to the trusted `reference_v1` profile.
 
@@ -160,7 +162,7 @@ Contract-v1 compatibility does not grant repair access. Automated repair remains
 
 The Codex bridge uses included ChatGPT subscription allowance only when it can verify sign-in, available quota, and a zero extra-credit balance. It blocks unknown or paid fallback states. See [the subscription boundary](docs/codex-subscription.md).
 
-Known limits: this is a local, single-operator MVP; the repair sandbox is verified only on macOS; and source-bound lifecycle portability beyond the bundled Next.js reference adapter has not yet been recorded.
+PaywallProof remains a local, single-operator MVP. The repair sandbox is verified only on macOS. One external contract-v1 target has a recorded lifecycle, and repair remains limited to `reference_v1`. The external-target run used `local_replay`, not Polar.
 
 ## Development disclosure
 

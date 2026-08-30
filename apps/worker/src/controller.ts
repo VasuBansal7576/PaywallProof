@@ -15,11 +15,8 @@ import {
 } from '#domain';
 import { EvidenceStore, redact, type EvidenceEvaluation } from '#evidence';
 import { observeFeature, observeScenario } from '#evidence/probe';
-import {
-  targetFixtureReceiptSchema,
-  TargetContractV1Adapter,
-  TargetTransport,
-} from '#integrations/network';
+import { TargetTransport } from '#integrations/network';
+import { targetFixtureReceiptSchema, TargetContractV1Adapter } from '#integrations/target-contract';
 import { BrowserRunner } from '#integrations/browser';
 import { PolarSandboxAdapter } from '#integrations/polar-runtime';
 import { POLAR_API_VERSION } from '#integrations/polar';
@@ -31,7 +28,7 @@ import { oracleFingerprint } from '#repair/oracle';
 import { EvidenceReviewCoordinator } from './evidence-review.ts';
 import { SqliteControlDocuments } from './control-documents.ts';
 import { CheckoutContinuationStore } from './checkout-continuation.ts';
-import { createAdapterDoctor, HttpAdapterDoctorTarget } from '../../../src/adapter-doctor/index.ts';
+import { createAdapterDoctor, HttpAdapterDoctorTarget } from '#adapter-doctor';
 import type { RepairProfile } from './repair-profile.ts';
 
 export type ControllerConfig = {

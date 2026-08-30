@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  ADAPTER_DOCTOR_SCOPE,
-  adapterDoctorReportSchema,
-} from '../../../src/adapter-doctor/index.ts';
+import { ADAPTER_DOCTOR_SCOPE, adapterDoctorReportSchema } from '#adapter-doctor';
 import { preflightSchema } from './contracts.ts';
 
 describe('operator contracts', () => {

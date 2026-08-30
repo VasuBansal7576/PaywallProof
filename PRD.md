@@ -8,7 +8,7 @@ Owner: Vasu
 Status: Reference-target repair MVP and second-target contract-v1 lifecycle portability implemented and verified. Executed results are recorded in [docs/verification.md](docs/verification.md).
 Working name: PaywallProof. Name availability has not been checked.
 
-**August 28 provider decision:** Polar replaces Stripe. The migration preserved the access scenarios, repair requirements, and safety checks while replacing provider-specific setup, timing, payment evidence, and signing contracts. The [migration record](docs/billing-provider-migration.md) documents the completed native sandbox lifecycle.
+**August 28 provider decision:** Polar replaces Stripe. The access scenarios, repair requirements, and safety checks stay unchanged. Provider setup, timing, payment evidence, and signature handling now follow Polar's contracts. The lasting choice is recorded in [implementation decisions](docs/decisions.md). The completed native sandbox lifecycle is recorded in [verification status](docs/verification.md).
 
 **August 29 model decision:** The owner selected Luna through the existing Codex subscription. The [subscription bridge](docs/codex-subscription.md) must require ChatGPT authentication, included quota, zero extra credits, a pinned Luna model and no paid fallback. Codex proposes actions without host environment access; TrueForge retains execution and approval enforcement. Host tests and the independent repair evaluator remain unavailable to the generator. Consent must disclose OpenAI processing and subscription usage. No capability is removed.
 
@@ -16,31 +16,29 @@ Working name: PaywallProof. Name availability has not been checked.
 
 ### How to read this document
 
-For the product, read sections 1 through 4 and the demo in section 16. For implementation, read the whole document, then follow section 15 in order. A coding agent must not treat a proposed interface as an existing SDK feature.
+For the product, read sections 1 through 4. For implementation, read sections 5 through 14 and the owner constraints in section 19. A coding agent must not treat a proposed interface as an existing SDK feature. [Verification status](docs/verification.md) records executed results. [Implementation decisions](docs/decisions.md) records changes to the original plan.
 
 This document is the source of truth for the hackathon MVP. **MUST** means required for that MVP. **SHOULD** means preferred unless a documented constraint prevents it. **LATER** means outside the MVP. A blocked requirement stays visible. It does not become complete because a demo uses a substitute.
 
 ### Contents
 
-1. [Product and customer](#1-product-and-customer)
-2. [Scope and decisions](#2-scope-and-decisions)
-3. [User journey and interface](#3-user-journey-and-interface)
-4. [Product requirements](#4-product-requirements)
-5. [Access policy and result rules](#5-access-policy-and-result-rules)
-6. [Scenario catalogue](#6-scenario-catalogue)
-7. [Architecture and ownership](#7-architecture-and-ownership)
-8. [Domain model and persistence](#8-domain-model-and-persistence)
-9. [Integration contracts](#9-integration-contracts)
-10. [TrueForge and Qodo integration](#10-trueforge-and-qodo-integration)
-11. [Safety and permissions](#11-safety-and-permissions)
-12. [Recovery, limits, and cleanup](#12-recovery-limits-and-cleanup)
-13. [Repair workflow](#13-repair-workflow)
-14. [Verification and acceptance](#14-verification-and-acceptance)
-15. [Implementation sequence](#15-implementation-sequence)
-16. [Demo and submission](#16-demo-and-submission)
-17. [Commercial assumptions and unresolved risks](#17-commercial-assumptions-and-unresolved-risks)
-18. [Sources](#18-sources)
-19. [Owner constraints and independent verification](#19-owner-constraints-and-independent-verification)
+- [Product and customer](#1-product-and-customer)
+- [Scope and decisions](#2-scope-and-decisions)
+- [User journey and interface](#3-user-journey-and-interface)
+- [Product requirements](#4-product-requirements)
+- [Access policy and result rules](#5-access-policy-and-result-rules)
+- [Scenario catalogue](#6-scenario-catalogue)
+- [Architecture and ownership](#7-architecture-and-ownership)
+- [Domain model and persistence](#8-domain-model-and-persistence)
+- [Integration contracts](#9-integration-contracts)
+- [TrueForge and Qodo integration](#10-trueforge-and-qodo-integration)
+- [Safety and permissions](#11-safety-and-permissions)
+- [Recovery, limits, and cleanup](#12-recovery-limits-and-cleanup)
+- [Repair workflow](#13-repair-workflow)
+- [Verification and acceptance](#14-verification-and-acceptance)
+- [Commercial assumptions and unresolved risks](#17-commercial-assumptions-and-unresolved-risks)
+- [Sources](#18-sources)
+- [Owner constraints and independent verification](#19-owner-constraints-and-independent-verification)
 
 ## 1. Product and customer
 
@@ -362,30 +360,7 @@ A minimal Next.js demo with SQLite is sufficient for the reference target. Postg
 
 Use the pinned Polar HTTP contract and `standardwebhooks` for native signatures, plus the official `@truefoundry/trueforge-sdk`. Commit the lockfile and record provider API, signing library, TrueForge versions and target commit in each run.
 
-### 7.3 Proposed repository layout
-
-These are files and modules to create, not files that already exist.
-
-```text
-apps/
-  web/                       Project setup, policy UI, run UI, report API
-  worker/                    Durable run controller and MCP transport
-  demo-saas/                 Free/Pro reference app and staging adapter
-packages/
-  contracts/                 Zod schemas and derived TypeScript types
-  core/                      Policies, state transitions, verdicts, limits
-  adapters/                  Polar, target, browser, GitHub, TrueForge
-  evidence/                  Redaction, hashing, artifact manifests, reports
-tests/
-  acceptance/                Cross-module scenarios and known controls
-  fixtures/                  Sanitized SDK payloads and target variants
-docs/
-  integration.md             Supported adapter setup and constraints
-  demo.md                    Recorded demo steps and setup
-  decisions.md               Version choices and documented scope changes
-```
-
-### 7.4 Module responsibilities
+### 7.3 Module responsibilities
 
 The run controller owns durable state, approval validation, operation identity, deadlines, and single-run locking. It does not implement a second LLM agent loop. TrueForge owns model turns, tool orchestration, runtime approval pauses, and the sandbox.
 
@@ -639,6 +614,10 @@ The README MUST contain `## Qodo Code Review Evidence`, a representative merged 
 
 If a generated repair PR also receives Qodo review, show that as extra evidence. A generated PR does not replace the review history of PaywallProof itself.
 
+The submission MUST contain a public repository, a reproducible README, about three minutes of demo video, and a short explanation of TrueForge's role. It also requires the Qodo Code Review Evidence section. Disclose AI coding assistance and be able to explain the implementation.
+
+The README includes supported scope, required credentials, exact setup, and a version manifest. It also separates real and replay test commands and documents safety boundaries, adapter instructions, known limitations, and a sanitized sample report. No private application code, live keys, customer records, or login-protected data belong in the public demo.
+
 ## 11. Safety and permissions
 
 ### 11.1 Non-negotiable controls
@@ -830,80 +809,6 @@ The MVP passes all required automated tests and the manual Qodo review check. A 
 
 Target a normal core run of under ten minutes after connections are ready. Measure cold sandbox startup separately. These are goals to measure, not promises for the landing page.
 
-### 14.5 Supplementary public-demo audits
-
-PaywallProof MAY use an unrelated SaaS's public demo or vendor-provided sandbox as supplementary black-box evidence when the vendor explicitly permits fictional test activity and the workflow cannot charge anyone. This adds external product evidence without weakening the owned staging requirements.
-
-Public-demo audits MUST use only the application's supported UI, fictional data, reserved non-delivery email domains, and visibly test-mode payment behavior. Do not enter a card, create a live subscription, load-test the service, bypass access controls, or inspect private state. Stop before any screen that could create a real charge.
-
-Label the result `black_box_public_sandbox`, record the exact browser observations and cleanup attempts, redact bearer links, and preserve screenshots with hashes. API, provider, database, source, and controller assertions remain false unless each was actually collected. A public browser audit cannot be promoted to a PaywallProof pass or replace AT04, AT29, or the Polar lifecycle gate.
-
-If the supported cleanup path fails, record the leftover and the vendor's reset behavior. Do not alter unrelated records or invent cleanup. A failed refund followed by an archive action that requires that refund is a valid workflow finding when both outcomes are reproduced and the customer link is checked again.
-
-## 15. Implementation sequence
-
-### 15.1 Instructions for the coding agent
-
-Read this PRD before creating code. Preserve the priority boundaries. Implement a working path before adding extra providers, scenarios, or dashboards.
-
-At each step, report changed files, the checks actually run, their results, and unresolved blockers. Never describe skipped credentialed tests as passing. Never silently replace a real provider operation with a mock.
-
-Create decisions in `docs/decisions.md` when a verified SDK or environment constraint requires a change. Explain the impact and obtain owner approval before removing a required capability or weakening safety.
-
-### 15.2 Ordered work packages
-
-| Package | Work                                                                                    | Exit condition                                                                                                                     |
-| ------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| IP00    | Set up repository, Qodo, supported runtime versions, and an integration spike           | TrueForge executes one restricted MCP read, a sandbox command, an approval denial, and a reconnect; Polar sandbox read succeeds    |
-| IP01    | Implement contracts, policies, durable run state, operations, and approvals             | Pure unit tests pass; duplicate approvals and invalid transitions fail safely                                                      |
-| IP02    | Build reference Free/Pro target and staging adapter                                     | An ordinary free user is denied and a seeded authorized user is allowed in target tests; seeded setup is not used as scan evidence |
-| IP03    | Implement owned fixture creation, Polar lifecycle, and webhook connectivity             | Real SC02 through SC04 provider states are observed with resource inventory and cleanup                                            |
-| IP04    | Add protected API/browser probes, deterministic assertions, and reports                 | Known-good suite passes; three known-bad variants are detected with actual observations                                            |
-| IP05    | Connect TrueForge investigation and repair to the working runner                        | Agent explains an observed failure, generates a bounded patch, and retests it without altering the oracle                          |
-| IP06    | Add project/policy/run/finding UI, reconnect, cancellation, and approved PR publication | Owner completes the full workflow; deny and reconnect paths pass                                                                   |
-| IP07    | Run acceptance suite, review Qodo feedback, document setup, and record the demo         | Required evidence exists, limitations are explicit, and a stranger can reproduce the supported path                                |
-| IP08    | Add Adapter Doctor and connect a second owned contract-v1 target                        | Source-bound SC01 through SC04 results and cleanup satisfy AT29; repair remains unsupported for that target                        |
-
-Each substantive package uses PRs reviewed by Qodo before merge. Small PRs are preferred, but don't split a change into fragments that cannot be tested.
-
-IP00 is a feasibility gate. Missing access to an approved TrueForge sandbox provider, unreachable target networking, or unsupported approval semantics must be resolved or surfaced immediately. Provider startup is not evidence that generated-code execution or the product workflow passed.
-
-### 15.3 Preserve scope and disclose incomplete verification
-
-The owner does not authorize feature cuts based on development effort or deadlines. Preserve every accepted capability and required check. Optional work remains optional as specified elsewhere; it must not be used to imply that an incomplete required path is complete.
-
-If the live repair rerun cannot be finished, retain a locally tested draft patch with its limitation. Do not fabricate an integration success. If the real core Polar run itself cannot be completed, the stated MVP is incomplete.
-
-### 15.4 Commands the implementation must supply
-
-Provide documented scripts for `lint`, `typecheck`, `test`, `test:acceptance`, `test:polar`, `dev`, and `demo:reset`. These are required future scripts, not commands that exist at specification time.
-
-`test:polar` is read-only preflight and exits nonzero as blocked when credentials are absent. Passing preflight explicitly leaves lifecycle verification false. The full workflow verifier must inspect all four scenarios and real provider provenance before claiming lifecycle acceptance. `demo:reset` must affect only the reference demo and inventoried test resources. It must never reset an arbitrary database selected by an unchecked environment variable.
-
-## 16. Demo and submission
-
-### 16.1 Three-minute demo plan
-
-| Time         | What the judge sees                                                                      |
-| ------------ | ---------------------------------------------------------------------------------------- |
-| 0:00 to 0:20 | The question: a canceled user still gets a paid feature                                  |
-| 0:20 to 0:45 | Connected sandbox, approved policy, and bounded test-plan approval                       |
-| 0:45 to 1:20 | Real billing state and the protected feature disagree; evidence opens                    |
-| 1:20 to 1:40 | Refresh/reconnect preserves the run; deny a publication request and show no write        |
-| 1:40 to 2:20 | Agent's isolated repair, exact diff, and passing reproduction with its verification mode |
-| 2:20 to 2:45 | Approve publication; open the resulting PR and show Qodo development review evidence     |
-| 2:45 to 3:00 | Coverage, known-good control, and limitations                                            |
-
-A three-minute video may use an honestly labeled time cut or a completed run's saved trace. Do not label a replay as live execution or imply that Qodo completed a review instantly. Keep a reproducible live path available.
-
-### 16.2 Submission checklist
-
-The current deadline is August 30, 2026, at 20:00 London time, which is August 31 at 00:30 IST. Confirm the organizer page before submission. [Rules](https://www.wemakedevs.org/hackathons/trueforge/rules)
-
-The submission MUST contain a public repository, reproducible README, about three minutes of demo video, a short explanation of TrueForge's role, and the required Qodo Code Review Evidence section. Disclose AI coding assistance and be able to explain the implementation.
-
-The README includes supported scope, credentials required, exact setup, version manifest, real versus replay test commands, safety boundaries, adapter instructions, known limitations, and a sanitized sample report. No private application code, live keys, customer records, or login-protected data belong in the public demo.
-
 ## 17. Commercial assumptions and unresolved risks
 
 ### 17.1 Commercial hypothesis
@@ -924,19 +829,13 @@ Before claiming demand, ask a prospective user to supply an owned staging app, i
 | Billing state is correct but a cached session is stale | Probe both the current session and a fresh session when diagnosing; keep the required assertion's session behavior fixed |
 | Subscription API passes but checkout is broken         | Explicitly exclude hosted checkout UI coverage in every report                                                           |
 | Automated repair removes protection                    | Immutable oracle, restricted edit paths, negative controls, and human review                                             |
-| Sandbox or provider access blocks the build            | Resolve in IP00 and disclose the blocker; no simulated replacement presented as real                                     |
+| Sandbox or provider access blocks the build            | Keep the integration blocked and disclose the cause. Do not present a simulated replacement as real                      |
 | Account data or credentials leak through evidence      | Synthetic users, structured redaction, secret canaries, and review before sharing                                        |
 | Existing QA products add the same feature              | Compete on low setup cost, trustworthy findings, and a narrow useful workflow; no assumed technical moat                 |
 
-### 17.3 Inputs needed before implementation
-
-The builder needs an owned GitHub repository, Qodo installation, a TrueForge runtime, a verified no-charge model connection, an approved TrueForge sandbox provider, a Polar sandbox, and a reachable staging target or the bundled reference app.
-
-The first integration spike must settle the exact SDK versions, sandbox network route, webhook delivery setup, and supported target session mechanism. Browser probes run in the trusted MCP service with isolated user contexts, while generated code runs in the configured TrueForge sandbox. These are explicit environment-dependent setup choices, not permission to defer the core architecture.
-
 ## 18. Sources
 
-Primary documentation was inspected on August 27, 2026. Product APIs and hackathon rules can change. Pin installed versions and recheck the relevant source during IP00.
+Primary documentation was inspected on August 27, 2026. Product APIs and hackathon rules can change. Pin installed versions and recheck the relevant source before changing a provider or runtime integration.
 
 | Source                                                                                | Used for                                                                    |
 | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
@@ -978,9 +877,3 @@ Test public behavior through the product HTTP API, restricted MCP tools, policy 
 Run independent tests against the implementation. Fix implementation defects, then rerun the original cases. Add regression cases for newly discovered failures. Change a test expectation only to correct a demonstrated conflict with the approved specification, and record that reason. Never delete, skip, soften, or rewrite a failing assertion merely to obtain a passing result.
 
 Synthetic fixtures and injected faults are allowed as clearly labeled test inputs. They are not observed customer data, real provider receipts, or evidence of a live integration. Credentialed checks that cannot execute remain blocked or skipped, and do not count as passed. Record the command, environment, exit result, verification mode, and required cases not exercised.
-
-### 19.3 Early integration proof
-
-Before expanding the implementation, complete an early path through one actual access failure, TrueForge investigation, generated repair in its configured sandbox, unchanged reproduction, and a publication approval decision. This adds an integration checkpoint and removes no existing work package or acceptance criterion.
-
-In the recorded workflow, generate and test the patch before requesting publication. After denial, a later publication attempt needs a fresh approval request. Show the resulting action or absence of action using provider evidence.

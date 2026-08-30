@@ -3,10 +3,10 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { publicAddress, TargetContractV1Adapter, TargetTransport } from '#integrations/network';
+import { publicAddress, TargetTransport } from '#integrations/network';
+import { TargetContractV1Adapter, type TargetDescription } from '#integrations/target-contract';
 import { BrowserRunner } from '#integrations/browser';
 import { evaluateProbe } from '#domain';
-import { type TargetDescription } from '../../src/adapter-doctor/index.ts';
 
 // Independent synthetic local faults only. Servers bind ephemeral 127.0.0.1
 // ports, and the browser runs only through the public BrowserRunner boundary.

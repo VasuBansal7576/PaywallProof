@@ -1,7 +1,8 @@
 import { signReplay } from '#reference/replay-signature';
 import { z } from 'zod';
 import { hashValue } from '#domain';
-import { TargetContractV1Adapter, TargetTransport } from '#integrations/network';
+import { TargetTransport } from '#integrations/network';
+import { TargetContractV1Adapter } from '#integrations/target-contract';
 
 export const SECURITY_CONTROLS = [
   'AUTH_EXPORT_MISSING',

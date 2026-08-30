@@ -20,10 +20,7 @@ import { patchHash, repairBranch } from '#repair';
 import { RepairCoordinator, type RepairJob, type RepairSource } from './repairs.ts';
 import { SECURITY_CONTROLS } from '#repair/controls';
 import { artifactRetentionFromDays } from './artifacts.ts';
-import {
-  ADAPTER_DOCTOR_SCOPE,
-  adapterDoctorReportSchema,
-} from '../../../src/adapter-doctor/index.ts';
+import { ADAPTER_DOCTOR_SCOPE, adapterDoctorReportSchema } from '#adapter-doctor';
 
 // Implementation-aware failure-injection tests. No provider or runtime evidence.
 const capacityMocks = vi.hoisted(() => ({ statfs: vi.fn() }));

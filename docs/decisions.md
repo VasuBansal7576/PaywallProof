@@ -6,7 +6,17 @@ PaywallProof now uses one versioned HTTP contract for owned staging targets. Ada
 
 This decision makes the lifecycle runner reusable without widening the repair boundary. Automated repair remains limited to the trusted `reference_v1` checkout, launcher, editable paths, and host-owned oracle. A target ID, origin, or repository override disables repair by default. Lifecycle compatibility cannot authorize source reads, model work, publication recovery, or a GitHub write.
 
-The second owned target was treated as an acceptance checkpoint, not evidence by its existence. On August 30, the generic runner bound Revenue Intelligence OS commit `49e69922c37446bc229ea14571bba58db34a56ce` to a compatible Doctor receipt, passed all twelve SC01 through SC04 assertions, and confirmed both users deleted. The run was labeled `local_replay`; it proves lifecycle portability but not Polar delivery or repair portability.
+The second owned target counts only after an acceptance run. On August 30, TrueForge bound Revenue Intelligence OS commit `49e69922c37446bc229ea14571bba58db34a56ce` to a compatible Doctor receipt. The run passed 12/12 SC01 through SC04 assertions. Cleanup deleted both fixtures, and the session reached `done`. The run used `local_replay`. It proves lifecycle portability, not Polar delivery or repair portability.
+
+## 2026-08-28: Replace Stripe with Polar sandbox
+
+The owner authorized replacing Stripe while preserving the four access scenarios, repair workflow, independent checks, and zero-spend rule. Polar's isolated sandbox became the only billing environment. PaywallProof pins `https://sandbox-api.polar.sh`, requires `X-Polar-Sandbox: 1` and the supported API version, rejects redirects, and does not accept a configurable production origin.
+
+Preflight binds one approved organization, product, and positive fixed monthly price through authenticated provider reads. A native lifecycle requires an actual sandbox checkout, a paid initial order, signed webhooks, scheduled period-end cancellation, and a provider read that confirms the terminal state. Synthetic replay remains separate and cannot count as provider evidence. Missing credentials produce a blocked result instead of a passing skip.
+
+PaywallProof records mutation intent and ownership before dispatch. If a create response is uncertain, the worker reconciles current provider state instead of sending the mutation again. Webhook verification uses the exact body, timestamp, and delivery ID. Cleanup touches only revalidated run-owned resources and reports provider audit records as retained when Polar does not allow deletion.
+
+No paid plan, bank account, live card, or credit redemption is permitted. The completed native sandbox receipt is recorded in [verification status](verification.md). Polar's [sandbox](https://polar.sh/docs/integrate/sandbox), [subscription management](https://polar.sh/docs/features/subscriptions/manage), [webhook endpoint](https://polar.sh/docs/integrate/webhooks/endpoints), and [API](https://polar.sh/docs/api-reference/introduction) documentation define the provider boundary.
 
 ## 2026-08-27: Verify the released local TrueForge sandbox
 

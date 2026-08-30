@@ -1,6 +1,6 @@
 import { type Billing, type AccessPolicy, hashValue } from '#domain';
 import { EvidenceStore, evaluateEvidence, type EvidenceEvaluation } from './index.ts';
-import { type TargetContractV1Adapter } from '#integrations/network';
+import { type TargetContractV1Adapter } from '#integrations/target-contract';
 import { type BrowserRunner } from '#integrations/browser';
 
 export class ScenarioError extends Error {

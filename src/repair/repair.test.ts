@@ -121,7 +121,9 @@ describe('repair oracle source binding', () => {
   it('includes the target descriptor schema used by the transport and browser', async () => {
     const fingerprint = await oracleFingerprint(process.cwd());
 
-    expect(fingerprint.files.map((file) => file.path)).toContain('src/adapter-doctor/report.ts');
+    expect(fingerprint.files.map((file) => file.path)).toContain(
+      'src/integrations/target-contract.ts',
+    );
     expect(fingerprint.files.every((file) => /^[a-f0-9]{64}$/.test(file.sha256))).toBe(true);
     expect(fingerprint.hash).toMatch(/^[a-f0-9]{64}$/);
   });

@@ -1,4 +1,5 @@
 import { hashValue } from '#domain';
+import { targetDescriptionSchema } from '#integrations/target-contract';
 import { z } from 'zod';
 import {
   ADAPTER_DOCTOR_SCOPE,
@@ -6,7 +7,6 @@ import {
   type AdapterDoctorCheck,
   type AdapterDoctorCheckId,
   type AdapterDoctorReport,
-  targetDescriptionSchema,
 } from './report.ts';
 import { type AdapterDoctorResponse, type AdapterDoctorTarget } from './http-target.ts';
 

@@ -47,6 +47,37 @@ const controller = readFileSync(join(root, 'apps/worker/src/controller.ts'), 'ut
 if (controller.includes('control_documents')) {
   failures.push('worker controller bypasses the control-document module');
 }
+if (controller.includes("from '../../../src/adapter-doctor/index.ts'")) {
+  failures.push('worker controller bypasses the adapter-doctor public seam');
+}
+
+const targetContractPath = join(root, 'src/integrations/target-contract.ts');
+if (!existsSync(targetContractPath)) {
+  failures.push('missing target-contract module');
+}
+const targetTransport = readFileSync(join(root, 'src/integrations/network.ts'), 'utf8');
+if (targetTransport.includes('adapter-doctor')) {
+  failures.push('target transport depends on Adapter Doctor');
+}
+for (const symbol of [
+  'TargetContractV1Adapter',
+  'targetPrincipalIdSchema',
+  'targetFixtureReceiptSchema',
+  'principalPath',
+]) {
+  if (targetTransport.includes(symbol)) {
+    failures.push(`target contract owned by transport module: ${symbol}`);
+  }
+}
+const adapterDoctorReport = readFileSync(join(root, 'src/adapter-doctor/report.ts'), 'utf8');
+if (!adapterDoctorReport.includes("from '#integrations/target-contract'")) {
+  failures.push('Adapter Doctor bypasses the target-contract public seam');
+}
+for (const symbol of ['targetFeatureSchema =', 'targetDescriptionSchema =']) {
+  if (adapterDoctorReport.includes(symbol)) {
+    failures.push(`target contract owned by Adapter Doctor: ${symbol.slice(0, -2)}`);
+  }
+}
 
 if (failures.length) {
   process.stderr.write(`${failures.join('\n')}\n`);

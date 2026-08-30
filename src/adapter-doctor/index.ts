@@ -3,10 +3,12 @@ export { HttpAdapterDoctorTarget, type AdapterDoctorTarget } from './http-target
 export {
   ADAPTER_DOCTOR_SCOPE,
   adapterDoctorReportSchema,
-  targetFeatureSchema,
-  targetDescriptionSchema,
   type AdapterDoctorCheck,
   type AdapterDoctorReport,
+} from './report.ts';
+export {
+  targetFeatureSchema,
+  targetDescriptionSchema,
   type TargetFeature,
   type TargetDescription,
-} from './report.ts';
+} from '#integrations/target-contract';

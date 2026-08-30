@@ -11,7 +11,7 @@ import {
   policySchema,
   verdictSchema,
 } from '#domain';
-import { targetFeatureSchema } from '../adapter-doctor/report.ts';
+import { targetFeatureSchema } from '#integrations/target-contract';
 
 export class ControlError extends Error {
   constructor(readonly code: string) {

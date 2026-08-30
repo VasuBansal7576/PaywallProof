@@ -6,7 +6,8 @@ import { z } from 'zod';
 import { billingSchema, hashValue, parsePolicy, type AccessPolicy, type Billing } from '#domain';
 import { EvidenceStore, type Observation } from '#evidence';
 import { observeFeature, observeScenario } from '#evidence/probe';
-import { TargetTransport, TargetContractV1Adapter } from '#integrations/network';
+import { TargetTransport } from '#integrations/network';
+import { TargetContractV1Adapter } from '#integrations/target-contract';
 import { BrowserRunner } from '#integrations/browser';
 import { RepairError } from './model.ts';
 import type { SandboxTargetReady } from './sandbox.ts';
@@ -37,8 +38,8 @@ export async function oracleFingerprint(repositoryRoot: string) {
     'src/domain/index.ts',
     'src/evidence/index.ts',
     'src/evidence/probe.ts',
-    'src/adapter-doctor/report.ts',
     'src/integrations/network.ts',
+    'src/integrations/target-contract.ts',
     'src/integrations/browser.ts',
     'src/repair/oracle.ts',
     'src/repair/controls.ts',

@@ -8,7 +8,7 @@ import {
   workflowReadyForReport,
 } from './workflow-runner.ts';
 import { hashValue } from '../src/domain/index.ts';
-import { ADAPTER_DOCTOR_SCOPE, type AdapterDoctorReport } from '../src/adapter-doctor/report.ts';
+import { ADAPTER_DOCTOR_SCOPE, type AdapterDoctorReport } from '#adapter-doctor';
 
 const revenueFeature = {
   id: 'pipeline_export',

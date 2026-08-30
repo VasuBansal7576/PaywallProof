@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BrowserRunner } from './browser.ts';
 import { TargetTransport } from './network.ts';
-import { type TargetDescription } from '../adapter-doctor/report.ts';
+import { type TargetDescription } from './target-contract.ts';
 
 const feature = {
   id: 'pro_export',

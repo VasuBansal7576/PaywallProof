@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { z } from 'zod';
+import { evidenceReviewerSchema } from '../apps/worker/src/evidence-review.ts';
 
 const origin = 'http://127.0.0.1:8787';
 const token = (await readFile('.local/operator-token', 'utf8')).trim();
@@ -48,19 +49,13 @@ async function call(path: string, body?: unknown) {
   return value;
 }
 
-const reviewer = z.object({
-  role: z.enum(['coverage', 'binding']),
-  verdict: z.enum(['confirmed', 'needs_attention', 'inconclusive']),
-  summary: z.string().min(1),
-  findings: z.array(z.unknown()),
-});
 const completedReview = z.object({
   runId: z.literal(runId),
   status: z.literal('completed'),
   reportHash: z.string().regex(/^[a-f0-9]{64}$/),
   verdict: z.enum(['confirmed', 'needs_attention', 'inconclusive']),
   summary: z.string().min(1),
-  reviewers: z.array(reviewer).length(2),
+  reviewers: z.array(evidenceReviewerSchema).length(2),
   skill: z.object({
     name: z.literal('paywallproof-evidence-review'),
     ref: z.string().min(1),

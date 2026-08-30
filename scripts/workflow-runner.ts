@@ -1,10 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { z } from 'zod';
-import {
-  adapterDoctorReportSchema,
-  type AdapterDoctorReport,
-} from '../src/adapter-doctor/report.ts';
+import { adapterDoctorReportSchema, type AdapterDoctorReport } from '#adapter-doctor';
 import {
   assertLocalWorkflowComplete,
   assertPolarWorkflowComplete,

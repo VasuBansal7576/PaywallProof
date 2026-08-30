@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { targetDescriptionSchema } from '#integrations/target-contract';
 
 const identifier = z
   .string()
@@ -6,45 +7,6 @@ const identifier = z
   .max(255)
   .refine((value) => value.trim() === value);
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
-const contractPath = z
-  .string()
-  .min(2)
-  .max(256)
-  .regex(/^\/[A-Za-z0-9_./~-]+$/)
-  .refine(
-    (value) =>
-      !value.startsWith('//') &&
-      !value.split('/').some((segment) => segment === '.' || segment === '..'),
-  );
-const testId = z
-  .string()
-  .min(1)
-  .max(64)
-  .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/);
-
-export const targetFeatureSchema = z.strictObject({
-  id: identifier.max(100),
-  method: z.literal('GET'),
-  path: contractPath,
-  denialStatuses: z
-    .array(z.number().int().min(400).max(499))
-    .min(1)
-    .max(16)
-    .refine((statuses) => new Set(statuses).size === statuses.length),
-  browserPath: contractPath,
-  actionTestId: testId,
-  resultTestId: testId,
-});
-export type TargetFeature = Readonly<z.infer<typeof targetFeatureSchema>>;
-
-export const targetDescriptionSchema = z.strictObject({
-  adapterVersion: z.literal('1'),
-  environment: z.literal('test'),
-  buildId: identifier,
-  billingTimeModel: z.literal('provider_status'),
-  feature: targetFeatureSchema,
-});
-export type TargetDescription = Readonly<z.infer<typeof targetDescriptionSchema>>;
 
 export const adapterDoctorCheckIdSchema = z.enum([
   'description',

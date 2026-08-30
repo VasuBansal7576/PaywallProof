@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { TargetTransport } from './network.ts';
-import { type TargetDescription } from '../adapter-doctor/report.ts';
+import { type TargetDescription } from './target-contract.ts';
 
 export class BrowserRunner {
   constructor(

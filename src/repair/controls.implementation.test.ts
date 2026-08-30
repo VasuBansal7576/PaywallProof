@@ -5,7 +5,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createReferenceApp } from '#reference';
-import { TargetContractV1Adapter, TargetTransport } from '#integrations/network';
+import { TargetTransport } from '#integrations/network';
+import { TargetContractV1Adapter } from '#integrations/target-contract';
 import { probeRepairSecurity, SECURITY_CONTROLS } from './controls.ts';
 
 // Implementation-aware controls test against a real loopback HTTP target.
