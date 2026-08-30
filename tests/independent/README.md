@@ -4,17 +4,17 @@ The independent author read only these supplied specification files and the auth
 
 - `PRD.md`, version 1.1 with section 19 owner constraints.
 - `docs/public-contracts.md`, version 1, including its clarified first-boundary contract.
-- `docs/control-contract.md`, the durable control boundary supplied before its implementation.
-- `docs/evidence-contract.md`, the authoritative evidence and redaction boundary.
-- `docs/reference-contract.md`, the reference HTTP/session/signed-replay boundary.
-- `docs/http-contract.md`, plus the supplied public factory signature and explicit HTTP auth/status/idempotency clarifications from the implementation owner; no implementation details were supplied.
-- `docs/network-contract.md`, plus clarification that address rejection returns false, BrowserRunner closes its own browser, and visible/network leaks take precedence over denial UI.
-- `docs/repair-contract.md`, including public record/approval shapes, receipt-validation errors, and exact protected-path rules clarified without source access.
-- `docs/replay-contract.md`, the public synthetic LocalReplayAdapter boundary.
-- `docs/artifact-contract.md`, the authenticated screenshot service boundary.
-- `docs/repair-checkout-contract.md`, including exact origin forms, dependency destinations/defaults, binary rejection, and internal package-link containment. The owner clarified that an installed optional dependency escaping the allowed root must reject rather than be treated as absent.
-- `docs/probe-contract.md`, including the shared orchestrator's return shape, provider error codes, and exact 90-second confirmation boundary clarified without implementation access.
-- `docs/repair-replay-contract.md`, including the exact plan/event shapes and owner-confirmed scope, timestamp-tie, subject, mode and canceled-payment semantics.
+- `docs/contracts/control-contract.md`, the durable control boundary supplied before its implementation.
+- `docs/contracts/evidence-contract.md`, the authoritative evidence and redaction boundary.
+- `docs/contracts/reference-contract.md`, the reference HTTP/session/signed-replay boundary.
+- `docs/contracts/http-contract.md`, plus the supplied public factory signature and explicit HTTP auth/status/idempotency clarifications from the implementation owner; no implementation details were supplied.
+- `docs/contracts/network-contract.md`, plus clarification that address rejection returns false, BrowserRunner closes its own browser, and visible/network leaks take precedence over denial UI.
+- `docs/contracts/repair-contract.md`, including public record/approval shapes, receipt-validation errors, and exact protected-path rules clarified without source access.
+- `docs/contracts/replay-contract.md`, the public synthetic LocalReplayAdapter boundary.
+- `docs/contracts/artifact-contract.md`, the authenticated screenshot service boundary.
+- `docs/contracts/repair-checkout-contract.md`, including exact origin forms, dependency destinations/defaults, binary rejection, and internal package-link containment. The owner clarified that an installed optional dependency escaping the allowed root must reject rather than be treated as absent.
+- `docs/contracts/probe-contract.md`, including the shared orchestrator's return shape, provider error codes, and exact 90-second confirmation boundary clarified without implementation access.
+- `docs/contracts/repair-replay-contract.md`, including the exact plan/event shapes and owner-confirmed scope, timestamp-tie, subject, mode and canceled-payment semantics.
 
 The author did not inspect product source, proposed fixes, implementation conversations, dependency files, installed packages, or Git history. Policy and control slices were authored before their implementations; evidence tests were authored independently while another agent implemented that module. No suite was executed by this author. The implementation owner must record actual commands and results, including available red-before-green evidence, separately.
 

@@ -47,4 +47,4 @@ These are capability sources, not acceptance receipts. Source branches may chang
 
 ## Executed checkpoint
 
-Native sandbox run `7563883e-62d1-45a3-86e7-5bd09f8cbfb3` passed all twelve assertions and retained four real browser screenshots. The sandbox order was marked paid, `livemode` was false, the terminal subscription state was canceled, both run-owned application users were deleted, and non-deletable provider audit records were retained under an explicit canceled-audit code. The terminal receipt SHA-256 is `993f30e59e9e383edda2f9b95681b8474cef104d8c9610761eb2907c5e14ab06`. See [verification status](verification-status.md).
+Native sandbox run `7563883e-62d1-45a3-86e7-5bd09f8cbfb3` passed all twelve assertions and retained four real browser screenshots. The sandbox order was marked paid, `livemode` was false, the terminal subscription state was canceled, both run-owned application users were deleted, and non-deletable provider audit records were retained under an explicit canceled-audit code. The terminal receipt SHA-256 is `993f30e59e9e383edda2f9b95681b8474cef104d8c9610761eb2907c5e14ab06`. See [verification status](verification.md).
