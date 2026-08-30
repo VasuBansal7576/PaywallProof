@@ -14,4 +14,5 @@ coverage/
 *.db-*
 test-results/
 playwright-report/
+videos/
 .DS_Store

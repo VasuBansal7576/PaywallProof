@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createControlApp } from '../../apps/worker/src/http.ts';
 
-// Independent HTTP tests from docs/http-contract.md and the owner's supplied
+// Independent HTTP tests from docs/contracts/http-contract.md and the owner's supplied
 // factory/auth clarification. Only app.request and close are used.
 // No preflight, run creation, provider, runtime, or target request is invoked.
 

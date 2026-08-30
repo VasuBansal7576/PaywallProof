@@ -1,58 +1,72 @@
 # PaywallProof
 
-Check whether subscription state and access to a paid feature agree. Reproduce failures, collect evidence, and prepare a tested repair for approval.
+PaywallProof checks whether billing state and paid-feature access agree. It runs an approved subscription lifecycle, records API, browser, and application-state evidence, and prepares a tested repair when it finds a mismatch.
 
-A native Polar sandbox subscription completed the full lifecycle through TrueForge on August 29, 2026: checkout, signed webhook delivery, paid access, scheduled cancellation, provider-confirmed expiry, post-expiry denial, and owned-resource cleanup. All twelve API, browser, and application-state assertions passed. Polar reported `livemode: false`; the sandbox order was marked paid, the subscription is canceled, and no real payment was processed. The full requirements are in [PRD.md](PRD.md).
+[Watch the product demo](https://youtu.be/z-bXuMFx9lQ)
 
-The terminal receipt for run `7563883e-62d1-45a3-86e7-5bd09f8cbfb3` has SHA-256 `993f30e59e9e383edda2f9b95681b8474cef104d8c9610761eb2907c5e14ab06`. It remains in ignored local evidence rather than committing customer, checkout, or provider identifiers. A complete local-replay scan and an isolated generated repair also passed through TrueForge and the real browser.
+## What was verified
 
-[Recorded local-replay sample](examples/recorded-local-replay.json) contains an explicitly reduced projection of the actual Luna run, including scenario outcomes, screenshot hashes, cleanup and the source receipt hash. It is not a Polar transaction or a fabricated demonstration report.
+On August 29, 2026, PaywallProof completed a native Polar sandbox lifecycle through TrueForge:
 
-[Recorded repair acceptance](examples/recorded-repair.json) preserves the actual before/after outcomes and cleanup for an isolated injected fault. It is not a discovered production bug, provider payment or published repair PR.
+1. Confirmed that a free user could not access the paid feature.
+2. Completed a sandbox checkout and received signed Polar webhooks.
+3. Confirmed paid access through the API, browser, and application state.
+4. Scheduled cancellation and confirmed access remained valid before expiry.
+5. Waited for Polar to report the terminal canceled state.
+6. Confirmed post-expiry denial and removed the run-owned application users.
 
-## Boundaries
+All 12 scenario assertions passed. Polar reported `livemode: false`, so no real payment was processed. The terminal receipt for run `7563883e-62d1-45a3-86e7-5bd09f8cbfb3` has SHA-256 `993f30e59e9e383edda2f9b95681b8474cef104d8c9610761eb2907c5e14ab06`. Provider identifiers, checkout URLs, tokens, and raw webhook data remain outside Git.
 
-- Authorized staging applications and isolated provider sandbox resources only.
-- No live billing, automatic merge, or production deployment.
-- Zero external spending. Integrations stay blocked until their no-charge operation is verified.
-- Test fixtures and local replay never count as real provider evidence.
-- Existing independent tests were authored from public contracts without implementation access. New migration tests are labeled implementation-aware.
+The repository also includes reduced, non-secret examples from the completed runs:
+
+- [Recorded local replay](examples/recorded-local-replay.json)
+- [Recorded repair acceptance](examples/recorded-repair.json)
+- [Executed verification record](docs/verification.md)
+
+These examples are evidence projections. They are not provider transactions.
+
+## How it works
+
+TrueForge owns the persistent agent session, tool permissions, sandbox execution, and approval pauses. Deterministic application code owns policy evaluation, evidence validation, and verdicts.
+
+The main flow is:
+
+1. Bind a run to an approved target, build, price, policy, and spending limit.
+2. Create isolated test identities and exercise the four access states.
+3. Collect separate API, browser, provider, and application-state observations.
+4. Evaluate the observations without allowing the model to convert missing evidence into a pass.
+5. If a failure is confirmed, copy only approved source into a sandbox and ask the agent for a repair.
+6. Run the original and patched applications against the same host-owned evaluator.
+7. Require approval for the exact verified diff before any publication step.
+
+After a run, a separate TrueForge session can review the saved report. The repository's `paywallproof-evidence-review` skill starts two dynamically delegated reviewers with read-only report access. Their synthesis is stored separately and cannot change the primary verdict.
+
+## Repository map
+
+| Path                                  | Purpose                                                                 |
+| ------------------------------------- | ----------------------------------------------------------------------- |
+| `apps/web`                            | Operator workspace and authenticated reports                            |
+| `apps/worker`                         | Workflow orchestration, provider adapters, evidence, and repair control |
+| `apps/demo-saas`                      | Reference SaaS used for local and sandbox verification                  |
+| `skills/paywallproof-evidence-review` | Reusable report-review skill and reviewer definitions                   |
+| `tests/independent`                   | Public-boundary tests written from the contract documents               |
+| `tests/acceptance`                    | Cross-module reference and replay checks                                |
+| `docs/contracts`                      | Versioned inputs used to author the independent tests                   |
+| `scripts`                             | Runtime, provider, repair, and repository verification commands         |
+
+Start with [the product specification](PRD.md) for requirements and [the documentation index](docs/README.md) for implementation details.
 
 ## Qodo Code Review Evidence
 
-[Lifecycle PR #2](https://github.com/VasuBansal7576/PaywallProof/pull/2) contains the native Polar and TrueForge continuation work. Qodo found three real defects: a split persistence commit, an unbounded chunked webhook body, and a cross-scenario evidence citation gap. All three received focused regression tests and fixes on final head `87788cb`; Qodo then marked every finding resolved and the PR passed CI before merge commit `32664e030e2612b0e39e3783a373c192c3b24dac`.
+[Lifecycle PR #2](https://github.com/VasuBansal7576/PaywallProof/pull/2) contains the native Polar and TrueForge continuation work. Qodo found three defects: a split persistence commit, an unbounded chunked webhook body, and a cross-scenario evidence citation gap. Each finding received a regression test and a fix. Qodo marked all three resolved before the PR passed CI and merged as `32664e030e2612b0e39e3783a373c192c3b24dac`.
 
-[CI PR #3](https://github.com/VasuBansal7576/PaywallProof/pull/3) upgraded the GitHub Action runtimes after the merged workflow emitted a Node 20 deprecation annotation. The upgraded workflow passed its own full gate, Qodo reported zero bugs, rule violations, or requirement gaps, and merge commit `deba7bf9ace88023ea6765e109e41fdcf5640177` passed again on `main`.
+[CI PR #3](https://github.com/VasuBansal7576/PaywallProof/pull/3) upgraded the GitHub Action runtimes after the workflow emitted a Node 20 deprecation notice. The updated workflow passed its full gate, Qodo reported no findings, and the merged `main` workflow passed again.
 
-Current executed checks and remaining acceptance gaps are recorded in [verification status](docs/verification-status.md). Unit test counts and installation probes do not establish a completed product run.
-
-[Watch the three-minute workspace walkthrough](docs/media/paywallproof-walkthrough.mp4), with an embedded subtitle track and [separate captions](docs/media/paywallproof-walkthrough.srt). It shows a recorded local-replay run, not a live provider payment.
-
-[Submission material](docs/submission.md) includes the architecture, a reproducible recording command and the remaining external submission steps. Original project code uses the [MIT license](LICENSE); dependencies retain their own licenses.
-
-The [judging access notes](docs/judging-access.md) distinguish the 60-day local evidence window from provider access. Polar sandbox tokens expire November 26, 2026. No paid hosting is used.
-
-## Billing provider migration
-
-The owner authorized replacing Stripe on August 28. The runtime, target, UI and contracts now use Polar's isolated sandbox. Organization, product and both token scopes passed actual preflight, followed by the complete native sandbox lifecycle above. Do not continue Stripe onboarding. See the [migration record](docs/billing-provider-migration.md).
-
-`pnpm test:polar` performs only a read-only organization/product/price preflight. It requires server-side `POLAR_ACCESS_TOKEN`, `POLAR_ORGANIZATION_ID`, `POLAR_PRODUCT_ID` and `POLAR_PRICE_ID`. Do not put these values in chat or tracked files. Missing or rejected configuration exits with code 2. Use `pnpm test:polar:lifecycle` for the separately authorized native lifecycle; a successful preflight alone still reports `lifecycleVerified: false`.
-
-## Development disclosure
-
-The owner uses Codex for implementation, independent test authoring, and verification. Human review and understanding remain required. Test and integration results will be recorded only after execution.
-
-## How TrueForge is used
-
-TrueForge runs the persistent agent session, invokes the run-scoped MCP tools and pauses fixture creation and publication for approval. The controller binds each operation to a saved policy, target build and run identity. API probes, real browser sessions and application-state reads produce separate observations for free access, paid access, scheduled cancellation and expiry.
-
-After a run completes, the operator can start an independent evidence review. PaywallProof registers the repository's `paywallproof-evidence-review` skill and creates a separate sandboxed TrueForge session with dynamic subagents enabled. That session can only read the bound report and record a bounded review. Two independent reviewers check coverage and binding consistency; their synthesis is stored separately and cannot alter the primary run outcome.
-
-For a confirmed failure, TrueForge transfers allowlisted application source into its sandbox and executes the agent's proposed repair commands. A separate host evaluator runs the original and patched application against the same frozen checks; the repair agent cannot edit or read those tests. Publication requires approval of the exact verified diff and destination. The Codex bridge supplies model decisions only: it does not execute the application tools or replace TrueForge's approval and sandbox controls.
+Qodo is part of the development gate, not the product runtime. Substantive changes are reviewed on a pull request, valid findings are fixed, and the final head is reviewed again before merge.
 
 ## Run locally
 
-The exercised environment is macOS with Node.js 22.20, pnpm 10.32, Python 3.11+ and Codex CLI 0.147.0 signed in with an entitled ChatGPT account. The local repair sandbox currently requires macOS; do not assume another platform is verified.
+The verified local environment used macOS, Node.js 22.20, pnpm 10.32, Python 3.11 or newer, and Codex CLI 0.147.0. The repair sandbox is currently verified only on macOS.
 
 ```sh
 pnpm install --frozen-lockfile
@@ -61,7 +75,7 @@ mkdir -p .local
 chmod 700 .local
 ```
 
-Start TrueForge in one terminal:
+Start TrueForge:
 
 ```sh
 HOST=127.0.0.1 \
@@ -71,64 +85,51 @@ PAYWALLPROOF_LOCAL_GIT_ROOT=/Library/Developer/CommandLineTools \
 pnpm exec trueforge --port 8790
 ```
 
-Set `PAYWALLPROOF_LOCAL_PYTHON` to the absolute path of a Python 3.11–3.13 executable with `venv`. On macOS, set `PAYWALLPROOF_LOCAL_GIT_ROOT` to the exact directory returned by `xcode-select -p`; the example shows the default location. The committed runtime patch adds only those validated runtime roots to sandbox reads. It rejects `/`, the home directory, relative paths, and other broad roots.
+`PAYWALLPROOF_LOCAL_PYTHON` must point to Python 3.11 through 3.13 with `venv`. On macOS, set `PAYWALLPROOF_LOCAL_GIT_ROOT` to the exact result of `xcode-select -p`.
 
-In a second terminal, register the guarded subscription connection and keep its bridge running:
+Register and start the guarded Codex subscription bridge in two terminals:
 
 ```sh
 pnpm model:codex
 pnpm dev:codex-model
 ```
 
-In a third terminal, run `pnpm dev`. Read the operator token from the local file named below and enter it in the workspace sign-in form; never commit or share it. Run `pnpm test:runtime` before starting a workflow on a new machine. No model weights or Ollama installation are needed.
+Then start the product:
 
-`pnpm dev` starts the operator UI on port 3000, reference target on 3001 and worker on 8787. The operator token is in `.local/operator-token`. TrueForge must already be running on loopback port 8790. Ollama is not required. The selected [Codex subscription connection](docs/codex-subscription.md) uses Luna with included allowance and rejects extra-credit balances. There is no fallback to a paid API or another model.
+```sh
+pnpm dev
+```
 
-Local replay needs no provider account. It exercises the actual application and browser using explicitly synthetic billing events. New schema-v2 runs use `control-v2.sqlite` and `reference-v2.sqlite`; old databases and evidence are preserved without relabeling.
+The workspace runs on port 3000, the reference SaaS on 3001, and the worker on 8787. TrueForge must already be listening on loopback port 8790. The operator token is written to `.local/operator-token` and must not be committed or shared.
 
-The operator workspace provides searchable run history, an attention queue, responsive navigation and keyboard-accessible report tabs. Humans can inspect each recorded assertion and screenshot; agents can use the authenticated structured reports, exact identifiers and policy hashes. The UI never substitutes presentation fixtures for saved evidence.
+Local replay does not require a provider account. Polar verification requires separately authorized sandbox credentials and an explicit test mailbox. Use official Polar test payment details only. Never use a real card.
 
-For Polar runs, configure `POLAR_ACCESS_TOKEN`, `POLAR_REFERENCE_TOKEN`, `POLAR_ORGANIZATION_ID`, `POLAR_PRODUCT_ID`, `BILLING_PRICE_ID`, `POLAR_WEBHOOK_SECRET` and an explicitly authorized `POLAR_TEST_CUSTOMER_EMAIL` in the server environment. The test mailbox is used with a unique run alias and sent to Polar. It is not inferred from account sign-in. Configure real webhook delivery to `/api/polar/webhook`. Only sandbox checkout URLs are permitted; use official test payment details, never a real card. The authenticated run page exposes the private checkout link while the runner waits for payment confirmation.
+## Verification commands
 
-| Command                                          | What it checks                                                                     |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| `pnpm verify`                                    | Formatting, repository shape, types, lint, tests, production build, browser checks |
-| `pnpm test:turn-selection`                       | Multi-page TrueForge newest-turn behavior                                          |
-| `pnpm test:evidence-review`                      | Skill registration, dynamic subagents, scoped tools, persisted review              |
-| `pnpm test:acceptance`                           | Local reference integration tests                                                  |
-| `pnpm test:polar`                                | Real read-only Polar preflight; not lifecycle acceptance                           |
-| `pnpm test:polar:lifecycle`                      | Full native Polar checkout, webhook, access, cancellation and expiry workflow      |
-| `pnpm test:runtime`                              | TrueForge installation and approval behavior                                       |
-| `pnpm model:codex`                               | Check subscription allowance and register Luna; no inference or billing change     |
-| `pnpm dev:codex-model`                           | Start the local bridge to the signed-in Codex CLI                                  |
-| `pnpm test:repair`                               | Isolated fault injection, model-generated repair and unchanged before/after oracle |
-| `pnpm exec tsx scripts/verify-local-workflow.ts` | Full local-replay product run through TrueForge                                    |
-| `pnpm demo:reset`                                | Stop inventoried runs and clean only their owned fixtures                          |
+| Command                     | Purpose                                                                                                        |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `pnpm verify:ci`            | Formatting, repository shape, delivery configuration, types, lint, tests, production build, and browser checks |
+| `pnpm verify`               | The CI gate plus live checks available on the current machine                                                  |
+| `pnpm test:turn-selection`  | TrueForge newest-turn recovery across multiple pages                                                           |
+| `pnpm test:evidence-review` | Skill registration, dynamic reviewers, tool scope, and persisted synthesis                                     |
+| `pnpm test:polar`           | Read-only Polar organization, product, and price preflight                                                     |
+| `pnpm test:polar:lifecycle` | Authorized sandbox checkout, webhook, access, cancellation, and expiry lifecycle                               |
+| `pnpm test:runtime`         | TrueForge sandbox execution and approval transport                                                             |
+| `pnpm test:repair`          | Isolated fault reproduction, generated repair, and unchanged evaluator                                         |
 
-Provider audit records are retained honestly. An active or unexpired checkout that cannot be safely removed remains a reported leftover. A retained report never becomes a fresh verification merely because it is still accessible.
+`pnpm test:polar` does not create a checkout and does not prove the lifecycle. Missing or rejected credentials exit with a blocked result instead of a passing skip.
 
-The local workflow verifier saves each receipt under `.local/workflow-<run-id>/`, checks all twelve scenario assertions and both fixture deletions, and preserves the previous successful report before updating the repair seed. On failure it requests cancellation and records whether that request was confirmed.
+## Safety boundaries
 
-`pnpm test:repair` requires the real `.local/local-workflow-report.json` produced by the local workflow verifier and at least 4 GiB free. It copies committed source into an isolated repository, injects a scheduled-cancellation fault, reproduces it through the real application, then asks the selected model to repair it. Only the explicit application-source allowlist reaches the model, never this script or the host evaluator. Results remain under `.local/full-repair-*/`; failures are preserved. It makes no billing-provider or publication call and does not modify the working application. Model prompts and sanitized results go to OpenAI through the signed-in Codex connection; billing replay stays local.
+- Authorized staging applications and isolated provider sandbox resources only.
+- No live billing, automatic merge, production deployment, or paid provider fallback.
+- Fixture data and local replay never count as provider evidence.
+- Missing, stale, unsupported, or inconclusive observations never count as passing.
+- Repair agents cannot read or edit the host evaluator.
+- Provider audit records are reported honestly when the provider does not allow deletion.
 
-## Submission checklist
+The Codex bridge uses included ChatGPT subscription allowance only when it can verify sign-in, available quota, and a zero extra-credit balance. It blocks unknown or paid fallback states. See [the subscription boundary](docs/codex-subscription.md).
 
-### TrueForge
+## License
 
-- [x] Persistent sessions, streamed recovery, MCP tool scoping, sandbox execution, and human approvals are implemented.
-- [x] The newest-turn paginator bug has a multi-page regression test.
-- [x] A reusable repository skill is registered from Git and attached to the review session.
-- [x] Dynamic subagents perform two independent report reviews in a separate session.
-- [x] The review session exposes only report read and bounded review-recording tools.
-- [x] Run the evidence-review path on the local TrueForge stack and retain its report-hash-bound, two-reviewer receipt. The binding reviewer confirmed integrity; the coverage reviewer preserved the intentional sandbox/build scope as `needs_attention`.
-- [x] Resume the same persisted TrueForge session after the owner completes native Polar checkout; the external wait does not consume the active-run watchdog.
-- [x] Complete native signed-webhook, cancellation, expiry, access, and cleanup verification with no live charge.
-
-### Qodo
-
-- [x] Repository configuration requests agentic description and review on GitHub PRs.
-- [x] CI checks formatting, repository shape, types, lint, tests, build, browser behavior, and skill validity.
-- [x] Request `/agentic_review` on the substantive implementation PR.
-- [x] Fix valid findings and explain invalid findings in the public review thread.
-- [x] Request follow-up review through the final commit.
-- [x] Merge the representative reviewed lifecycle PR; its public link is PR #2 above.
+Original project code is available under the [MIT license](LICENSE). Dependencies retain their own licenses.

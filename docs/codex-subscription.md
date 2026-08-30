@@ -39,6 +39,6 @@ Preflight contacts the authenticated gateway health endpoint; a saved TrueForge 
 
 ## Verification
 
-`pnpm test:runtime` checks actual execution and approval transport. `pnpm test:repair` introduces a labelled fault in an isolated source copy and requires the unchanged host evaluator to accept a generated repair. Unit fixtures are synthetic, not live acceptance evidence. See [verification status](verification-status.md) for actual outcomes.
+`pnpm test:runtime` checks actual execution and approval transport. `pnpm test:repair` introduces a labelled fault in an isolated source copy and requires the unchanged host evaluator to accept a generated repair. Unit fixtures are synthetic, not live acceptance evidence. See [verification status](verification.md) for actual outcomes.
 
 Official references: [authentication](https://learn.chatgpt.com/docs/auth), [pricing and limits](https://learn.chatgpt.com/docs/pricing), [app-server](https://learn.chatgpt.com/docs/app-server).

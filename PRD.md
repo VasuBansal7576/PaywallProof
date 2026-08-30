@@ -2,13 +2,13 @@
 
 ## Product requirements and implementation specification
 
-Version: 2.1
-Updated: August 28, 2026
+Version: 2.2
+Updated: August 30, 2026
 Owner: Vasu
-Status: Implementation and verification in progress. Executed results are recorded separately in docs/verification-status.md.
+Status: Hackathon MVP implemented and verified. Executed results are recorded in [docs/verification.md](docs/verification.md).
 Working name: PaywallProof. Name availability has not been checked.
 
-**August 28 provider decision:** Polar replaces Stripe. This version preserves all access scenarios, repair requirements and safety checks, and replaces provider-specific setup, timing, payment evidence and signing contracts. [Migration requirements](docs/billing-provider-migration.md) define the acceptance gate. Account preflight is verified; a complete paid provider lifecycle is not yet verified.
+**August 28 provider decision:** Polar replaces Stripe. The migration preserved the access scenarios, repair requirements, and safety checks while replacing provider-specific setup, timing, payment evidence, and signing contracts. The [migration record](docs/billing-provider-migration.md) documents the completed native sandbox lifecycle.
 
 **August 29 model decision:** The owner selected Luna through the existing Codex subscription. The [subscription bridge](docs/codex-subscription.md) must require ChatGPT authentication, included quota, zero extra credits, a pinned Luna model and no paid fallback. Codex proposes actions without host environment access; TrueForge retains execution and approval enforcement. Host tests and the independent repair evaluator remain unavailable to the generator. Consent must disclose OpenAI processing and subscription usage. No capability is removed.
 
