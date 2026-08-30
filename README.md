@@ -62,11 +62,13 @@ Start with [the product specification](PRD.md) for requirements and [the documen
 
 [CI PR #3](https://github.com/VasuBansal7576/PaywallProof/pull/3) upgraded the GitHub Action runtimes after the workflow emitted a Node 20 deprecation notice. The updated workflow passed its full gate, Qodo reported no findings, and the merged `main` workflow passed again.
 
+[Persistence PR #4](https://github.com/VasuBansal7576/PaywallProof/pull/4) moved checkout continuation and control-document persistence behind dedicated owners. Qodo raised two documentation accuracy issues. Both were corrected and marked resolved before CI passed and the PR merged as `4ad469c90ed78944b816e28a56573f938d125af8`.
+
 Qodo is part of the development gate, not the product runtime. Substantive changes are reviewed on a pull request, valid findings are fixed, and the final head is reviewed again before merge.
 
 ## Run locally
 
-The verified local environment used macOS, Node.js 22.20, pnpm 10.32, Python 3.11 or newer, and Codex CLI 0.147.0. The repair sandbox is currently verified only on macOS.
+The verified local environment used macOS, Node.js 22.20, pnpm 10.32, Python 3.11 through 3.13, and Codex CLI 0.147.0. The lockfile resolves TrueForge 0.1.4, Next.js 16.3.3, and the Playwright test runtime 1.62.1. Polar requests use API version `2026-04`. The repair sandbox is currently verified only on macOS.
 
 ```sh
 pnpm install --frozen-lockfile
@@ -104,18 +106,35 @@ The workspace runs on port 3000, the reference SaaS on 3001, and the worker on 8
 
 Local replay does not require a provider account. Polar verification requires separately authorized sandbox credentials and an explicit test mailbox. Use official Polar test payment details only. Never use a real card.
 
+For a native Polar run, configure these server-side values:
+
+```text
+POLAR_ACCESS_TOKEN
+POLAR_REFERENCE_TOKEN
+POLAR_ORGANIZATION_ID
+POLAR_PRODUCT_ID
+BILLING_PRICE_ID
+POLAR_WEBHOOK_SECRET
+POLAR_TEST_CUSTOMER_EMAIL
+```
+
+The read-only `pnpm test:polar` preflight uses `POLAR_PRICE_ID` in place of `BILLING_PRICE_ID`. Configure Polar to deliver signed sandbox events to `/api/polar/webhook`. Tokens, the test mailbox, and private checkout links must stay outside chat and Git.
+
+To connect another owned staging application, implement the authenticated routes in the [target adapter contract](docs/contracts/reference-contract.md), including build identity, run-scoped test users, ordinary user sessions, billing-state reads, and cleanup. Staging hooks must be disabled in production, and the adapter credential must never grant access to the protected feature. The bundled reference app is the only adapter verified by this repository.
+
 ## Verification commands
 
-| Command                     | Purpose                                                                                                        |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `pnpm verify:ci`            | Formatting, repository shape, delivery configuration, types, lint, tests, production build, and browser checks |
-| `pnpm verify`               | The CI gate plus live checks available on the current machine                                                  |
-| `pnpm test:turn-selection`  | TrueForge newest-turn recovery across multiple pages                                                           |
-| `pnpm test:evidence-review` | Skill registration, dynamic reviewers, tool scope, and persisted synthesis                                     |
-| `pnpm test:polar`           | Read-only Polar organization, product, and price preflight                                                     |
-| `pnpm test:polar:lifecycle` | Authorized sandbox checkout, webhook, access, cancellation, and expiry lifecycle                               |
-| `pnpm test:runtime`         | TrueForge sandbox execution and approval transport                                                             |
-| `pnpm test:repair`          | Isolated fault reproduction, generated repair, and unchanged evaluator                                         |
+| Command                                          | Purpose                                                                                        |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| `pnpm verify:ci`                                 | Formatting, repository shape, delivery configuration, types, lint, tests, and production build |
+| `pnpm verify`                                    | The CI gate plus the live browser contract on a supported local machine                        |
+| `pnpm test:turn-selection`                       | TrueForge newest-turn recovery across multiple pages                                           |
+| `pnpm test:evidence-review`                      | Skill registration, dynamic reviewers, tool scope, and persisted synthesis                     |
+| `pnpm test:polar`                                | Read-only Polar organization, product, and price preflight                                     |
+| `pnpm test:polar:lifecycle`                      | Authorized sandbox checkout, webhook, access, cancellation, and expiry lifecycle               |
+| `pnpm test:runtime`                              | TrueForge sandbox execution and approval transport                                             |
+| `pnpm test:repair`                               | Isolated fault reproduction, generated repair, and unchanged evaluator                         |
+| `pnpm exec tsx scripts/verify-local-workflow.ts` | Full synthetic local-replay workflow through TrueForge                                         |
 
 `pnpm test:polar` does not create a checkout and does not prove the lifecycle. Missing or rejected credentials exit with a blocked result instead of a passing skip.
 
@@ -129,6 +148,12 @@ Local replay does not require a provider account. Polar verification requires se
 - Provider audit records are reported honestly when the provider does not allow deletion.
 
 The Codex bridge uses included ChatGPT subscription allowance only when it can verify sign-in, available quota, and a zero extra-credit balance. It blocks unknown or paid fallback states. See [the subscription boundary](docs/codex-subscription.md).
+
+Known limits: this is a local, single-operator MVP; the repair sandbox is verified only on macOS; and portability beyond the bundled Next.js reference adapter has not been established.
+
+## Development disclosure
+
+Codex assisted with implementation, independent test authoring, review, and verification. Qodo reviewed the substantive GitHub changes. Human approval remains required for provider mutations and publication, and maintainers must be able to explain the code they merge.
 
 ## License
 

@@ -10,7 +10,7 @@ pnpm exec playwright install chromium
 pnpm verify:ci
 ```
 
-`pnpm verify:ci` checks formatting, repository shape, delivery configuration, skill validity, types, lint, tests, the production build, and browser contracts.
+`pnpm verify:ci` checks formatting, repository shape, delivery configuration, skill validity, types, lint, tests, and the production build. Run `pnpm verify` on a supported local machine to add the live browser contract.
 
 ## Change rules
 

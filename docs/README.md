@@ -18,4 +18,4 @@ The files in [`contracts/`](contracts/) are retained because the independent tes
 
 ## Historical material
 
-Submission checklists, sponsor research, local receipts, and the obsolete bundled walkthrough are intentionally excluded. The submitted demo is available from the root README. Sensitive and machine-specific evidence remains ignored under `.local/` only while it is needed.
+Submission checklists, sponsor research, and the obsolete bundled walkthrough are intentionally excluded from Git. The submitted demo is available from the root README. The compact native Polar receipt remains in ignored local storage for the required 60-day retention window.

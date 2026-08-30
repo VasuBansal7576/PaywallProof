@@ -9,7 +9,7 @@ This file records executed evidence. Raw outputs are not committed because they 
 - Native Polar sandbox run `7563883e-62d1-45a3-86e7-5bd09f8cbfb3` completed checkout, signed webhook delivery, scheduled period-end cancellation, actual provider expiry, post-expiry denial, and cleanup. SC01–SC04 passed in API, browser, and application state: 12/12 assertions, 16 observations, and four browser artifacts.
 - The final provider read reported sandbox mode, `livemode: false`, a paid sandbox order, and a canceled subscription. Two application users were deleted. Polar customer, checkout, and subscription audit objects were retained only after their terminal canceled state was confirmed, under `POLAR_CANCELED_AUDIT_RETAINED`.
 - The terminal receipt SHA-256 is `993f30e59e9e383edda2f9b95681b8474cef104d8c9610761eb2907c5e14ab06`. Provider IDs, the authorized test mailbox, private checkout URLs, tokens, and raw webhook material remain in ignored local state.
-- The repository gate covers formatting, repository shape, delivery configuration, skill validation, TypeScript, ESLint, the complete test suite, the production web build, and live browser-contract groups.
+- `pnpm verify:ci` covers formatting, repository shape, delivery configuration, skill validation, TypeScript, ESLint, the complete test suite, and the production web build. `pnpm verify` adds the live browser contract on a supported local machine.
 - The live TrueForge runtime created a sandbox, executed Python with output `42`, resumed the same stream, exercised allow/deny approval transport, and rejected replay of a stale approval. Turn selection is covered for both ascending and descending multi-page iterators.
 - A live evidence-review retry mounted the Git-backed skill through the restricted local TrueForge sandbox and completed with separate dynamic coverage and binding subagents. The compact projection is bound to report hash `4bb30645ee18c30dab3643369fae8e5a4fd2e546e9c443a2fa1ab2fe99255958`. Binding integrity is `confirmed`; the synthesized `needs_attention` verdict records only the intentional single-build/single-price sandbox scope and the absence of production billing coverage.
 - Qodo reviewed lifecycle PR #2, identified three valid defects, and marked all three resolved on final head `87788cb`. CI passed and the PR was squash-merged as `32664e030e2612b0e39e3783a373c192c3b24dac`.
@@ -19,7 +19,7 @@ This file records executed evidence. Raw outputs are not committed because they 
 
 - The repository is public at [github.com/VasuBansal7576/PaywallProof](https://github.com/VasuBansal7576/PaywallProof).
 - The submitted demo is available at [youtu.be/z-bXuMFx9lQ](https://youtu.be/z-bXuMFx9lQ).
-- Raw lifecycle evidence was removed from the local development database after its hashes and non-secret results were recorded here.
+- The 6 GB operational TrueForge database was removed after submission. The compact final receipt and review remain under ignored `.local/workflow-7563883e-62d1-45a3-86e7-5bd09f8cbfb3/` until at least October 28, 2026. The retained `final-report.json` still hashes to the terminal SHA-256 recorded above.
 
 ## Truthfulness rules
 
