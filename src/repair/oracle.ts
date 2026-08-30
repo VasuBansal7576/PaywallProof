@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { billingSchema, hashValue, parsePolicy, type AccessPolicy, type Billing } from '#domain';
 import { EvidenceStore, type Observation } from '#evidence';
 import { observeFeature, observeScenario } from '#evidence/probe';
-import { TargetTransport, ReferenceTargetAdapter } from '#integrations/network';
+import { TargetTransport, TargetContractV1Adapter } from '#integrations/network';
 import { BrowserRunner } from '#integrations/browser';
 import { RepairError } from './model.ts';
 import type { SandboxTargetReady } from './sandbox.ts';
@@ -37,6 +37,7 @@ export async function oracleFingerprint(repositoryRoot: string) {
     'src/domain/index.ts',
     'src/evidence/index.ts',
     'src/evidence/probe.ts',
+    'src/adapter-doctor/report.ts',
     'src/integrations/network.ts',
     'src/integrations/browser.ts',
     'src/repair/oracle.ts',
@@ -240,7 +241,7 @@ export async function runRepairOracle(input: {
     plan = planSchema.parse(input.plan);
   if (plan.policyHash !== policy.hash) throw new RepairError('REPAIR_POLICY_MISMATCH');
   const transport = new TargetTransport({ origin: input.target.origin, allowLoopback: true });
-  const target = new ReferenceTargetAdapter(transport, input.target.adapterToken, () =>
+  const target = new TargetContractV1Adapter(transport, input.target.adapterToken, () =>
     input.signal.throwIfAborted(),
   );
   const browser = new BrowserRunner(transport, input.artifactDirectory);
@@ -249,7 +250,7 @@ export async function runRepairOracle(input: {
     input.target.replaySecret,
     input.target.webhookSecret,
   ]);
-  const principals: Awaited<ReturnType<ReferenceTargetAdapter['createUser']>>[] = [],
+  const principals: Awaited<ReturnType<TargetContractV1Adapter['createUser']>>[] = [],
     cleanup: { resourceId: string; status: 'deleted' | 'leftover' }[] = [];
   const artifacts: unknown[] = [],
     scenarios = [];
@@ -338,7 +339,7 @@ export async function runRepairOracle(input: {
     }
   } finally {
     // Disposable target owns these users even if its test was interrupted. No provider cleanup is attempted.
-    const cleanupTarget = new ReferenceTargetAdapter(transport, input.target.adapterToken);
+    const cleanupTarget = new TargetContractV1Adapter(transport, input.target.adapterToken);
     for (const principal of principals)
       try {
         await cleanupTarget.cleanup({ runId: plan.runId, principalId: principal.principalId });

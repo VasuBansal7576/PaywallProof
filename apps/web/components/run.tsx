@@ -10,7 +10,13 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { CopyButton } from './copy-button';
-import { adjacentTab, parseRunTab, runTabs, type RunTab } from '../lib/workspace-presentation';
+import {
+  adjacentTab,
+  approvalFeatureLabel,
+  parseRunTab,
+  runTabs,
+  type RunTab,
+} from '../lib/workspace-presentation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { ApiSession, errorMessage, get } from '../lib/api';
@@ -410,7 +416,7 @@ export function RunView({
               </div>
               <div>
                 <dt>Feature</dt>
-                <dd>Pro export · ordinary session</dd>
+                <dd>{approvalFeatureLabel(run)}</dd>
               </div>
               <div>
                 <dt>Execution mode</dt>

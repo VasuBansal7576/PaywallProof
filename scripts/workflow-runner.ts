@@ -2,6 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { z } from 'zod';
 import {
+  adapterDoctorReportSchema,
+  type AdapterDoctorReport,
+} from '../src/adapter-doctor/report.ts';
+import {
   assertLocalWorkflowComplete,
   assertPolarWorkflowComplete,
 } from './workflow-verification.ts';
@@ -9,6 +13,17 @@ import {
 export type WorkflowMode = 'local_replay' | 'polar_sandbox';
 
 const origin = 'http://127.0.0.1:8787';
+const workflowConfigSchema = z.object({
+  target: z.object({ id: z.string() }),
+  repository: z.string(),
+  defaultRef: z.string(),
+  priceId: z.string(),
+});
+const workflowPreflightSchema = z.object({
+  ready: z.boolean(),
+  adapter: adapterDoctorReportSchema,
+  connections: z.array(z.unknown()),
+});
 const runDetailSchema = z.object({
   run: z.object({ status: z.string(), outcome: z.string().nullable() }),
   runtime: z.object({ status: z.string(), error: z.string().optional() }).nullable(),
@@ -98,41 +113,65 @@ export function workflowReadyForReport(runStatus: string, runtimeStatus: string 
   return runStatus === 'completed' && runtimeStatus === 'done';
 }
 
+export function workflowProjectRequest(
+  config: z.infer<typeof workflowConfigSchema>,
+  mode: WorkflowMode,
+  createdAt: string,
+) {
+  return {
+    name: `${mode === 'polar_sandbox' ? 'Polar' : 'Local'} workflow verification ${createdAt}`,
+    repository: config.repository,
+    ref: config.defaultRef,
+    targetId: config.target.id,
+    ownershipConfirmed: true,
+    modelConsent: true,
+  };
+}
+
+export function workflowPolicyRequest(
+  config: z.infer<typeof workflowConfigSchema>,
+  report: AdapterDoctorReport,
+) {
+  if (report.verdict !== 'compatible') throw new Error('ADAPTER_DOCTOR_BLOCKED');
+  return {
+    schemaVersion: 2,
+    priceId: config.priceId,
+    featureId: report.receipt.description.feature.id,
+    featureConfigHash: report.receipt.featureConfigHash,
+    cancellation: 'allow_until_period_end',
+    requireInitialPaymentConfirmed: true,
+    syncWindowSeconds: 5,
+    predicateVersion: 'paywallproof-entitlement-v1',
+  } as const;
+}
+
 async function createRun(token: string, mode: WorkflowMode) {
-  const config = z
-    .object({ repository: z.string(), defaultRef: z.string(), priceId: z.string() })
-    .parse(await call(token, '/api/config'));
-  const project = z.object({ id: z.string() }).parse(
-    await call(token, '/api/projects', {
-      name: `${mode === 'polar_sandbox' ? 'Polar' : 'Local'} workflow verification ${new Date().toISOString()}`,
-      repository: config.repository,
-      ref: config.defaultRef,
-      targetId: 'reference',
-      ownershipConfirmed: true,
-      modelConsent: true,
-    }),
+  const config = workflowConfigSchema.parse(await call(token, '/api/config'));
+  const project = z
+    .object({ id: z.string() })
+    .parse(
+      await call(
+        token,
+        '/api/projects',
+        workflowProjectRequest(config, mode, new Date().toISOString()),
+      ),
+    );
+  const preflight = workflowPreflightSchema.parse(
+    await call(token, `/api/projects/${project.id}/preflight`, { mode }),
   );
-  const preflight = z
-    .object({
-      ready: z.boolean(),
-      featureConfigHash: z.string().optional(),
-      checks: z.array(z.unknown()),
-    })
-    .parse(await call(token, `/api/projects/${project.id}/preflight`, { mode }));
-  if (!preflight.ready || !preflight.featureConfigHash)
-    throw new Error(`Preflight blocked: ${JSON.stringify(preflight.checks)}`);
-  const policy = z.object({ hash: z.string() }).parse(
-    await call(token, `/api/projects/${project.id}/policies`, {
-      schemaVersion: 2,
-      priceId: config.priceId,
-      featureId: 'pro_export',
-      featureConfigHash: preflight.featureConfigHash,
-      cancellation: 'allow_until_period_end',
-      requireInitialPaymentConfirmed: true,
-      syncWindowSeconds: 5,
-      predicateVersion: 'reference-export-v1',
-    }),
-  );
+  if (!preflight.ready)
+    throw new Error(
+      `Preflight blocked: ${JSON.stringify({ adapter: preflight.adapter, connections: preflight.connections })}`,
+    );
+  const policy = z
+    .object({ hash: z.string() })
+    .parse(
+      await call(
+        token,
+        `/api/projects/${project.id}/policies`,
+        workflowPolicyRequest(config, preflight.adapter),
+      ),
+    );
   return z
     .object({
       id: z.string(),

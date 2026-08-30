@@ -7,6 +7,7 @@ import { ApiSession } from './api';
 import { configSchema, projectSchema, runSchema, type Run } from './contracts';
 import {
   adjacentTab,
+  approvalFeatureLabel,
   needsAttention,
   newestRuns,
   parseRunTab,
@@ -63,6 +64,24 @@ function fixture(id: string, createdAt = 1000, overrides: Partial<Run> = {}): Ru
 }
 
 describe('workspace presentation', () => {
+  it('presents the exact run-bound feature in the approval scope', () => {
+    const run = fixture('dynamic-target', 1, {
+      targetFeature: {
+        id: 'pipeline_export',
+        method: 'GET',
+        path: '/api/export',
+        denialStatuses: [403],
+        browserPath: '/admin',
+        actionTestId: 'pipeline-export-button',
+        resultTestId: 'pipeline-export-result',
+      },
+    });
+
+    expect(approvalFeatureLabel(run)).toBe('pipeline_export · GET /api/export · ordinary session');
+    expect(approvalFeatureLabel(fixture('legacy'))).toBe(
+      'pro_export · legacy descriptor unavailable · ordinary session',
+    );
+  });
   it('sorts by recorded creation time without mutating API data and breaks ties deterministically', () => {
     const input = [fixture('old', 1), fixture('z', 2), fixture('a', 2)];
     expect(newestRuns(input).map((run) => run.id)).toEqual(['a', 'z', 'old']);
@@ -132,6 +151,20 @@ describe('workspace presentation', () => {
     expect(html).toContain('href="/projects/new"');
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Review run approval/);
     expect(project.ref).toBe('main');
+  });
+  it('treats a changed target identity as a new configuration', () => {
+    const html = renderToStaticMarkup(
+      createElement(ProjectView, {
+        config: { ...config, target: { ...config.target, id: 'revenue-intelligence-os' } },
+        project,
+        api: new ApiSession('presentation-only'),
+        runs: [],
+        onRun: async () => {},
+      }),
+    );
+    expect(html).toContain('This project uses an earlier configuration');
+    expect(html).toContain('Connect current configuration');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Review run approval/);
   });
   it('escapes untrusted names and preserves exact run bindings in links and machine-readable data', () => {
     const run = fixture('run/<untrusted>');

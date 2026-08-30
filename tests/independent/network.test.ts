@@ -3,9 +3,10 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { publicAddress, TargetTransport } from '#integrations/network';
+import { publicAddress, TargetContractV1Adapter, TargetTransport } from '#integrations/network';
 import { BrowserRunner } from '#integrations/browser';
 import { evaluateProbe } from '#domain';
+import { type TargetDescription } from '../../src/adapter-doctor/index.ts';
 
 // Independent synthetic local faults only. Servers bind ephemeral 127.0.0.1
 // ports, and the browser runs only through the public BrowserRunner boundary.
@@ -15,6 +16,15 @@ type Handler = (request: IncomingMessage, response: ServerResponse) => void;
 type BrowserResult = Awaited<ReturnType<BrowserRunner['probe']>>;
 const fixtureMarker = 'SYNTHETIC_PROTECTED_MARKER_NETWORK_7143';
 const ordinaryCookie = 'pp_session=SYNTHETIC_ORDINARY_USER_7143';
+const defaultFeature = {
+  id: 'pro_export',
+  method: 'GET',
+  path: '/api/export',
+  denialStatuses: [403],
+  browserPath: '/dashboard',
+  actionTestId: 'export-button',
+  resultTestId: 'export-result',
+} satisfies TargetDescription['feature'];
 const servers = new Set<Server>();
 const intervals = new Set<ReturnType<typeof setInterval>>();
 let directory: string;
@@ -36,7 +46,10 @@ async function serve(handler: Handler) {
 }
 
 function sendJson(response: ServerResponse, status: number, body: unknown) {
-  response.writeHead(status, { 'content-type': 'application/json' });
+  response.writeHead(status, {
+    'content-type': 'application/json',
+    'cache-control': 'no-store',
+  });
   response.end(JSON.stringify(body));
 }
 
@@ -67,23 +80,25 @@ type PageOptions = {
   beforeExport?: string;
   exportRedirect?: string;
   extraHandler?: Handler;
+  feature?: TargetDescription['feature'];
 };
 
 function htmlPage(options: PageOptions) {
+  const feature = options.feature ?? defaultFeature;
   const displayed =
     options.ui === 'allowed'
       ? (options.visibleMarker ?? fixtureMarker)
       : (options.visibleMarker ?? 'Access denied');
   return `<!doctype html><html><body>
-    <button type="button" data-testid="export-button">Export</button>
-    <section data-testid="export-result" data-status="idle"></section>
+    <button type="button" data-testid=${JSON.stringify(feature.actionTestId)}>Export</button>
+    <section data-testid=${JSON.stringify(feature.resultTestId)} data-status="idle"></section>
     <script>
-      document.querySelector('[data-testid="export-button"]').addEventListener('click', async () => {
-        const output = document.querySelector('[data-testid="export-result"]');
+      document.querySelector('[data-testid=${JSON.stringify(feature.actionTestId)}]').addEventListener('click', async () => {
+        const output = document.querySelector('[data-testid=${JSON.stringify(feature.resultTestId)}]');
         output.dataset.status = 'loading';
         ${options.beforeExport ?? ''}
         try {
-          const response = await fetch('/api/export', {credentials: 'same-origin'});
+          const response = await fetch(${JSON.stringify(feature.path)}, {credentials: 'same-origin'});
           await response.text();
           const pre = document.createElement('pre');
           pre.textContent = ${JSON.stringify(displayed)};
@@ -98,11 +113,12 @@ function htmlPage(options: PageOptions) {
 }
 
 async function browserFixture(options: PageOptions) {
+  const feature = options.feature ?? defaultFeature;
   const observed: { path: string; cookie: string | undefined }[] = [];
   const local = await serve((request, response) => {
     const path = request.url ?? '/';
     observed.push({ path, cookie: request.headers.cookie });
-    if (path === '/dashboard') {
+    if (path === feature.browserPath) {
       response.writeHead(200, { 'content-type': 'text/html' });
       response.end(htmlPage(options));
     } else if (path === '/api/me') {
@@ -111,7 +127,7 @@ async function browserFixture(options: PageOptions) {
         canExport: true,
         executionMode: 'local_replay',
       });
-    } else if (path === '/api/export') {
+    } else if (path === feature.path) {
       if (options.exportRedirect) {
         response.writeHead(302, { location: options.exportRedirect });
         response.end('Synthetic redirect');
@@ -128,7 +144,7 @@ async function browserFixture(options: PageOptions) {
     timeoutMs: 4_000,
   });
   const runner = new BrowserRunner(transport, directory);
-  return { ...local, runner, observed };
+  return { ...local, runner, observed, feature };
 }
 
 beforeEach(() => {
@@ -215,6 +231,50 @@ describe('independent network: pure address classification', () => {
 });
 
 describe('independent network: checked target transport', () => {
+  it('applies its default request deadline while DNS resolution is still pending', async () => {
+    const transport = new TargetTransport({
+      origin: 'https://example.com',
+      allowLoopback: false,
+      timeoutMs: 10,
+      lookupHost: () => new Promise(() => {}),
+    });
+
+    await expect(transport.request('/probe')).rejects.toMatchObject({
+      name: 'TimeoutError',
+    });
+  });
+
+  it('preserves an already-aborted caller signal without starting DNS resolution', async () => {
+    let lookups = 0;
+    const transport = new TargetTransport({
+      origin: 'https://example.com',
+      allowLoopback: false,
+      timeoutMs: 1_000,
+      lookupHost: () => {
+        lookups += 1;
+        return new Promise(() => {});
+      },
+    });
+    const caller = new AbortController();
+    const reason = new Error('CALLER_ABORTED');
+    caller.abort(reason);
+
+    await expect(transport.request('/probe', { signal: caller.signal })).rejects.toBe(reason);
+    expect(lookups).toBe(0);
+  });
+
+  it('bounds DNS resolution with the caller deadline before any request dispatch', async () => {
+    const transport = new TargetTransport({
+      origin: 'https://example.com',
+      allowLoopback: false,
+      lookupHost: () => new Promise(() => {}),
+    });
+
+    await expect(transport.destination(AbortSignal.timeout(10))).rejects.toMatchObject({
+      name: 'TimeoutError',
+    });
+  });
+
   it('returns the actual JSON, raw JSON, and plain-text response bodies', async () => {
     const local = await serve((request, response) => {
       if (request.url === '/json')
@@ -439,14 +499,157 @@ describe('independent network: checked target transport', () => {
   }, 5_000);
 });
 
+describe('independent network: contract-v1 mutation receipts', () => {
+  function adapter(origin: string) {
+    return new TargetContractV1Adapter(
+      new TargetTransport({ origin, allowLoopback: true, timeoutMs: 1_000 }),
+      'synthetic-adapter-token',
+    );
+  }
+
+  it('rejects a create receipt whose principal is not a safe opaque path segment', async () => {
+    const requests: string[] = [];
+    const local = await serve((request, response) => {
+      requests.push(request.url ?? '/');
+      sendJson(response, 201, {
+        principalId: '..',
+        runId: 'run-receipt',
+        fixtureMarker,
+      });
+    });
+
+    await expect(
+      adapter(local.origin).createUser({
+        runId: 'run-receipt',
+        operationId: 'create-receipt',
+        fixtureMarker,
+      }),
+    ).rejects.toThrow('FIXTURE_IDENTITY_MISMATCH');
+    expect(requests).toEqual(['/staging/users']);
+  });
+
+  it('rejects unsafe principals before dispatching any user-scoped request', async () => {
+    let requests = 0;
+    const local = await serve((_request, response) => {
+      requests += 1;
+      sendJson(response, 200, {});
+    });
+    const target = adapter(local.origin);
+    const principalId = '../victim';
+
+    await expect(
+      target.linkCustomer({ runId: 'run-safe-path', principalId, customerId: 'cus_safe' }),
+    ).rejects.toThrow('FIXTURE_IDENTITY_MISMATCH');
+    await expect(target.session({ runId: 'run-safe-path', principalId })).rejects.toThrow(
+      'FIXTURE_IDENTITY_MISMATCH',
+    );
+    await expect(target.snapshot({ runId: 'run-safe-path', principalId })).rejects.toThrow(
+      'FIXTURE_IDENTITY_MISMATCH',
+    );
+    await expect(target.cleanup({ runId: 'run-safe-path', principalId })).rejects.toThrow(
+      'FIXTURE_IDENTITY_MISMATCH',
+    );
+    expect(requests).toBe(0);
+  });
+
+  it('requires the link response to echo the exact owned identities', async () => {
+    const local = await serve((_request, response) => {
+      sendJson(response, 200, {
+        principalId: 'usr_owned',
+        runId: 'another-run',
+        customerId: 'cus_owned',
+      });
+    });
+
+    await expect(
+      adapter(local.origin).linkCustomer({
+        runId: 'run-owned',
+        principalId: 'usr_owned',
+        customerId: 'cus_owned',
+      }),
+    ).rejects.toThrow('FIXTURE_IDENTITY_MISMATCH');
+  });
+
+  it('treats a successful HTTP cleanup without an exact removal receipt as unconfirmed', async () => {
+    const local = await serve((_request, response) => {
+      sendJson(response, 200, {
+        removed: false,
+        principalId: 'usr_owned',
+        runId: 'run-owned',
+      });
+    });
+
+    await expect(
+      adapter(local.origin).cleanup({ runId: 'run-owned', principalId: 'usr_owned' }),
+    ).rejects.toThrow('CLEANUP_RECEIPT_MISMATCH');
+  });
+
+  it('does not treat an accepted-but-incomplete cleanup as deletion', async () => {
+    const local = await serve((_request, response) => {
+      sendJson(response, 202, {
+        removed: true,
+        principalId: 'usr_owned',
+        runId: 'run-owned',
+      });
+    });
+
+    await expect(
+      adapter(local.origin).cleanup({ runId: 'run-owned', principalId: 'usr_owned' }),
+    ).rejects.toThrow('TARGET_ADAPTER_202');
+  });
+
+  it('rejects a JSON-looking lifecycle response with the wrong media type', async () => {
+    const local = await serve((_request, response) => {
+      response.writeHead(201, {
+        'content-type': 'text/plain',
+        'cache-control': 'no-store',
+      });
+      response.end(JSON.stringify({ principalId: 'usr_owned', runId: 'run-owned', fixtureMarker }));
+    });
+
+    await expect(
+      adapter(local.origin).createUser({
+        runId: 'run-owned',
+        operationId: 'create-owned',
+        fixtureMarker,
+      }),
+    ).rejects.toThrow('TARGET_ADAPTER_MEDIA_TYPE');
+  });
+});
+
 describe('independent network: real browser against synthetic local HTML', () => {
+  it('uses the validated feature paths and test ids instead of reference-app constants', async () => {
+    const feature = {
+      id: 'pipeline_export',
+      method: 'GET',
+      path: '/api/paywallproof/export',
+      denialStatuses: [403],
+      browserPath: '/admin',
+      actionTestId: 'pipeline-export-button',
+      resultTestId: 'pipeline-export-result',
+    } satisfies TargetDescription['feature'];
+    const local = await browserFixture({
+      feature,
+      ui: 'allowed',
+      networkStatus: 200,
+      networkBody: { fixtureMarker },
+    });
+
+    const result = await local.runner.probe(ordinaryCookie, feature);
+
+    expect(verdict(result, 'allow')).toBe('pass');
+    expect(local.observed.some((entry) => entry.path === '/admin')).toBe(true);
+    expect(local.observed.some((entry) => entry.path === '/api/paywallproof/export')).toBe(true);
+    expect(local.observed.some((entry) => entry.path === '/dashboard')).toBe(false);
+  }, 20_000);
+
   it('requires matching visible and network allowance using an ordinary session', async () => {
     const local = await browserFixture({
       ui: 'allowed',
       networkStatus: 200,
       networkBody: { fixtureMarker },
     });
-    const result = await local.runner.probe(ordinaryCookie);
+    const result = await local.runner.probe(ordinaryCookie, local.feature);
     expect(verdict(result, 'allow')).toBe('pass');
     expect(result).toHaveProperty('artifact');
     expect(local.observed.some((entry) => entry.path === '/dashboard')).toBe(true);
@@ -463,7 +666,7 @@ describe('independent network: real browser against synthetic local HTML', () =>
       networkStatus: 403,
       networkBody: { error: 'ACCESS_DENIED' },
     });
-    expect(verdict(await local.runner.probe(ordinaryCookie), 'deny')).toBe('pass');
+    expect(verdict(await local.runner.probe(ordinaryCookie, local.feature), 'deny')).toBe('pass');
   }, 20_000);
 
   it('does not discard leaked network data because the UI claims denial', async () => {
@@ -472,7 +675,7 @@ describe('independent network: real browser against synthetic local HTML', () =>
       networkStatus: 403,
       networkBody: { error: 'ACCESS_DENIED', nested: { leaked: fixtureMarker } },
     });
-    const result = await local.runner.probe(ordinaryCookie);
+    const result = await local.runner.probe(ordinaryCookie, local.feature);
     expect(JSON.stringify(result.probe.body)).toContain(fixtureMarker);
     expect(verdict(result, 'deny')).toBe('fail');
   }, 20_000);
@@ -483,7 +686,9 @@ describe('independent network: real browser against synthetic local HTML', () =>
       networkStatus: 403,
       networkBody: { error: 'UNRELATED_ERROR' },
     });
-    expect(verdict(await local.runner.probe(ordinaryCookie), 'deny')).toBe('inconclusive');
+    expect(verdict(await local.runner.probe(ordinaryCookie, local.feature), 'deny')).toBe(
+      'inconclusive',
+    );
   }, 20_000);
 
   it('cannot pass allowance when UI renders a marker but the network denied it', async () => {
@@ -492,7 +697,7 @@ describe('independent network: real browser against synthetic local HTML', () =>
       networkStatus: 403,
       networkBody: { error: 'ACCESS_DENIED' },
     });
-    const result = await local.runner.probe(ordinaryCookie);
+    const result = await local.runner.probe(ordinaryCookie, local.feature);
     expect(verdict(result, 'allow')).not.toBe('pass');
     expect(verdict(result, 'deny')).toBe('fail');
   }, 20_000);
@@ -504,7 +709,7 @@ describe('independent network: real browser against synthetic local HTML', () =>
       networkStatus: 403,
       networkBody: { error: 'ACCESS_DENIED' },
     });
-    expect(verdict(await local.runner.probe(ordinaryCookie), 'deny')).toBe('fail');
+    expect(verdict(await local.runner.probe(ordinaryCookie, local.feature), 'deny')).toBe('fail');
   }, 20_000);
 
   it('does not pass when the visible marker disagrees with a successful network marker', async () => {
@@ -514,7 +719,9 @@ describe('independent network: real browser against synthetic local HTML', () =>
       networkStatus: 200,
       networkBody: { fixtureMarker },
     });
-    expect(verdict(await local.runner.probe(ordinaryCookie), 'allow')).not.toBe('pass');
+    expect(verdict(await local.runner.probe(ordinaryCookie, local.feature), 'allow')).not.toBe(
+      'pass',
+    );
   }, 20_000);
 
   it('blocks a permitted export endpoint redirect before reaching another local port', async () => {
@@ -529,7 +736,7 @@ describe('independent network: real browser against synthetic local HTML', () =>
       networkBody: { fixtureMarker },
       exportRedirect: `${destination.origin}/api/export`,
     });
-    const result = await local.runner.probe(ordinaryCookie);
+    const result = await local.runner.probe(ordinaryCookie, local.feature);
     await pause(50);
     expect(local.observed.some((entry) => entry.path === '/api/export')).toBe(true);
     expect(redirectedHits).toBe(0);
@@ -548,7 +755,7 @@ describe('independent network: real browser against synthetic local HTML', () =>
         sendJson(response, 200, { forbidden: true });
       },
     });
-    await local.runner.probe(ordinaryCookie);
+    await local.runner.probe(ordinaryCookie, local.feature);
     expect(forbiddenHits).toBe(0);
   }, 20_000);
 
@@ -564,7 +771,7 @@ describe('independent network: real browser against synthetic local HTML', () =>
       networkBody: { fixtureMarker },
       beforeExport: `await fetch(${JSON.stringify(`${destination.origin}/private`)}).catch(() => undefined);`,
     });
-    await local.runner.probe(ordinaryCookie);
+    await local.runner.probe(ordinaryCookie, local.feature);
     expect(foreignHits).toBe(0);
   }, 20_000);
 
@@ -586,7 +793,7 @@ describe('independent network: real browser against synthetic local HTML', () =>
       networkBody: { fixtureMarker },
       beforeExport: `const socket = new WebSocket(${JSON.stringify(socketUrl)}); socket.onerror = () => {}; await new Promise(resolve => setTimeout(resolve, 100));`,
     });
-    await local.runner.probe(ordinaryCookie);
+    await local.runner.probe(ordinaryCookie, local.feature);
     expect(ordinaryHits).toBe(0);
     expect(upgrades).toBe(0);
   }, 20_000);
@@ -605,7 +812,7 @@ describe('independent network: real browser against synthetic local HTML', () =>
         response.end("self.addEventListener('fetch', () => {});");
       },
     });
-    await local.runner.probe(ordinaryCookie);
+    await local.runner.probe(ordinaryCookie, local.feature);
     expect(workerScriptHits).toBe(0);
   }, 20_000);
 });

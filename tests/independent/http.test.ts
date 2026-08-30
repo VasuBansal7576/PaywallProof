@@ -21,10 +21,11 @@ let databasePath: string;
 let artifactDirectory: string;
 const applications = new Set<ControlApp>();
 
-function open() {
+function open(targetId = 'reference') {
   const application = createControlApp({
     databasePath,
     artifactDirectory,
+    targetId,
     targetOrigin: 'http://127.0.0.1:39991',
     workerOrigin,
     webOrigin,
@@ -36,6 +37,7 @@ function open() {
     priceId: 'price_pro_synthetic',
     runtimeUrl: 'http://127.0.0.1:39992',
     model: 'synthetic-local-model',
+    repairProfile: targetId === 'reference' ? 'reference_v1' : 'disabled',
   });
   applications.add(application);
   return application;
@@ -344,6 +346,24 @@ describe('independent control HTTP: origin, host, and CSRF', () => {
 });
 
 describe('independent control HTTP: configured scope and honest reads', () => {
+  it('advertises and accepts a server-configured non-reference target id', async () => {
+    const targetId = 'revenue-intelligence-os';
+    const application = open(targetId);
+
+    expect(
+      await json(await request(application, '/api/config', 'GET', undefined, bearer())),
+    ).toMatchObject({ target: { id: targetId } });
+    const response = await request(
+      application,
+      '/api/projects',
+      'POST',
+      projectInput({ targetId }),
+      bearer('configured-second-target'),
+    );
+    expect(response.status).toBe(201);
+    expect(await json(response)).toMatchObject({ targetId });
+  });
+
   it('reports configured target and unavailable Stripe without exposing credentials', async () => {
     const application = open();
     const response = await request(application, '/api/config', 'GET', undefined, bearer());

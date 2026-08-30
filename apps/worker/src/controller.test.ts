@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   Controller,
+  lifecycleAgentInstructions,
+  lifecycleTurnInput,
   runtimeStatusAfterTurn,
   coverageForMode,
   coverageLimits,
@@ -18,6 +20,10 @@ import { patchHash, repairBranch } from '#repair';
 import { RepairCoordinator, type RepairJob, type RepairSource } from './repairs.ts';
 import { SECURITY_CONTROLS } from '#repair/controls';
 import { artifactRetentionFromDays } from './artifacts.ts';
+import {
+  ADAPTER_DOCTOR_SCOPE,
+  adapterDoctorReportSchema,
+} from '../../../src/adapter-doctor/index.ts';
 
 // Implementation-aware failure-injection tests. No provider or runtime evidence.
 const capacityMocks = vi.hoisted(() => ({ statfs: vi.fn() }));
@@ -36,6 +42,33 @@ const feature = {
   resultTestId: 'export-result',
 } as const;
 
+function compatibleDoctorReport() {
+  return adapterDoctorReportSchema.parse({
+    schemaVersion: 1,
+    verdict: 'compatible',
+    scope: ADAPTER_DOCTOR_SCOPE,
+    targetId: 'reference',
+    expectedBuildId: 'a'.repeat(40),
+    checks: [
+      ['description', 'DESCRIPTION_ACCEPTED'],
+      ['build_binding', 'BUILD_MATCHES'],
+      ['staging_authentication', 'STAGING_AUTH_REQUIRED'],
+      ['ordinary_feature_isolation', 'ADAPTER_CREDENTIAL_ISOLATED'],
+      ['response_cache_policy', 'NO_STORE_CONFIRMED'],
+    ].map(([id, code]) => ({ id, status: 'pass', code, title: id, detail: code })),
+    receipt: {
+      description: {
+        adapterVersion: '1',
+        environment: 'test',
+        buildId: 'a'.repeat(40),
+        billingTimeModel: 'provider_status',
+        feature,
+      },
+      featureConfigHash: hashValue(feature),
+    },
+  });
+}
+
 describe('mode-specific coverage limits', () => {
   it('labels synthetic replay without mislabeling native Polar sandbox evidence', () => {
     expect(coverageForMode('local_replay').coverageLimitCodes).toContain(
@@ -48,6 +81,22 @@ describe('mode-specific coverage limits', () => {
       /local replay|synthetic signed billing/i,
     );
     expect(coverageLimits.join(' ')).not.toMatch(/local replay|synthetic signed billing/i);
+  });
+});
+
+describe('TrueForge lifecycle instructions', () => {
+  it('makes the agent inspect the project and doctor-backed connections before requesting mutation', () => {
+    const runId = randomUUID();
+
+    const instructions = lifecycleAgentInstructions(runId);
+    const input = lifecycleTurnInput(runId, 'local_replay');
+
+    expect(instructions).toContain(
+      'inspect_project; check_connections; prepare_fixture; probe_feature SC01',
+    );
+    expect(input).toContain('First call inspect_project with operationId step_inspect');
+    expect(input).toContain('then check_connections with operationId step_connections');
+    expect(input).toContain('Only then call prepare_fixture with operationId step_prepare');
   });
 });
 
@@ -122,11 +171,188 @@ describe('external checkout runtime boundary', () => {
     });
   });
 });
-function setup(http = false, overrides: Pick<ControllerConfig, 'artifactRetentionMs'> = {}) {
+
+describe('adapter doctor control surface', () => {
+  it('composes preflight from the doctor receipt without a second description request', async () => {
+    const { controller, project } = setup();
+    const describe = vi.spyOn(controller.target, 'describe');
+    describe.mockClear();
+
+    const preflight = await controller.preflight(project.id, 'local_replay');
+
+    expect(preflight.adapter).toEqual(compatibleDoctorReport());
+    expect(preflight.connections.map((check) => check.name)).toEqual(['Billing mode', 'TrueForge']);
+    expect(preflight).not.toHaveProperty('target');
+    expect(preflight).not.toHaveProperty('featureConfigHash');
+    expect(describe).not.toHaveBeenCalled();
+  });
+
+  it('binds a policy to the doctor receipt without a legacy description request', async () => {
+    const { controller, project } = setup();
+    const describe = vi.spyOn(controller.target, 'describe');
+    const inspect = vi.spyOn(controller.adapterDoctor, 'inspect');
+    describe.mockClear();
+    inspect.mockClear();
+
+    const policy = await controller.proposePolicy(project.id, {
+      schemaVersion: 2,
+      priceId: 'price_synthetic',
+      featureId: 'pro_export',
+      featureConfigHash: hashValue(feature),
+      cancellation: 'allow_until_period_end',
+      requireInitialPaymentConfirmed: true,
+      syncWindowSeconds: 5,
+      predicateVersion: 'reference-export-v1',
+    });
+
+    expect(policy.featureConfigHash).toBe(hashValue(feature));
+    expect(inspect).toHaveBeenCalledOnce();
+    expect(describe).not.toHaveBeenCalled();
+  });
+
+  it('rejects a saved policy when the configured billing price changes before run creation', async () => {
+    const { controller, project } = setup();
+    const policy = await controller.proposePolicy(project.id, {
+      schemaVersion: 2,
+      priceId: 'price_synthetic',
+      featureId: 'pro_export',
+      featureConfigHash: hashValue(feature),
+      cancellation: 'allow_until_period_end',
+      requireInitialPaymentConfirmed: true,
+      syncWindowSeconds: 5,
+      predicateVersion: 'reference-export-v1',
+    });
+    controller.config.priceId = 'price_changed_before_run';
+
+    await expect(
+      controller.createRun({
+        projectId: project.id,
+        policyHash: policy.hash,
+        mode: 'local_replay',
+      }),
+    ).rejects.toMatchObject({ code: 'POLICY_TARGET_MISMATCH' });
+    expect(controller.list('run-index')).toEqual([]);
+  });
+
+  it('persists the Doctor-validated feature descriptor in the immutable run binding', async () => {
+    const { controller, start } = setup();
+    vi.spyOn(controller.runtime, 'registerMcpServer').mockImplementation(
+      () => new Promise(() => {}),
+    );
+
+    const run = await start();
+
+    expect(run.targetFeature).toEqual(feature);
+    expect(controller.runs.getRun(run.id).targetFeature).toEqual(feature);
+  });
+
+  it('rejects a saved project after the configured target identity changes', async () => {
+    const { controller, project } = setup();
+    controller.config.targetId = 'revenue-intelligence-os';
+
+    await expect(controller.inspectAdapter(project.id)).rejects.toMatchObject({
+      code: 'PROJECT_CONFIG_CHANGED',
+    });
+    await expect(controller.preflight(project.id, 'local_replay')).rejects.toMatchObject({
+      code: 'PROJECT_CONFIG_CHANGED',
+    });
+  });
+
+  it('blocks check_connections when the current Doctor receipt drifts from the run binding', async () => {
+    const { controller, start } = setup();
+    vi.spyOn(controller.runtime, 'registerMcpServer').mockImplementation(
+      () => new Promise(() => {}),
+    );
+    const run = await start();
+    const baseline = compatibleDoctorReport();
+    if (baseline.verdict !== 'compatible') throw new Error('Expected compatible fixture');
+    const changedFeature = { ...feature, browserPath: '/admin' };
+    vi.spyOn(controller.adapterDoctor, 'inspect').mockResolvedValue(
+      adapterDoctorReportSchema.parse({
+        ...baseline,
+        receipt: {
+          description: { ...baseline.receipt.description, feature: changedFeature },
+          featureConfigHash: hashValue(changedFeature),
+        },
+      }),
+    );
+
+    const result = await controller.tool(run.id, 'check_connections', {
+      runId: run.id,
+      operationId: 'drifted_preflight',
+    });
+
+    expect(result).toMatchObject({
+      ready: false,
+      connections: expect.arrayContaining([
+        expect.objectContaining({ name: 'Run binding', status: 'blocked' }),
+      ]),
+    });
+    expect(controller.context(run.id).fixturesReady).toBe(false);
+  });
+
+  it('blocks check_connections when the server configuration drifts from the approved run', async () => {
+    const { controller, start } = setup();
+    vi.spyOn(controller.runtime, 'registerMcpServer').mockImplementation(
+      () => new Promise(() => {}),
+    );
+    const run = await start();
+    controller.config.priceId = 'price_changed_after_approval';
+
+    const result = await controller.tool(run.id, 'check_connections', {
+      runId: run.id,
+      operationId: 'configuration_drift_preflight',
+    });
+
+    expect(result).toMatchObject({
+      ready: false,
+      connections: expect.arrayContaining([
+        expect.objectContaining({ name: 'Run binding', status: 'blocked' }),
+      ]),
+    });
+    expect(controller.context(run.id).fixturesReady).toBe(false);
+  });
+
+  it('does not persist or follow up on a hostile fixture identity receipt', async () => {
+    const { controller, start } = setup();
+    vi.spyOn(controller.runtime, 'registerMcpServer').mockImplementation(
+      () => new Promise(() => {}),
+    );
+    const run = await start();
+    controller.runs.decidePlan({
+      runId: run.id,
+      approvalId: run.approval.id,
+      bindingHash: run.approval.bindingHash,
+      decision: 'allow',
+    });
+    const create = vi.spyOn(controller.target, 'createUser').mockImplementation(async (input) => ({
+      principalId: 'victim',
+      runId: 'another-run',
+      fixtureMarker: input.fixtureMarker,
+    }));
+    const link = vi.spyOn(controller.target, 'linkCustomer');
+
+    await expect(
+      controller.tool(run.id, 'prepare_fixture', {
+        runId: run.id,
+        operationId: 'hostile_fixture',
+      }),
+    ).rejects.toMatchObject({ code: 'FIXTURE_IDENTITY_MISMATCH' });
+
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(link).not.toHaveBeenCalled();
+    expect(controller.context(run.id).free).toBeNull();
+  });
+});
+function setup(
+  http = false,
+  overrides: Partial<Pick<ControllerConfig, 'artifactRetentionMs' | 'repairProfile'>> = {},
+) {
   const directory = mkdtempSync(join(tmpdir(), 'pp-startup-'));
   const config = {
     databasePath: join(directory, 'control.sqlite'),
     artifactDirectory: join(directory, 'artifacts'),
+    targetId: 'reference',
     targetOrigin: 'http://127.0.0.1:39981',
     workerOrigin: 'http://127.0.0.1:39982',
     webOrigin: 'http://127.0.0.1:39983',
@@ -138,6 +364,7 @@ function setup(http = false, overrides: Pick<ControllerConfig, 'artifactRetentio
     priceId: 'price_synthetic',
     runtimeUrl: 'http://127.0.0.1:39984',
     model: 'synthetic',
+    repairProfile: 'reference_v1' as const,
   };
   const configured = { ...config, ...overrides };
   const service = http ? createControlApp(configured) : null;
@@ -150,6 +377,7 @@ function setup(http = false, overrides: Pick<ControllerConfig, 'artifactRetentio
     billingTimeModel: 'provider_status',
     feature: { ...feature, denialStatuses: [403] },
   });
+  vi.spyOn(controller.adapterDoctor, 'inspect').mockResolvedValue(compatibleDoctorReport());
   vi.spyOn(controller.runtime, 'checkConnection').mockResolvedValue({
     model: 'synthetic',
     local: true,
@@ -180,7 +408,7 @@ function setup(http = false, overrides: Pick<ControllerConfig, 'artifactRetentio
       mode: 'local_replay',
     });
   }
-  return { controller, start, cancel, app: service?.app, directory };
+  return { controller, start, cancel, app: service?.app, directory, project };
 }
 afterEach(() => {
   vi.useRealTimers();
@@ -191,6 +419,45 @@ afterEach(() => {
   }
 });
 describe('runtime startup failure recovery', () => {
+  it('rejects repair work for an unsupported target before reading source or capacity', async () => {
+    const { directory } = setup();
+    const source = vi.fn();
+    capacityMocks.statfs.mockClear();
+    const coordinator = new RepairCoordinator({
+      repositoryRoot: directory,
+      repository: 'synthetic/repository',
+      databasePath: join(directory, 'unsupported-repair.sqlite'),
+      artifactDirectory: directory,
+      runtimeUrl: 'http://127.0.0.1:39984',
+      model: 'synthetic',
+      webOrigin: 'http://127.0.0.1:39983',
+      documents: { put: vi.fn(), get: () => null, list: () => [] },
+      source,
+      repairSupported: false,
+    });
+    try {
+      await expect(coordinator.start(randomUUID(), {})).rejects.toMatchObject({
+        code: 'REPAIR_TARGET_UNSUPPORTED',
+      });
+      expect(source).not.toHaveBeenCalled();
+      expect(capacityMocks.statfs).not.toHaveBeenCalled();
+      await expect(
+        coordinator.requestPublication(randomUUID(), randomUUID()),
+      ).rejects.toMatchObject({ code: 'REPAIR_TARGET_UNSUPPORTED' });
+      await expect(
+        coordinator.decidePublication(randomUUID(), randomUUID(), randomUUID(), {
+          decision: 'allow',
+          bindingHash: 'a'.repeat(64),
+        }),
+      ).rejects.toMatchObject({ code: 'REPAIR_TARGET_UNSUPPORTED' });
+      await expect(coordinator.publishFromTool(randomUUID(), randomUUID())).rejects.toMatchObject({
+        code: 'REPAIR_TARGET_UNSUPPORTED',
+      });
+    } finally {
+      coordinator.close();
+    }
+  });
+
   it('rejects insufficient repair capacity without consuming an attempt or invoking a model', async () => {
     const { directory } = setup();
     const put = vi.fn(),
@@ -233,6 +500,7 @@ describe('runtime startup failure recovery', () => {
       webOrigin: 'http://127.0.0.1:39983',
       documents: { put, get: () => null, list: () => [] },
       source: async () => source,
+      repairSupported: true,
     });
     try {
       await expect(coordinator.start(source.runId, {})).rejects.toMatchObject({
@@ -301,6 +569,7 @@ describe('runtime startup failure recovery', () => {
       webOrigin: 'http://127.0.0.1:39983',
       documents: { put, get: () => null, list: () => [] },
       source: async () => source,
+      repairSupported: true,
     });
     try {
       await expect(coordinator.start(source.runId, {})).rejects.toMatchObject({
@@ -359,7 +628,7 @@ describe('runtime startup failure recovery', () => {
         status: 403,
         body: { error: 'ACCESS_DENIED' },
         transportError: false,
-        denialStatuses: [403],
+        denialStatuses: [403] satisfies 403[],
       };
       vi.spyOn(controller.target, 'session').mockResolvedValue({
         cookie: 'pp_session=synthetic',
@@ -716,6 +985,26 @@ function syntheticTurn(
   };
 }
 describe('repair publication recovery with synthetic runtime responses', () => {
+  it('abandons an interrupted job but does not resume publication when repair is disabled', async () => {
+    const { controller } = setup(false, { repairProfile: 'disabled' });
+    const fixture = verifiedRepairFixture(controller);
+    const [job] = controller.repairs.jobs(fixture.runId);
+    if (!job) throw new Error('Missing repair fixture');
+    job.state = 'preparing';
+    controller.put(`repair-job:${fixture.runId}`, job.id, job);
+    const cancel = vi.spyOn(TrueForgeAdapter.prototype, 'cancel').mockResolvedValue({});
+    const continuation = vi.spyOn(TrueForgeAdapter.prototype, 'findContinuation');
+
+    await controller.repairs.recover();
+
+    expect(cancel).toHaveBeenCalledWith({ sessionId: job.sessionId });
+    expect(controller.repairs.jobs(fixture.runId)[0]).toMatchObject({
+      state: 'abandoned',
+      error: 'REPAIR_INTERRUPTED_NO_REDISPATCH',
+    });
+    expect(continuation).not.toHaveBeenCalled();
+  });
+
   it.each([false, true])(
     'does not dispatch again after an uncertain request; continuation exists: %s',
     async (exists) => {

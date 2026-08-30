@@ -1,7 +1,7 @@
 import { signReplay } from '#reference/replay-signature';
 import { z } from 'zod';
 import { hashValue } from '#domain';
-import { ReferenceTargetAdapter, TargetTransport } from '#integrations/network';
+import { TargetContractV1Adapter, TargetTransport } from '#integrations/network';
 
 export const SECURITY_CONTROLS = [
   'AUTH_EXPORT_MISSING',
@@ -44,7 +44,7 @@ export async function probeRepairSecurity(input: {
   signal: AbortSignal;
 }): Promise<SecurityControl[]> {
   input.signal.throwIfAborted();
-  const target = new ReferenceTargetAdapter(input.transport, input.adapterToken, () =>
+  const target = new TargetContractV1Adapter(input.transport, input.adapterToken, () =>
     input.signal.throwIfAborted(),
   );
   const owner = { runId: input.runId, principalId: input.principalId };

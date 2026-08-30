@@ -14,6 +14,7 @@ import {
   type GitHubRequest,
   type RepairStore,
 } from './index.ts';
+import { oracleFingerprint } from './oracle.ts';
 
 const repository = 'owner/project',
   baseCommit = 'a'.repeat(40),
@@ -115,6 +116,16 @@ function approved(clock = () => 1000) {
   });
   return { ...fixture, approvalId: pending.approval.id };
 }
+
+describe('repair oracle source binding', () => {
+  it('includes the target descriptor schema used by the transport and browser', async () => {
+    const fingerprint = await oracleFingerprint(process.cwd());
+
+    expect(fingerprint.files.map((file) => file.path)).toContain('src/adapter-doctor/report.ts');
+    expect(fingerprint.files.every((file) => /^[a-f0-9]{64}$/.test(file.sha256))).toBe(true);
+    expect(fingerprint.hash).toMatch(/^[a-f0-9]{64}$/);
+  });
+});
 function gitBlob(content: string) {
   return createHash('sha1')
     .update(`blob ${Buffer.byteLength(content)}\0${content}`)

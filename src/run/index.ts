@@ -11,6 +11,7 @@ import {
   policySchema,
   verdictSchema,
 } from '#domain';
+import { targetFeatureSchema } from '../adapter-doctor/report.ts';
 
 export class ControlError extends Error {
   constructor(readonly code: string) {
@@ -23,6 +24,7 @@ const createSchema = z.strictObject({
   policy: policySchema,
   targetBuild: identifier,
   featureConfigHash: digest,
+  targetFeature: targetFeatureSchema.optional(),
   mode: z.enum(['polar_sandbox', 'local_replay']),
   projectConfigHash: digest.optional(),
 });
@@ -164,6 +166,12 @@ export function openRunStore(options: { path: string; clock?: () => number }) {
         const config = createSchema.parse(parseJson(input));
         const policy = parsePolicy(config.policy);
         if (config.featureConfigHash !== policy.featureConfigHash)
+          throw new ControlError('INVALID_INPUT');
+        if (
+          config.targetFeature !== undefined &&
+          (hashValue(config.targetFeature) !== config.featureConfigHash ||
+            config.targetFeature.id !== policy.featureId)
+        )
           throw new ControlError('INVALID_INPUT');
         if (
           database

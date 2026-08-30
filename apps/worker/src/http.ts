@@ -203,7 +203,7 @@ export function createControlApp(config: ControllerConfig) {
   app.get('/api/session', (c) => c.json({ csrfToken: c.get('csrfToken') }));
   app.get('/api/config', (c) =>
     c.json({
-      target: { id: 'reference', origin: config.targetOrigin },
+      target: { id: config.targetId, origin: config.targetOrigin },
       repository: config.repository,
       defaultRef: config.defaultRef,
       polarConfigured: controller.polar !== null,

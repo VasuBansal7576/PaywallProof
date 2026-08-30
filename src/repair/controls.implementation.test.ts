@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createReferenceApp } from '#reference';
-import { ReferenceTargetAdapter, TargetTransport } from '#integrations/network';
+import { TargetContractV1Adapter, TargetTransport } from '#integrations/network';
 import { probeRepairSecurity, SECURITY_CONTROLS } from './controls.ts';
 
 // Implementation-aware controls test against a real loopback HTTP target.
@@ -13,7 +13,7 @@ import { probeRepairSecurity, SECURITY_CONTROLS } from './controls.ts';
 let directory: string,
   reference: ReturnType<typeof createReferenceApp>,
   server: ReturnType<typeof serve>;
-let input: Parameters<typeof probeRepairSecurity>[0], target: ReferenceTargetAdapter;
+let input: Parameters<typeof probeRepairSecurity>[0], target: TargetContractV1Adapter;
 let fault: 'none' | 'public-export' | 'mutate-and-deny' | 'server-error', requests: number;
 beforeEach(async () => {
   vi.stubEnv('NODE_ENV', 'test');
@@ -63,7 +63,7 @@ beforeEach(async () => {
     server.once('error', reject);
   });
   const transport = new TargetTransport({ origin, allowLoopback: true });
-  target = new ReferenceTargetAdapter(transport, adapterToken);
+  target = new TargetContractV1Adapter(transport, adapterToken);
   const principal = await target.createUser({
       runId,
       operationId: randomUUID(),

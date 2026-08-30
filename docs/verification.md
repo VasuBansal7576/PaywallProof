@@ -14,6 +14,13 @@ This file records executed evidence. Raw outputs are not committed because they 
 - A live evidence-review retry mounted the Git-backed skill through the restricted local TrueForge sandbox and completed with separate dynamic coverage and binding subagents. The compact projection is bound to report hash `4bb30645ee18c30dab3643369fae8e5a4fd2e546e9c443a2fa1ab2fe99255958`. Binding integrity is `confirmed`; the synthesized `needs_attention` verdict records only the intentional single-build/single-price sandbox scope and the absence of production billing coverage.
 - Qodo reviewed lifecycle PR #2, identified three valid defects, and marked all three resolved on final head `87788cb`. CI passed and the PR was squash-merged as `32664e030e2612b0e39e3783a373c192c3b24dac`.
 - Qodo found no issues in CI-runtime PR #3. Its upgraded workflow passed before merge and again on `main` at `deba7bf9ace88023ea6765e109e41fdcf5640177`, without the earlier Node 20 runtime annotation.
+- Qodo reviewed persistence PR #4, identified two documentation accuracy defects, and marked both resolved before CI passed. The PR was squash-merged as `4ad469c90ed78944b816e28a56573f938d125af8`.
+- AT29 completed against the owned Revenue Intelligence OS staging target at source commit `49e69922c37446bc229ea14571bba58db34a56ce`. Adapter Doctor returned `compatible` for target `revenue-intelligence-os` and bound feature `pipeline_export` with browser path `/admin` to that exact build. The generic runner recorded API, browser, and application-state passes for SC01 through SC04; protected-endpoint statuses were `403`, `200`, `200`, and `403`. Cleanup returned exact deletion receipts for both the free and paid users, and follow-up billing reads returned 404.
+- The AT29 run was `local_replay` with Polar, HydraDB, LLM, and CRM credentials removed. No provider was called. This establishes contract-v1 lifecycle portability only; it is not Polar delivery or repair evidence.
+
+## Still pending
+
+- AT30 and the current Adapter Doctor changes are not final development evidence until the final GitHub head passes the repository gate and Qodo review.
 
 ## Published artifacts
 

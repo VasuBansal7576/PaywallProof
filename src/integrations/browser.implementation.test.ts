@@ -5,8 +5,42 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BrowserRunner } from './browser.ts';
 import { TargetTransport } from './network.ts';
+import { type TargetDescription } from '../adapter-doctor/report.ts';
+
+const feature = {
+  id: 'pro_export',
+  method: 'GET',
+  path: '/api/export',
+  denialStatuses: [403],
+  browserPath: '/dashboard',
+  actionTestId: 'export-button',
+  resultTestId: 'export-result',
+} satisfies TargetDescription['feature'];
 
 describe('browser probe failure lifetime, implementation-aware', () => {
+  it('bounds the initial destination lookup without requiring a caller signal', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'pp-browser-destination-timeout-'));
+    try {
+      const result = await new BrowserRunner(
+        new TargetTransport({
+          origin: 'https://example.com',
+          allowLoopback: false,
+          timeoutMs: 10,
+          lookupHost: () => new Promise(() => {}),
+        }),
+        directory,
+      ).probe('synthetic_session=destination_timeout', feature);
+
+      expect(result).toMatchObject({
+        probe: { status: null, body: null, transportError: true },
+        artifact: null,
+      });
+      expect(await readdir(directory)).toEqual([]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it.each(['request-count', 'total-bytes'])(
     'bounds hostile asset traffic by %s and leaves no evidence artifact',
     async (limit) => {
@@ -48,6 +82,7 @@ describe('browser probe failure lifetime, implementation-aware', () => {
         restore = () => spy.mockRestore();
         const result = await new BrowserRunner(transport, directory).probe(
           'synthetic_session=budget_test',
+          feature,
         );
         expect(result).toMatchObject({
           probe: { status: null, body: null, transportError: true },
@@ -94,7 +129,7 @@ describe('browser probe failure lifetime, implementation-aware', () => {
         new TargetTransport({ origin: `http://127.0.0.1:${address.port}`, allowLoopback: true }),
         directory,
       );
-      const result = await runner.probe('synthetic_session=timeout_test');
+      const result = await runner.probe('synthetic_session=timeout_test', feature);
       expect(result).toMatchObject({
         probe: { status: null, body: null, transportError: true },
         artifact: null,

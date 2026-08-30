@@ -98,6 +98,14 @@ export function RunReport({
           <div>
             <dt>Feature binding</dt>
             <dd>
+              {run.targetFeature ? (
+                <>
+                  <code>{run.targetFeature.id}</code>
+                  <br />
+                  <code>{`${run.targetFeature.method} ${run.targetFeature.path}`}</code>
+                  <br />
+                </>
+              ) : null}
               <code>{run.featureConfigHash}</code>
             </dd>
           </div>

@@ -55,7 +55,7 @@ export function ProjectSetup({
             name,
             repository: config.repository,
             ref: config.defaultRef,
-            targetId: 'reference',
+            targetId: config.target.id,
             ownershipConfirmed: ownership,
             modelConsent: consent,
           },
@@ -112,7 +112,9 @@ export function ProjectSetup({
           </div>
           <label htmlFor="target-origin">Staging target</label>
           <input id="target-origin" value={config.target.origin} readOnly />
-          <p className="field-hint">Bundled reference adapter · One server protected Pro export</p>
+          <p className="field-hint">
+            Server-configured adapter: {config.target.id} · One contract-declared protected feature
+          </p>
           <div className="consent-box">
             <label className="checkbox-label">
               <input
@@ -258,11 +260,15 @@ export function ProjectView({
     );
   }
   const policy = policies.find((policy) => policy.hash === selectedPolicy);
+  const adapterReceipt =
+    preflight?.adapter.verdict === 'compatible' ? preflight.adapter.receipt : null;
   const configurationChanged =
-    project.repository !== config.repository || project.ref !== config.defaultRef;
+    project.repository !== config.repository ||
+    project.ref !== config.defaultRef ||
+    project.targetId !== config.target.id;
   const stoppingRun = runs.find((run) => run.status === 'stopping');
   async function savePolicy() {
-    const featureConfigHash = preflight?.featureConfigHash;
+    const featureConfigHash = adapterReceipt?.featureConfigHash;
     if (!featureConfigHash || configurationChanged) return;
     await action('policy', async () => {
       const policy = await api.mutate(
@@ -270,12 +276,12 @@ export function ProjectView({
         {
           schemaVersion: 2,
           priceId: config.priceId,
-          featureId: 'pro_export',
+          featureId: adapterReceipt.description.feature.id,
           featureConfigHash,
           cancellation: 'allow_until_period_end',
           requireInitialPaymentConfirmed: true,
           syncWindowSeconds: syncWindow,
-          predicateVersion: 'reference-export-v1',
+          predicateVersion: 'paywallproof-entitlement-v1',
         },
         policySchema,
       );
@@ -307,7 +313,7 @@ export function ProjectView({
             {project.repository} <span className="description-dot">·</span> {project.ref}
           </p>
         </div>
-        <Badge>Reference adapter</Badge>
+        <Badge>{project.targetId}</Badge>
       </div>
       <ErrorNotice error={error} />
       {configurationChanged && (
@@ -406,7 +412,48 @@ export function ProjectView({
         </div>
         {preflight && (
           <div className="check-list">
-            {preflight.checks.map((check, index) => (
+            <div className="doctor-summary">
+              <div>
+                <strong>Adapter Doctor</strong>
+                <p>
+                  Read-only contract inspection. At most three GET requests and no fixture, billing,
+                  browser, or model work.
+                </p>
+              </div>
+              <Badge tone={preflight.adapter.verdict === 'compatible' ? 'green' : 'amber'}>
+                {preflight.adapter.verdict === 'compatible' ? 'Compatible' : 'Blocked'}
+              </Badge>
+            </div>
+            {preflight.adapter.checks.map((check) => (
+              <div className="check-row" key={check.id}>
+                <span
+                  className={`check-symbol ${check.status === 'pass' ? 'pass' : 'blocked'}`}
+                  aria-hidden="true"
+                >
+                  {check.status === 'pass' ? '✓' : check.status === 'blocked' ? '!' : '·'}
+                </span>
+                <div>
+                  <strong>{check.title}</strong>
+                  <p>{check.detail}</p>
+                  {check.status === 'blocked' && <p>Fix: {check.remediation}</p>}
+                </div>
+                <Badge tone={check.status === 'pass' ? 'green' : 'amber'}>
+                  {check.status === 'pass'
+                    ? 'Confirmed'
+                    : check.status === 'blocked'
+                      ? 'Blocked'
+                      : 'Not observed'}
+                </Badge>
+              </div>
+            ))}
+            <div className="doctor-scope">
+              <strong>Not checked here</strong>
+              <p>
+                Fixture mutations, customer sessions, browser behavior, billing lifecycle, and
+                production staging lockout remain acceptance-run responsibilities.
+              </p>
+            </div>
+            {preflight.connections.map((check, index) => (
               <div className="check-row" key={`${check.name}-${index}`}>
                 <span className={`check-symbol ${check.status}`} aria-hidden="true">
                   {check.status === 'pass' ? '✓' : '!'}
@@ -420,8 +467,8 @@ export function ProjectView({
                 </Badge>
               </div>
             ))}
-            {preflight.target && (
-              <JsonDetails title="Target capability receipt" value={preflight.target} />
+            {preflight.adapter.verdict === 'compatible' && (
+              <JsonDetails title="Validated adapter receipt" value={preflight.adapter.receipt} />
             )}
           </div>
         )}
@@ -433,14 +480,14 @@ export function ProjectView({
               <h2>The access policy</h2>
               <p>An immutable rule, separate from application behavior.</p>
             </div>
-            <Badge>Pro export</Badge>
+            <Badge>{adapterReceipt?.description.feature.id ?? 'Protected feature'}</Badge>
           </div>
           <div className="policy-rules">
             <div>
               <span className="rule-symbol deny">−</span>
               <p>
                 <strong>Free users are denied.</strong>
-                <span>No subscription means no protected export.</span>
+                <span>No subscription means no protected-feature access.</span>
               </p>
             </div>
             <div>
@@ -465,7 +512,7 @@ export function ProjectView({
               </p>
             </div>
           </div>
-          <label htmlFor="price-id">Configured Polar price</label>
+          <label htmlFor="price-id">Configured billing price</label>
           <input id="price-id" readOnly value={config.priceId} />
           <label htmlFor="sync-window">Application synchronization window</label>
           <div className="input-with-unit">
@@ -504,7 +551,7 @@ export function ProjectView({
             disabled={
               configurationChanged ||
               !!busy ||
-              !preflight?.featureConfigHash ||
+              !adapterReceipt ||
               syncWindow < 5 ||
               syncWindow > 300 ||
               !Number.isInteger(syncWindow)
@@ -512,7 +559,7 @@ export function ProjectView({
           >
             {busy === 'policy' ? 'Saving…' : 'Save immutable policy'}
           </button>
-          {!preflight?.featureConfigHash && (
+          {!adapterReceipt && (
             <p className="field-hint">
               A target capability receipt is required before the policy can be bound to this
               feature.
@@ -558,7 +605,7 @@ export function ProjectView({
               !!stoppingRun ||
               !preflight?.ready ||
               !policy ||
-              policy.featureConfigHash !== preflight.featureConfigHash
+              policy.featureConfigHash !== adapterReceipt?.featureConfigHash
             }
             onClick={() => void createRun()}
           >

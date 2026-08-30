@@ -47,6 +47,15 @@ function fixture(): RunDetail {
       },
       targetBuild: 'build_test',
       featureConfigHash: 'c'.repeat(64),
+      targetFeature: {
+        id: 'pipeline_export',
+        method: 'GET',
+        path: '/api/paywallproof/export',
+        denialStatuses: [402, 403],
+        browserPath: '/admin',
+        actionTestId: 'pipeline-export-button',
+        resultTestId: 'pipeline-export-result',
+      },
       mode: 'local_replay',
       status: 'completed',
       outcome: 'inconclusive',
@@ -215,6 +224,10 @@ describe('recorded evidence presentation', () => {
     expect(markup).toContain('synthetic billing events');
     expect(markup).toContain('build_test');
     expect(markup).toContain(detail.run.policy.hash);
+    expect(markup).toContain('GET /api/paywallproof/export');
+    expect(markup).toContain('/admin');
+    expect(markup).toContain('pipeline-export-button');
+    expect(markup).not.toContain('GET /api/export');
     expect(markup).toContain('inconclusive');
     expect(markup).toContain('&lt;script&gt;untrusted()&lt;/script&gt;');
     expect(markup).not.toContain('<script>untrusted()');

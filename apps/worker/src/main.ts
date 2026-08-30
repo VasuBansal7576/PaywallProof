@@ -2,6 +2,7 @@ import { serve } from '@hono/node-server';
 import { resolve } from 'node:path';
 import { createControlApp } from './http.ts';
 import { artifactRetentionFromDays } from './artifacts.ts';
+import { repairProfileFromEnvironment } from './repair-profile.ts';
 function required(key: string) {
   const value = process.env[key];
   if (!value) throw new Error(`Missing ${key}; use pnpm dev to configure local services.`);
@@ -11,6 +12,7 @@ const control = createControlApp({
   databasePath: process.env.CONTROL_DATABASE_PATH ?? resolve('.local/control-v2.sqlite'),
   artifactDirectory: resolve('.local/artifacts'),
   artifactRetentionMs: artifactRetentionFromDays(process.env.ARTIFACT_RETENTION_DAYS),
+  targetId: process.env.TARGET_ID ?? 'reference',
   targetOrigin: process.env.TARGET_ORIGIN ?? 'http://127.0.0.1:3001',
   workerOrigin: 'http://127.0.0.1:8787',
   webOrigin: 'http://127.0.0.1:3000',
@@ -26,6 +28,7 @@ const control = createControlApp({
   testCustomerEmail: process.env.POLAR_TEST_CUSTOMER_EMAIL,
   runtimeUrl: 'http://127.0.0.1:8790',
   model: process.env.TRUEFORGE_MODEL ?? 'paywallproof-local/qwen3-4b-instruct',
+  repairProfile: repairProfileFromEnvironment(process.env),
 });
 const server = serve({ fetch: control.app.fetch, hostname: '127.0.0.1', port: 8787 });
 void control.controller.recover();

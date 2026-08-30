@@ -1,9 +1,13 @@
 import { z } from 'zod';
+import {
+  adapterDoctorReportSchema,
+  targetFeatureSchema,
+} from '../../../src/adapter-doctor/report.ts';
 
 export const modeSchema = z.enum(['polar_sandbox', 'local_replay']);
 export type Mode = z.infer<typeof modeSchema>;
 export const configSchema = z.object({
-  target: z.object({ id: z.literal('reference'), origin: z.string() }),
+  target: z.object({ id: z.string(), origin: z.string() }),
   repository: z.string(),
   defaultRef: z.string(),
   polarConfigured: z.boolean(),
@@ -18,7 +22,7 @@ export const projectSchema = z.object({
   name: z.string(),
   repository: z.string(),
   ref: z.string(),
-  targetId: z.literal('reference'),
+  targetId: z.string(),
   ownershipConfirmed: z.boolean(),
   modelConsent: z.boolean(),
 });
@@ -41,6 +45,7 @@ export const runSchema = z.object({
   policy: policySchema,
   targetBuild: z.string(),
   featureConfigHash: z.string(),
+  targetFeature: targetFeatureSchema.optional(),
   projectConfigHash: z.string().optional(),
   mode: modeSchema,
   status: z.enum(['awaiting_plan_approval', 'running', 'stopping', 'completed', 'canceled']),
@@ -106,6 +111,7 @@ export const detailSchema = z.object({
   observations: z.array(z.unknown()),
   cleanup: z.unknown(),
   repairs: z.array(z.unknown()),
+  repairSupported: z.boolean().default(false),
   evidenceReview: evidenceReviewSchema.nullable().optional(),
   coverageLimits: z.array(z.string()),
 });
@@ -117,16 +123,15 @@ export const eventSchema = z.object({
   occurredAt: z.number(),
 });
 export type RunEvent = z.infer<typeof eventSchema>;
-export const preflightSchema = z.object({
+const connectionCheckSchema = z.strictObject({
+  name: z.string(),
+  status: z.enum(['pass', 'blocked']),
+  detail: z.string(),
+});
+export const preflightSchema = z.strictObject({
   ready: z.boolean(),
-  checks: z.array(
-    z.object({ name: z.string(), status: z.enum(['pass', 'blocked']), detail: z.string() }),
-  ),
-  featureConfigHash: z.string().optional(),
-  target: z
-    .object({ buildId: z.string(), feature: z.unknown().optional() })
-    .passthrough()
-    .optional(),
+  adapter: adapterDoctorReportSchema,
+  connections: z.array(connectionCheckSchema),
 });
 export type Preflight = z.infer<typeof preflightSchema>;
 

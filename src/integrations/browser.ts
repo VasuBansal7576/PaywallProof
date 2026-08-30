@@ -3,20 +3,22 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { TargetTransport } from './network.ts';
+import { type TargetDescription } from '../adapter-doctor/report.ts';
 
 export class BrowserRunner {
   constructor(
     private readonly transport: TargetTransport,
     private readonly artifactDirectory: string,
   ) {}
-  async probe(cookie: string) {
-    const destination = await this.transport.destination();
-    const origin = this.transport.origin;
-    const browser = await chromium.launch({
-      headless: true,
-      args: [`--host-resolver-rules=MAP ${origin.hostname} ${destination.address}`],
-    });
+  async probe(cookie: string, feature: TargetDescription['feature']) {
+    let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
     try {
+      const destination = await this.transport.destination();
+      const origin = this.transport.origin;
+      browser = await chromium.launch({
+        headless: true,
+        args: [`--host-resolver-rules=MAP ${origin.hostname} ${destination.address}`],
+      });
       const context = await browser.newContext({
         viewport: { width: 1280, height: 900 },
         acceptDownloads: false,
@@ -56,7 +58,7 @@ export class BrowserRunner {
           if (++count > 128) rejectBudget();
           const url = new URL(route.request().url());
           const allowedPath =
-            ['/dashboard', '/api/me', '/api/export'].includes(url.pathname) ||
+            [feature.browserPath, '/api/me', feature.path].includes(url.pathname) ||
             url.pathname.startsWith('/_next/');
           if (
             url.origin !== origin.origin ||
@@ -112,7 +114,7 @@ export class BrowserRunner {
       ]);
       const page = await context.newPage();
       page.setDefaultTimeout(15_000);
-      await page.goto(new URL('/dashboard', origin).href, {
+      await page.goto(new URL(feature.browserPath, origin).href, {
         waitUntil: 'domcontentloaded',
         timeout: 30_000,
       });
@@ -121,10 +123,10 @@ export class BrowserRunner {
       const [response] = await Promise.all([
         page.waitForResponse(
           (response) =>
-            response.url() === new URL('/api/export', origin).href &&
+            response.url() === new URL(feature.path, origin).href &&
             response.request().method() === 'GET',
         ),
-        page.getByTestId('export-button').click(),
+        page.getByTestId(feature.actionTestId).click(),
       ]);
       let networkBody: unknown;
       try {
@@ -132,10 +134,10 @@ export class BrowserRunner {
       } catch {
         networkBody = await response.text();
       }
-      const result = page.getByTestId('export-result');
+      const result = page.getByTestId(feature.resultTestId);
       await page
         .locator(
-          '[data-testid="export-result"][data-status="allowed"], [data-testid="export-result"][data-status="denied"], [data-testid="export-result"][data-status="unavailable"]',
+          `[data-testid="${feature.resultTestId}"][data-status="allowed"], [data-testid="${feature.resultTestId}"][data-status="denied"], [data-testid="${feature.resultTestId}"][data-status="unavailable"]`,
         )
         .waitFor();
       const uiStatus = await result.getAttribute('data-status');
@@ -170,7 +172,12 @@ export class BrowserRunner {
       const artifactId = `${randomUUID()}.png`;
       await writeFile(resolve(this.artifactDirectory, artifactId), screenshot, { mode: 0o600 });
       return {
-        probe: { status: response.status(), body, transportError: false, denialStatuses: [403] },
+        probe: {
+          status: response.status(),
+          body,
+          transportError: false,
+          denialStatuses: feature.denialStatuses,
+        },
         artifact: {
           id: artifactId,
           sha256: createHash('sha256').update(screenshot).digest('hex'),
@@ -182,11 +189,16 @@ export class BrowserRunner {
     } catch {
       // No HTTP response or screenshot is invented for a blocked/failed browser request.
       return {
-        probe: { status: null, body: null, transportError: true, denialStatuses: [403] },
+        probe: {
+          status: null,
+          body: null,
+          transportError: true,
+          denialStatuses: feature.denialStatuses,
+        },
         artifact: null,
       };
     } finally {
-      await browser.close();
+      await browser?.close();
     }
   }
 }

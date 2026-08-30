@@ -196,7 +196,7 @@ export function Overview({
             title="No connected projects"
             action={
               <Link className="button secondary" href="/projects/new">
-                Connect your reference app
+                Connect a staging app
                 <ArrowRight size={16} aria-hidden="true" />
               </Link>
             }

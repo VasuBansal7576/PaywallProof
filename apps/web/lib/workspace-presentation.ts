@@ -42,6 +42,13 @@ export function needsAttention(run: Run) {
   );
 }
 
+export function approvalFeatureLabel(run: Pick<Run, 'policy' | 'targetFeature'>): string {
+  const feature = run.targetFeature;
+  return feature
+    ? `${feature.id} · ${feature.method} ${feature.path} · ordinary session`
+    : `${run.policy.featureId} · legacy descriptor unavailable · ordinary session`;
+}
+
 export function newestRuns(runs: readonly Run[]): Run[] {
   return [...runs].sort((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id));
 }

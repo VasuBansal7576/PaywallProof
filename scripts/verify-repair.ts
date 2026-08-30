@@ -222,6 +222,7 @@ try {
     runtimeUrl,
     model,
     webOrigin: 'http://127.0.0.1:3000',
+    repairSupported: true,
     documents: {
       put: (kind, id, value) => {
         const collection = documents.get(kind) ?? new Map<string, unknown>();

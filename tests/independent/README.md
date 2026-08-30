@@ -1,5 +1,7 @@
 # Independent public-boundary tests
 
+This is a historical authoring record, not the current verification status. Stripe-era names below describe the inputs available when the independent slices were written; current Polar and executed results are recorded in `docs/verification.md`.
+
 The independent author read only these supplied specification files and the author's own outputs:
 
 - `PRD.md`, version 1.1 with section 19 owner constraints.

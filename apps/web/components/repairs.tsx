@@ -73,7 +73,7 @@ export function RepairsPanel({
         )}
         {detail.repairs.length ? (
           detail.repairs.map((raw, index) => {
-            const view = presentRepair(raw, detail.run, now);
+            const view = presentRepair(raw, detail.run, now, detail.repairSupported);
             return view.kind === 'unavailable' ? (
               <article className="repair-card" key={index}>
                 <Badge tone="amber">Repair data unavailable</Badge>

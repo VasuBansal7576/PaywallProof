@@ -1,5 +1,13 @@
 # Implementation decisions
 
+## 2026-08-30: Separate lifecycle portability from repair trust
+
+PaywallProof now uses one versioned HTTP contract for owned staging targets. Adapter Doctor performs at most three read-only requests before fixture creation. It validates the target description, exact source-build identity, staging authentication, separation between the adapter credential and ordinary feature access, response type, cache policy, and one bounded feature descriptor. PaywallProof does not load executable adapter code from the target repository.
+
+This decision makes the lifecycle runner reusable without widening the repair boundary. Automated repair remains limited to the trusted `reference_v1` checkout, launcher, editable paths, and host-owned oracle. A target ID, origin, or repository override disables repair by default. Lifecycle compatibility cannot authorize source reads, model work, publication recovery, or a GitHub write.
+
+The second owned target was treated as an acceptance checkpoint, not evidence by its existence. On August 30, the generic runner bound Revenue Intelligence OS commit `49e69922c37446bc229ea14571bba58db34a56ce` to a compatible Doctor receipt, passed all twelve SC01 through SC04 assertions, and confirmed both users deleted. The run was labeled `local_replay`; it proves lifecycle portability but not Polar delivery or repair portability.
+
 ## 2026-08-27: Verify the released local TrueForge sandbox
 
 The owner prohibits monetary charges and allows specification changes while preserving functionality. TrueForge's published sandbox page describes Daytona as its only provider. Inspection of the released `@truefoundry/trueforge@0.1.4` package found its supported standalone local sandbox fallback, implemented with `@anthropic-ai/sandbox-runtime@0.0.71`.
