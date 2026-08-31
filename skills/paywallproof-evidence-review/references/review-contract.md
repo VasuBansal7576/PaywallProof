@@ -50,7 +50,7 @@ Rules:
 - Review-tool `operationId` values are attempt-scoped idempotency keys supplied by the coordinator. They are not run evidence and are not expected inside the report.
 - Approval hashes are opaque controller bindings unless the report claims they are independently recomputable. Check their presence and consistency, but do not flag the absence of an undocumented canonical preimage.
 - Cleanup leftovers require `needs_attention`.
-- `cleanupBindings` is computed from the controller's durable resource inventory. A mismatch in expected count, receipt count, identity hash, or required target-user deletion requires `needs_attention`. Local replay expects two deleted target users. A Polar sandbox run also expects its three recorded provider audit resources.
+- `cleanupBindings` is computed from the controller's durable resource inventory. A mismatch in expected count, receipt count, identity hash, required target-user deletion, or required provider-audit retention requires `needs_attention`. The two target users must be deleted. Every recorded provider audit resource must be retained.
 - A `retained` cleanup item is not a leftover when it binds a provider audit object that cannot be
   deleted and the primary run independently confirmed its canceled terminal state.
 - Every recorded browser observation requires exactly one screenshot. A browser screenshot is captured before its browser observation is finalized. `artifact.collectedAt` should therefore be no later than the bound browser observation's `observedAt`; a small positive finalization delay is expected. Missing, duplicate, unexpected, late, cross-run, or non-browser bindings require `needs_attention`.

@@ -570,10 +570,12 @@ describe('adapter doctor control surface', () => {
         cleanupBindings: {
           expectedCount: 2,
           expectedDeletedCount: 2,
+          expectedRetainedCount: 0,
           receiptCount: 2,
           missingResourceHashes: [],
           unexpectedResourceHashes: [],
           nonDeletedTargetResourceHashes: [],
+          nonRetainedProviderResourceHashes: [],
         },
       },
       reportHash: expect.stringMatching(/^[a-f0-9]{64}$/),

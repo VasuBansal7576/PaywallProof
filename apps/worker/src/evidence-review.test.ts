@@ -84,6 +84,7 @@ const report = {
   cleanupInventory: {
     resourceIds: ['owned-free-user', 'owned-paid-user'],
     deleteResourceIds: ['owned-free-user', 'owned-paid-user'],
+    retainResourceIds: [],
   },
   coverageLimits: ['Synthetic contract fixture.'],
   coverageLimitCodes: [
@@ -102,6 +103,26 @@ const report = {
   },
   versions: { trueforge: '0.1.4' },
 };
+const polarProviderResourceIds = ['polar-customer', 'polar-checkout', 'polar-subscription'];
+function polarReport(providerStatus: 'deleted' | 'retained') {
+  return {
+    ...report,
+    run: { ...report.run, mode: 'polar_sandbox' as const },
+    observations: report.observations.map((observation) => ({
+      ...observation,
+      mode: 'polar_sandbox' as const,
+    })),
+    cleanup: [
+      ...report.cleanup,
+      ...polarProviderResourceIds.map((resourceId) => ({ resourceId, status: providerStatus })),
+    ],
+    cleanupInventory: {
+      resourceIds: [...report.cleanupInventory.resourceIds, ...polarProviderResourceIds],
+      deleteResourceIds: report.cleanupInventory.deleteResourceIds,
+      retainResourceIds: polarProviderResourceIds,
+    },
+  };
+}
 const completedReview = {
   runId,
   operationId: 'record-review',
@@ -468,6 +489,7 @@ describe('skill-backed evidence review', () => {
         cleanupBindings: {
           expectedCount: 2,
           expectedDeletedCount: 2,
+          expectedRetainedCount: 0,
           receiptCount: 2,
           duplicateResourceHashes: [],
           inventoryDuplicateResourceHashes: [],
@@ -475,6 +497,10 @@ describe('skill-backed evidence review', () => {
           unexpectedResourceHashes: [],
           nonDeletedTargetResourceHashes: [],
           invalidDeletedResourceHashes: [],
+          nonRetainedProviderResourceHashes: [],
+          invalidRetainedResourceHashes: [],
+          conflictingDispositionResourceHashes: [],
+          unclassifiedResourceHashes: [],
         },
         coverageLimitHashes: [expect.stringMatching(/^[a-f0-9]{64}$/)],
         coverageLimitCodes: report.coverageLimitCodes,
@@ -548,6 +574,25 @@ describe('skill-backed evidence review', () => {
       coordinator.tool(runId, 'record_evidence_review', completedReview),
     ).rejects.toMatchObject({ code: 'EVIDENCE_REVIEW_OBJECTIVE_DEFECT_IGNORED' });
     expect(coordinator.view(runId)).toMatchObject({ status: 'running' });
+  });
+
+  it('rejects a false confirmation when Polar audit resources claim deletion', async () => {
+    const { coordinator } = fixture(polarReport('deleted'));
+    await coordinator.start(runId);
+
+    await expect(
+      coordinator.tool(runId, 'record_evidence_review', completedReview),
+    ).rejects.toMatchObject({ code: 'EVIDENCE_REVIEW_OBJECTIVE_DEFECT_IGNORED' });
+    expect(coordinator.view(runId)).toMatchObject({ status: 'running' });
+  });
+
+  it('confirms complete Polar cleanup with retained provider audit resources', async () => {
+    const { coordinator } = fixture(polarReport('retained'));
+    await coordinator.start(runId);
+
+    await expect(
+      coordinator.tool(runId, 'record_evidence_review', completedReview),
+    ).resolves.toMatchObject({ status: 'completed', verdict: 'confirmed' });
   });
 
   it('revokes a completed review token when the live model consent no longer matches', async () => {

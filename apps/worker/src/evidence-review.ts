@@ -131,8 +131,9 @@ const reviewSourceSchema = z.object({
     .strictObject({
       resourceIds: z.array(z.string().min(1).max(500)).max(100),
       deleteResourceIds: z.array(z.string().min(1).max(500)).max(100),
+      retainResourceIds: z.array(z.string().min(1).max(500)).max(100).default([]),
     })
-    .default({ resourceIds: [], deleteResourceIds: [] }),
+    .default({ resourceIds: [], deleteResourceIds: [], retainResourceIds: [] }),
   coverageLimits: z.array(z.string().max(10_000)).max(100).default([]),
   coverageLimitCodes: z.array(z.enum(COVERAGE_LIMIT_CODES)),
   oracle: z
@@ -157,6 +158,10 @@ const reviewSourceSchema = z.object({
   versions: z.unknown().optional(),
 });
 
+function duplicateValues(values: readonly string[]) {
+  return values.filter((value, index) => values.indexOf(value) !== index);
+}
+
 function dataOnlyReviewReport(value: ReturnType<typeof parseJson>) {
   const source = reviewSourceSchema.parse(value);
   const targetBuildHash = hashValue(source.run.targetBuild);
@@ -167,7 +172,7 @@ function dataOnlyReviewReport(value: ReturnType<typeof parseJson>) {
   for (const scenario of source.scenarios)
     for (const observationId of scenario.observationIds)
       references.set(observationId, [...(references.get(observationId) ?? []), scenario.id]);
-  const duplicateIds = observationIds.filter((id, index) => observationIds.indexOf(id) !== index);
+  const duplicateIds = duplicateValues(observationIds);
   const unknownReferencedIds = [...references.keys()].filter((id) => !observationIdSet.has(id));
   const unreferencedIds = observationIds.filter((id) => !references.has(id));
   const runMismatchIds = source.observations
@@ -218,9 +223,7 @@ function dataOnlyReviewReport(value: ReturnType<typeof parseJson>) {
   const missingArtifactObservationIds = browserObservationIds.filter(
     (id) => !artifactObservationIdSet.has(id),
   );
-  const duplicateArtifactObservationIds = artifactObservationIds.filter(
-    (id, index) => artifactObservationIds.indexOf(id) !== index,
-  );
+  const duplicateArtifactObservationIds = duplicateValues(artifactObservationIds);
   const unexpectedArtifactObservationIds = artifactObservationIds.filter(
     (id) => !browserObservationIdSet.has(id),
   );
@@ -228,15 +231,12 @@ function dataOnlyReviewReport(value: ReturnType<typeof parseJson>) {
   const cleanupResourceIdSet = new Set(cleanupResourceIds);
   const expectedCleanupResourceIdSet = new Set(source.cleanupInventory.resourceIds);
   const expectedDeletedResourceIdSet = new Set(source.cleanupInventory.deleteResourceIds);
+  const expectedRetainedResourceIdSet = new Set(source.cleanupInventory.retainResourceIds);
   const cleanupReceiptByResourceId = new Map(
     source.cleanup.map((receipt) => [receipt.resourceId, receipt]),
   );
-  const cleanupDuplicateResourceIds = cleanupResourceIds.filter(
-    (id, index) => cleanupResourceIds.indexOf(id) !== index,
-  );
-  const cleanupInventoryDuplicateResourceIds = source.cleanupInventory.resourceIds.filter(
-    (id, index) => source.cleanupInventory.resourceIds.indexOf(id) !== index,
-  );
+  const cleanupDuplicateResourceIds = duplicateValues(cleanupResourceIds);
+  const cleanupInventoryDuplicateResourceIds = duplicateValues(source.cleanupInventory.resourceIds);
   const missingCleanupResourceIds = source.cleanupInventory.resourceIds.filter(
     (id) => !cleanupResourceIdSet.has(id),
   );
@@ -248,6 +248,18 @@ function dataOnlyReviewReport(value: ReturnType<typeof parseJson>) {
   );
   const invalidDeletedResourceIds = source.cleanupInventory.deleteResourceIds.filter(
     (id) => !expectedCleanupResourceIdSet.has(id),
+  );
+  const nonRetainedProviderResourceIds = source.cleanupInventory.retainResourceIds.filter(
+    (id) => cleanupReceiptByResourceId.get(id)?.status !== 'retained',
+  );
+  const invalidRetainedResourceIds = source.cleanupInventory.retainResourceIds.filter(
+    (id) => !expectedCleanupResourceIdSet.has(id),
+  );
+  const conflictingDispositionResourceIds = source.cleanupInventory.resourceIds.filter(
+    (id) => expectedDeletedResourceIdSet.has(id) && expectedRetainedResourceIdSet.has(id),
+  );
+  const unclassifiedResourceIds = source.cleanupInventory.resourceIds.filter(
+    (id) => !expectedDeletedResourceIdSet.has(id) && !expectedRetainedResourceIdSet.has(id),
   );
   const targetFeatureBinding = source.run.targetFeature
     ? (() => {
@@ -343,6 +355,7 @@ function dataOnlyReviewReport(value: ReturnType<typeof parseJson>) {
     cleanupBindings: {
       expectedCount: expectedCleanupResourceIdSet.size,
       expectedDeletedCount: expectedDeletedResourceIdSet.size,
+      expectedRetainedCount: expectedRetainedResourceIdSet.size,
       receiptCount: source.cleanup.length,
       duplicateResourceHashes: cleanupDuplicateResourceIds.map((id) => hashValue(id)),
       inventoryDuplicateResourceHashes: cleanupInventoryDuplicateResourceIds.map((id) =>
@@ -352,6 +365,12 @@ function dataOnlyReviewReport(value: ReturnType<typeof parseJson>) {
       unexpectedResourceHashes: unexpectedCleanupResourceIds.map((id) => hashValue(id)),
       nonDeletedTargetResourceHashes: nonDeletedTargetResourceIds.map((id) => hashValue(id)),
       invalidDeletedResourceHashes: invalidDeletedResourceIds.map((id) => hashValue(id)),
+      nonRetainedProviderResourceHashes: nonRetainedProviderResourceIds.map((id) => hashValue(id)),
+      invalidRetainedResourceHashes: invalidRetainedResourceIds.map((id) => hashValue(id)),
+      conflictingDispositionResourceHashes: conflictingDispositionResourceIds.map((id) =>
+        hashValue(id),
+      ),
+      unclassifiedResourceHashes: unclassifiedResourceIds.map((id) => hashValue(id)),
     },
     coverageLimitHashes: source.coverageLimits.map((limit) => hashValue(limit)),
     coverageLimitCodes: source.coverageLimitCodes,
@@ -433,8 +452,9 @@ function objectiveDefectCriteria(report: ReturnType<typeof dataOnlyReviewReport>
     defects.add('EVIDENCE_COVERAGE');
   if (
     report.cleanup.length === 0 ||
-    report.cleanupBindings.expectedCount !== (report.run.mode === 'polar_sandbox' ? 5 : 2) ||
+    report.cleanupBindings.expectedCount < 2 ||
     report.cleanupBindings.expectedDeletedCount !== 2 ||
+    report.cleanupBindings.expectedRetainedCount !== report.cleanupBindings.expectedCount - 2 ||
     report.cleanupBindings.receiptCount !== report.cleanupBindings.expectedCount ||
     report.cleanupBindings.duplicateResourceHashes.length > 0 ||
     report.cleanupBindings.inventoryDuplicateResourceHashes.length > 0 ||
@@ -442,6 +462,10 @@ function objectiveDefectCriteria(report: ReturnType<typeof dataOnlyReviewReport>
     report.cleanupBindings.unexpectedResourceHashes.length > 0 ||
     report.cleanupBindings.nonDeletedTargetResourceHashes.length > 0 ||
     report.cleanupBindings.invalidDeletedResourceHashes.length > 0 ||
+    report.cleanupBindings.nonRetainedProviderResourceHashes.length > 0 ||
+    report.cleanupBindings.invalidRetainedResourceHashes.length > 0 ||
+    report.cleanupBindings.conflictingDispositionResourceHashes.length > 0 ||
+    report.cleanupBindings.unclassifiedResourceHashes.length > 0 ||
     report.cleanup.some((receipt) => receipt.status === 'leftover') ||
     report.coverageLimitCodes.length === 0
   )

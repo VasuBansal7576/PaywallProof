@@ -2000,6 +2000,7 @@ export class Controller {
       cleanupInventory: {
         resourceIds: [...targetResourceIds, ...providerResourceIds],
         deleteResourceIds: targetResourceIds,
+        retainResourceIds: providerResourceIds,
       },
       parentRunId: null,
       project: this.project(view.run.projectId),
