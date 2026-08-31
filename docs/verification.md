@@ -8,18 +8,25 @@ This file records executed evidence. Raw outputs are not committed because they 
 - An isolated generated repair reproduced the injected SC03 failure, then passed the unchanged twelve-assertion evaluator and fourteen security controls.
 - Native Polar sandbox run `7563883e-62d1-45a3-86e7-5bd09f8cbfb3` completed checkout, signed webhook delivery, scheduled period-end cancellation, actual provider expiry, post-expiry denial, and cleanup. SC01–SC04 passed in API, browser, and application state: 12/12 assertions, 16 observations, and four browser artifacts.
 - The final provider read reported sandbox mode, `livemode: false`, a paid sandbox order, and a canceled subscription. Two application users were deleted. Polar customer, checkout, and subscription audit objects were retained only after their terminal canceled state was confirmed, under `POLAR_CANCELED_AUDIT_RETAINED`.
-- The terminal receipt SHA-256 is `993f30e59e9e383edda2f9b95681b8474cef104d8c9610761eb2907c5e14ab06`. Provider IDs, the authorized test mailbox, private checkout URLs, tokens, and raw webhook material remain in ignored local state.
+- The terminal receipt SHA-256 is `993f30e59e9e383edda2f9b95681b8474cef104d8c9610761eb2907c5e14ab06`. Provider identifiers, the test mailbox, checkout URLs, tokens, and raw webhooks are not committed.
 - `pnpm verify:ci` covers formatting, repository shape, delivery configuration, skill validation, TypeScript, ESLint, the complete test suite, and the production web build. `pnpm verify` adds the live browser contract on a supported local machine.
 - The live TrueForge runtime created a sandbox, executed Python with output `42`, resumed the same stream, exercised allow/deny approval transport, and rejected replay of a stale approval. Turn selection is covered for both ascending and descending multi-page iterators.
 - A live evidence-review retry mounted the Git-backed skill through the restricted local TrueForge sandbox and completed with separate dynamic coverage and binding subagents. The compact projection is bound to report hash `4bb30645ee18c30dab3643369fae8e5a4fd2e546e9c443a2fa1ab2fe99255958`. Binding integrity is `confirmed`; the synthesized `needs_attention` verdict records only the intentional single-build/single-price sandbox scope and the absence of production billing coverage.
 - Qodo reviewed lifecycle PR #2, identified three valid defects, and marked all three resolved on final head `87788cb`. CI passed and the PR was squash-merged as `32664e030e2612b0e39e3783a373c192c3b24dac`.
 - Qodo found no issues in CI-runtime PR #3. Its upgraded workflow passed before merge and again on `main` at `deba7bf9ace88023ea6765e109e41fdcf5640177`, without the earlier Node 20 runtime annotation.
+- Qodo reviewed persistence PR #4, identified two documentation accuracy defects, and marked both resolved before CI passed. The PR was squash-merged as `4ad469c90ed78944b816e28a56573f938d125af8`.
+- TrueForge run `593081b1-b770-4784-b146-f4782d431029` completed AT29 against the owned Revenue Intelligence OS staging target at source commit `49e69922c37446bc229ea14571bba58db34a56ce`. Adapter Doctor returned `compatible` for target `revenue-intelligence-os` and bound feature `pipeline_export` with browser path `/admin` to that exact build. The run passed 12/12 API, browser, and application-state assertions for SC01 through SC04. Protected-endpoint statuses were `403`, `200`, `200`, and `403`. Cleanup returned exact deletion receipts for both run-owned fixtures, and follow-up billing reads returned 404. The TrueForge session ended in `done`.
+- The AT29 report has SHA-256 `be91a885a2624829dcd77cbfc96ebd52f150e804dc030001d0e257a75913ca71`. The `local_replay` lifecycle made no Polar calls. HydraDB and the target's LLM and CRM integrations were disabled or uncredentialed. TrueForge ran the workflow through the guarded Codex subscription bridge. A post-run check confirmed zero extra credits and no paid fallback. This legacy run binds the feature descriptor, not the newer `featureProbeHash`. It establishes contract-v1 lifecycle portability, not execution of the new probe-hash binding, Polar delivery, or repair portability.
+
+## Final development evidence rule
+
+- AT30 and the Adapter Doctor changes count as final development evidence only when the exact head of [PR #6](https://github.com/VasuBansal7576/PaywallProof/pull/6) passes the repository gate and Qodo review. GitHub records the authoritative review status.
+- Changes committed after the August 30, 2026 deadline are post-submission maintenance. They may improve the public repository, but they are not claimed as part of the judged submission build or used to rewrite the dated run evidence.
 
 ## Published artifacts
 
 - The repository is public at [github.com/VasuBansal7576/PaywallProof](https://github.com/VasuBansal7576/PaywallProof).
 - The submitted demo is available at [youtu.be/z-bXuMFx9lQ](https://youtu.be/z-bXuMFx9lQ).
-- The 6 GB operational TrueForge database was removed after submission. The compact final receipt and review remain under ignored `.local/workflow-7563883e-62d1-45a3-86e7-5bd09f8cbfb3/` until at least October 28, 2026. The retained `final-report.json` still hashes to the terminal SHA-256 recorded above.
 
 ## Truthfulness rules
 

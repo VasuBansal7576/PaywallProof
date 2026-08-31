@@ -524,6 +524,7 @@ function runtimeFixture(
     rejectMutation?: boolean;
     loseCustomerResponse?: boolean;
     checkoutPatch?: Record<string, unknown>;
+    testCustomerEmail?: string;
   } = {},
 ) {
   const directory = mkdtempSync(join(tmpdir(), 'pp-polar-runtime-'));
@@ -539,7 +540,7 @@ function runtimeFixture(
     {
       ...config,
       databasePath: join(directory, 'state.sqlite'),
-      testCustomerEmail: 'synthetic-owner@example.com',
+      testCustomerEmail: options.testCustomerEmail ?? 'synthetic-owner@example.com',
     },
     (_runId, kind) => {
       if (options.rejectMutation && kind !== 'poll') throw new Error('TEST_APPROVAL_DENIED');
@@ -609,6 +610,22 @@ function runtimeFixture(
 }
 
 describe('Polar mutation protocol, implementation-aware synthetic transport', () => {
+  it('re-establishes process-local preflight before a post-restart mutation', async () => {
+    const { adapter, requests } = runtimeFixture();
+
+    await expect(adapter.createCustomer(runId, 'create')).rejects.toThrow(
+      'POLAR_PREFLIGHT_REQUIRED',
+    );
+    await adapter.ensurePreflight();
+    await expect(adapter.createCustomer(runId, 'create')).resolves.toEqual({ customerId });
+    const readsAfterFirstCheck = requests.filter((request) => request.method === 'GET').length;
+    await adapter.ensurePreflight();
+
+    expect(requests.filter((request) => request.method === 'GET')).toHaveLength(
+      readsAfterFirstCheck,
+    );
+  });
+
   it('refuses mutation before preflight or approval', async () => {
     const { adapter, requests } = runtimeFixture({ rejectMutation: true });
     await expect(adapter.createCustomer(runId, 'create')).rejects.toThrow(
@@ -641,6 +658,18 @@ describe('Polar mutation protocol, implementation-aware synthetic transport', ()
     expect(mutations).toHaveLength(1);
     expect(mutations[0]?.body).not.toHaveProperty('organization_id');
     expect(JSON.stringify(adapter.listOwned(runId))).not.toContain('@');
+  });
+  it('derives the customer from the same canonical mailbox identity used by approval binding', async () => {
+    const { adapter, requests } = runtimeFixture({
+      testCustomerEmail: 'Synthetic.Owner+operator@EXAMPLE.COM',
+    });
+    await adapter.preflight();
+
+    await adapter.createCustomer(runId, 'create');
+
+    expect(requests.find((request) => request.path === '/v1/customers/')?.body).toMatchObject({
+      email: `Synthetic.Owner+pp${runId.replaceAll('-', '')}@example.com`,
+    });
   });
   it.each([
     { url: 'https://polar.sh/checkout/production' },

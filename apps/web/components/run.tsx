@@ -10,7 +10,13 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { CopyButton } from './copy-button';
-import { adjacentTab, parseRunTab, runTabs, type RunTab } from '../lib/workspace-presentation';
+import {
+  adjacentTab,
+  approvalFeatureLabel,
+  parseRunTab,
+  runTabs,
+  type RunTab,
+} from '../lib/workspace-presentation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { ApiSession, errorMessage, get } from '../lib/api';
@@ -173,6 +179,15 @@ export function RunView({
   const pendingApproval =
     run.status === 'awaiting_plan_approval' && run.approval.decision === 'pending';
   const stopping = run.status === 'stopping';
+  const cleanupRetryable =
+    ['completed', 'canceled'].includes(run.status) &&
+    detail.cleanup.some(
+      (receipt) => receipt.status === 'leftover' && receipt.code !== 'CLEANUP_OUTCOME_UNKNOWN',
+    );
+  const cleanupUnknown = detail.cleanup.filter(
+    (receipt) => receipt.status === 'leftover' && receipt.code === 'CLEANUP_OUTCOME_UNKNOWN',
+  );
+  const operationNeedsManualReview = detail.operationReconciliation?.status === 'manual_review';
   const expired = Date.now() >= run.approval.expiresAt;
   const failures = detail.scenarios.filter((scenario) =>
     [scenario.api, scenario.browser, scenario.state].some(
@@ -240,6 +255,19 @@ export function RunView({
           </p>
         </div>
         <div className="heading-actions">
+          {cleanupRetryable && (
+            <button
+              className="button secondary"
+              disabled={!!busy}
+              onClick={() =>
+                void action('cleanup', () =>
+                  api.mutate(`/runs/${encodeURIComponent(run.id)}/cleanup`, {}, z.unknown()),
+                )
+              }
+            >
+              {busy === 'cleanup' ? 'Retrying cleanup…' : 'Retry cleanup'}
+            </button>
+          )}
           <a
             className="button secondary"
             href={`/api/runs/${encodeURIComponent(run.id)}/report?format=markdown`}
@@ -247,22 +275,36 @@ export function RunView({
           >
             Download report <ArrowDownToLine size={16} aria-hidden="true" />
           </a>
-          <button
-            className="button danger-subtle"
-            disabled={!!busy || stopping || ['completed', 'canceled'].includes(run.status)}
-            onClick={() =>
-              void action('cancel', () =>
-                api.mutate(`/runs/${encodeURIComponent(run.id)}/cancel`, {}, runSchema),
-              )
-            }
-          >
-            {busy === 'cancel' || stopping ? 'Stopping…' : 'Stop run'}
-          </button>
+          {!operationNeedsManualReview && (
+            <button
+              className="button danger-subtle"
+              disabled={
+                !!busy ||
+                (stopping && !detail.stopError) ||
+                ['completed', 'canceled'].includes(run.status)
+              }
+              onClick={() =>
+                void action('cancel', () =>
+                  api.mutate(`/runs/${encodeURIComponent(run.id)}/cancel`, {}, runSchema),
+                )
+              }
+            >
+              {busy === 'cancel'
+                ? 'Retrying stop…'
+                : stopping && detail.stopError
+                  ? 'Retry stop'
+                  : stopping
+                    ? 'Stopping…'
+                    : 'Stop run'}
+            </button>
+          )}
         </div>
       </div>
       <ErrorNotice error={error} />
       <ErrorNotice error={readError} />
       <ErrorNotice error={detail.runtimeError ?? null} />
+      <ErrorNotice error={detail.stopError ?? null} />
+      <ErrorNotice error={detail.runtimeCancelError ?? null} />
       {run.mode === 'local_replay' && <ReplayNotice />}
       {run.mode === 'polar_sandbox' && run.status === 'running' && (
         <section className="panel">
@@ -366,6 +408,54 @@ export function RunView({
           </div>
         </div>
       )}
+      {detail.operationReconciliation && (
+        <section className="runtime-warning">
+          <Badge tone="amber">
+            {detail.operationReconciliation.status === 'manual_review'
+              ? 'Manual review required'
+              : 'Unknown operation recorded'}
+          </Badge>
+          <p>
+            A persisted operation lost its final receipt. PaywallProof did not replay the external
+            write or treat it as successful. Known owned resources were still considered for
+            cleanup.
+          </p>
+          <JsonDetails
+            title="Operation reconciliation receipt"
+            value={detail.operationReconciliation}
+            open={detail.operationReconciliation.status === 'manual_review'}
+          />
+        </section>
+      )}
+      {detail.continuationReconciliation && (
+        <section className="runtime-warning">
+          <Badge tone="amber">
+            {detail.continuationReconciliation.status === 'unknown'
+              ? 'Runtime continuation unknown'
+              : 'Runtime continuation reconciled'}
+          </Badge>
+          <p>
+            A continuation overlapped a stop or restart. PaywallProof used a read-only runtime
+            lookup and did not dispatch it again. The run capability remains revoked.
+          </p>
+          <JsonDetails
+            title="Continuation reconciliation receipt"
+            value={detail.continuationReconciliation}
+            open={detail.continuationReconciliation.status === 'unknown'}
+          />
+        </section>
+      )}
+      {cleanupUnknown.length > 0 && (
+        <section className="runtime-warning">
+          <Badge tone="amber">Cleanup reconciliation required</Badge>
+          <p>
+            The target received a delete request but its response was lost. PaywallProof will not
+            repeat that write without a read-only reconciliation contract. Inspect these owned
+            staging fixtures outside the run before treating cleanup as complete.
+          </p>
+          <JsonDetails title="Unknown cleanup receipts" value={cleanupUnknown} open />
+        </section>
+      )}
       {detail.runtime?.error !== undefined && (
         <section className="runtime-warning">
           <Badge tone="amber">Runtime blocked</Badge>
@@ -394,7 +484,7 @@ export function RunView({
             <dl className="definition-list">
               <div>
                 <dt>Target</dt>
-                <dd>{config.target.origin}</dd>
+                <dd>{project?.targetOrigin ?? 'Legacy binding unavailable'}</dd>
               </div>
               <div>
                 <dt>Target build</dt>
@@ -410,7 +500,7 @@ export function RunView({
               </div>
               <div>
                 <dt>Feature</dt>
-                <dd>Pro export · ordinary session</dd>
+                <dd>{approvalFeatureLabel(run)}</dd>
               </div>
               <div>
                 <dt>Execution mode</dt>
@@ -418,7 +508,7 @@ export function RunView({
               </div>
               <div>
                 <dt>Model</dt>
-                <dd>{config.model}</dd>
+                <dd>{project?.modelConsentModel ?? 'Legacy binding unavailable'}</dd>
               </div>
               <div>
                 <dt>Approval expires</dt>
@@ -667,7 +757,14 @@ export function RunView({
             reviewing={busy === 'evidence-review'}
             onReview={() =>
               void action('evidence-review', () =>
-                api.mutate(`/runs/${encodeURIComponent(run.id)}/evidence-review`, {}, z.unknown()),
+                api.mutate(
+                  `/runs/${encodeURIComponent(run.id)}/evidence-review`,
+                  detail.evidenceReview?.status === 'completed' &&
+                    !detail.evidenceReview.reportCurrent
+                    ? { retryCompleted: true }
+                    : {},
+                  z.unknown(),
+                ),
               )
             }
           />

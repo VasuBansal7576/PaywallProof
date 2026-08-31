@@ -1,4 +1,4 @@
-import type { Project, Run } from './contracts';
+import type { Project, Run, RunDetail } from './contracts';
 
 export const runFilters = [
   'all',
@@ -39,6 +39,20 @@ export function needsAttention(run: Run) {
     run.status === 'awaiting_plan_approval' ||
     run.outcome === 'failed' ||
     run.outcome === 'inconclusive'
+  );
+}
+
+export function approvalFeatureLabel(run: Pick<Run, 'policy' | 'targetFeature'>): string {
+  const feature = run.targetFeature;
+  return feature
+    ? `${feature.id} · ${feature.method} ${feature.path} · ordinary session`
+    : `${run.policy.featureId} · legacy descriptor unavailable · ordinary session`;
+}
+
+export function canStartEvidenceReview(detail: Pick<RunDetail, 'run' | 'runtime'>): boolean {
+  const runtimeStatus = detail.runtime?.status;
+  return (
+    detail.run.status === 'completed' && (runtimeStatus === 'done' || runtimeStatus === 'error')
   );
 }
 

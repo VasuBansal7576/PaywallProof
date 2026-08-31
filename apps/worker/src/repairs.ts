@@ -109,6 +109,8 @@ type Config = {
   webOrigin: string;
   documents: ControlDocuments;
   source: (runId: string) => Promise<RepairSource>;
+  repairSupported: boolean;
+  authorizeRepairUse?(runId: string): void;
 };
 
 /** Owns repair execution. HTTP/model input can select a finding, never supply verification. */
@@ -134,6 +136,9 @@ export class RepairCoordinator {
     this.config.documents.put(`repair-job:${job.runId}`, job.id, job);
     this.config.documents.put('repair-job-index', job.id, { runId: job.runId, id: job.id });
   }
+  private requireSupported() {
+    if (!this.config.repairSupported) throw new RepairError('REPAIR_TARGET_UNSUPPORTED');
+  }
   jobs(runId: string) {
     return this.config.documents.list(`repair-job:${runId}`).map((value) => jobSchema.parse(value));
   }
@@ -147,9 +152,11 @@ export class RepairCoordinator {
   }
   async start(runId: string, input: unknown) {
     if (this.closed) throw new RepairError('REPAIR_WORKER_CLOSED');
+    this.requireSupported();
     if (this.starting.has(runId)) throw new RepairError('REPAIR_IN_FLIGHT');
     this.starting.add(runId);
     try {
+      this.config.authorizeRepairUse?.(runId);
       const request = z
         .strictObject({
           findingId: z
@@ -502,6 +509,8 @@ export class RepairCoordinator {
     return job;
   }
   async requestPublication(runId: string, jobId: string) {
+    this.requireSupported();
+    this.config.authorizeRepairUse?.(runId);
     const job = this.job(runId, jobId);
     if (job.state !== 'verified_local' || !job.proposalId)
       throw new RepairError('VERIFICATION_REQUIRED');
@@ -563,6 +572,19 @@ export class RepairCoordinator {
       this.config.documents.get('repair-publication-intent', job.id);
     if (!raw) return;
     const intent = publicationIntentSchema.parse(raw);
+    try {
+      this.config.authorizeRepairUse?.(job.runId);
+    } catch {
+      this.config.documents.put('repair-publication-runtime', job.id, {
+        sessionId: job.sessionId,
+        turnId: job.turnId,
+        approvalId: intent.approvalId,
+        status: 'error',
+        error: 'REPAIR_PUBLICATION_CONSENT_CHANGED',
+      });
+      await this.runtime.cancel({ sessionId: job.sessionId }).catch(() => undefined);
+      return;
+    }
     const state = publicationRuntimeSchema.safeParse(
       this.config.documents.get('repair-publication-runtime', job.id),
     );
@@ -645,6 +667,8 @@ export class RepairCoordinator {
     }
   }
   async decidePublication(runId: string, jobId: string, approvalId: string, input: unknown) {
+    this.requireSupported();
+    this.config.authorizeRepairUse?.(runId);
     const request = z
         .strictObject({
           decision: z.enum(['allow', 'deny']),
@@ -733,6 +757,8 @@ export class RepairCoordinator {
     }
   }
   async publishFromTool(runId: string, proposalId: string) {
+    this.requireSupported();
+    this.config.authorizeRepairUse?.(runId);
     const record = this.getProposal(runId, proposalId);
     if (!record.approval || record.approval.decision !== 'allow')
       throw new RepairError('APPROVAL_REQUIRED');
@@ -756,13 +782,13 @@ export class RepairCoordinator {
       const { runId, id } = z.object({ runId: z.string(), id: z.string() }).parse(value),
         job = jobSchema.parse(this.config.documents.get(`repair-job:${runId}`, id));
       if (!['preparing', 'testing'].includes(job.state)) {
-        await this.recoverPublication(job);
+        if (this.config.repairSupported) await this.recoverPublication(job);
         continue;
       }
-      await this.runtime.cancel({ sessionId: job.sessionId });
       job.state = 'abandoned';
       job.error = 'REPAIR_INTERRUPTED_NO_REDISPATCH';
       this.save(job);
+      await this.runtime.cancel({ sessionId: job.sessionId }).catch(() => undefined);
     }
   }
   cancel(runId: string, jobId: string) {

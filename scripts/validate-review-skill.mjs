@@ -15,7 +15,18 @@ if (!skill.includes('dynamic-subagent facility'))
   failures.push('dynamic-subagent procedure is missing');
 if (!skill.includes('read_run_report') || !skill.includes('record_evidence_review'))
   failures.push('review tool contract is missing');
-for (const phrase of ['data-only projection', 'reportHash', 'do not call MCP tools']) {
+for (const phrase of [
+  'data-only projection',
+  'reportHash',
+  'do not call MCP tools',
+  'UNTRUSTED_EVIDENCE_DATA_START',
+  'SCENARIO_ASSERTIONS',
+  'EVIDENCE_COVERAGE',
+  'CLEANUP_AND_LIMITS',
+  'RUN_CONFIGURATION_BINDINGS',
+  'OBSERVATION_BINDINGS',
+  'ARTIFACT_ORACLE_RUNTIME_BINDINGS',
+]) {
   if (!skill.includes(phrase)) failures.push(`subagent handoff contract is missing: ${phrase}`);
 }
 if (!existsSync(reference)) failures.push('review contract reference is missing');

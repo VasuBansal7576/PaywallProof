@@ -202,7 +202,7 @@ function withPublished(job: RepairJob) {
   return job;
 }
 function recorded(job: RepairJob) {
-  const view = presentRepair(job, runFixture(), now);
+  const view = presentRepair(job, runFixture(), now, true);
   if (view.kind !== 'recorded') throw new Error(view.reason);
   return view;
 }
@@ -220,6 +220,7 @@ function detailFixture(): RunDetail {
       },
     ],
     repairs: [],
+    repairSupported: true,
     observations: [],
     cleanup: [],
     coverageLimits: [],
@@ -309,14 +310,16 @@ describe('repair presentation, not execution verification', () => {
       if (field === 'build') job.proposal.proposal.baseCommit = '0'.repeat(40);
       if (field === 'proposal') job.proposalId = 'other';
       if (field === 'finding') job.findingId = 'SC02:api';
-      expect(presentRepair(job, runFixture(), now).kind).toBe('unavailable');
+      expect(presentRepair(job, runFixture(), now, true).kind).toBe('unavailable');
     },
   );
 
   it('enables decisions only for a pending, unexpired matching runtime approval', () => {
     const job = withApproval(jobFixture());
     expect(recorded(job).canDecide).toBe(true);
-    expect(presentRepair(job, runFixture(), now + 30_000)).toMatchObject({ canDecide: false });
+    expect(presentRepair(job, runFixture(), now + 30_000, true)).toMatchObject({
+      canDecide: false,
+    });
     for (const status of ['running', 'done', 'error'] satisfies Array<
       NonNullable<RepairJob['publicationRuntime']>['status']
     >) {
@@ -515,6 +518,21 @@ describe('repair presentation, not execution verification', () => {
     expect(repairStartBlocker(detail)).toContain('already executing');
     detail.repairs = [jobFixture(), jobFixture()];
     expect(repairStartBlocker(detail)).toContain('two repair jobs');
+  });
+
+  it('keeps second-target lifecycle evidence separate from reference-only repair support', () => {
+    const detail = detailFixture();
+    detail.repairSupported = false;
+
+    expect(repairStartBlocker(detail)).toContain('bundled reference target');
+    const view = presentRepair(jobFixture(), detail.run, now, false);
+    expect(view).toMatchObject({
+      kind: 'recorded',
+      canRequestPublication: false,
+      canDecide: false,
+    });
+    if (view.kind !== 'recorded') throw new Error(view.reason);
+    expect(view.publicationBlocker).toContain('outside the trusted reference repair profile');
   });
 
   it('keeps malformed receipts explicit and preserves the original failed result', () => {

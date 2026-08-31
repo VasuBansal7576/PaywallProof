@@ -47,6 +47,15 @@ function fixture(): RunDetail {
       },
       targetBuild: 'build_test',
       featureConfigHash: 'c'.repeat(64),
+      targetFeature: {
+        id: 'pipeline_export',
+        method: 'GET',
+        path: '/api/paywallproof/export',
+        denialStatuses: [402, 403],
+        browserPath: '/admin',
+        actionTestId: 'pipeline-export-button',
+        resultTestId: 'pipeline-export-result',
+      },
       mode: 'local_replay',
       status: 'completed',
       outcome: 'inconclusive',
@@ -215,10 +224,36 @@ describe('recorded evidence presentation', () => {
     expect(markup).toContain('synthetic billing events');
     expect(markup).toContain('build_test');
     expect(markup).toContain(detail.run.policy.hash);
+    expect(markup).toContain('GET /api/paywallproof/export');
+    expect(markup).toContain('/admin');
+    expect(markup).toContain('pipeline-export-button');
+    expect(markup).not.toContain('GET /api/export');
     expect(markup).toContain('inconclusive');
     expect(markup).toContain('&lt;script&gt;untrusted()&lt;/script&gt;');
     expect(markup).not.toContain('<script>untrusted()');
     expect(markup).toContain('View screenshot');
     expect(markup).not.toContain('<img');
+  });
+
+  it('disables the independent review action until the lifecycle runtime is terminal', () => {
+    const blocked = renderToStaticMarkup(
+      createElement(RunReport, { detail: fixture(), onReview: () => {} }),
+    );
+    const blockedButton = /<button[^>]*>Run independent review<\/button>/.exec(blocked)?.[0];
+    expect(blockedButton).toContain('disabled=""');
+
+    const readyDetail = fixture();
+    readyDetail.runtime = {
+      sessionId: 'review-session',
+      turnId: 'lifecycle-turn',
+      lastSequenceNumber: 1,
+      status: 'done',
+    };
+    const ready = renderToStaticMarkup(
+      createElement(RunReport, { detail: readyDetail, onReview: () => {} }),
+    );
+    const readyButton = /<button[^>]*>Run independent review<\/button>/.exec(ready)?.[0];
+    expect(readyButton).toBeDefined();
+    expect(readyButton).not.toContain('disabled=""');
   });
 });

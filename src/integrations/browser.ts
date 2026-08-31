@@ -3,20 +3,23 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { TargetTransport } from './network.ts';
+import { bindTargetFeatureProbe, type TargetDescription } from './target-contract.ts';
 
 export class BrowserRunner {
   constructor(
     private readonly transport: TargetTransport,
     private readonly artifactDirectory: string,
   ) {}
-  async probe(cookie: string) {
-    const destination = await this.transport.destination();
-    const origin = this.transport.origin;
-    const browser = await chromium.launch({
-      headless: true,
-      args: [`--host-resolver-rules=MAP ${origin.hostname} ${destination.address}`],
-    });
+  async probe(cookie: string, feature: TargetDescription['feature']) {
+    const probeContract = bindTargetFeatureProbe(feature).contract;
+    let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
     try {
+      const destination = await this.transport.destination();
+      const origin = this.transport.origin;
+      browser = await chromium.launch({
+        headless: true,
+        args: [`--host-resolver-rules=MAP ${origin.hostname} ${destination.address}`],
+      });
       const context = await browser.newContext({
         viewport: { width: 1280, height: 900 },
         acceptDownloads: false,
@@ -56,14 +59,17 @@ export class BrowserRunner {
           if (++count > 128) rejectBudget();
           const url = new URL(route.request().url());
           const allowedPath =
-            ['/dashboard', '/api/me', '/api/export'].includes(url.pathname) ||
-            url.pathname.startsWith('/_next/');
+            [
+              probeContract.browser.path,
+              probeContract.browser.profilePath,
+              probeContract.browser.network.path,
+            ].includes(url.pathname) || url.pathname.startsWith('/_next/');
           if (
             url.origin !== origin.origin ||
             !['http:', 'https:'].includes(url.protocol) ||
             url.username ||
             url.password ||
-            route.request().method() !== 'GET' ||
+            route.request().method() !== probeContract.browser.network.method ||
             !allowedPath
           ) {
             await route.abort('blockedbyclient').catch(() => {});
@@ -112,7 +118,7 @@ export class BrowserRunner {
       ]);
       const page = await context.newPage();
       page.setDefaultTimeout(15_000);
-      await page.goto(new URL('/dashboard', origin).href, {
+      await page.goto(new URL(probeContract.browser.path, origin).href, {
         waitUntil: 'domcontentloaded',
         timeout: 30_000,
       });
@@ -121,10 +127,10 @@ export class BrowserRunner {
       const [response] = await Promise.all([
         page.waitForResponse(
           (response) =>
-            response.url() === new URL('/api/export', origin).href &&
-            response.request().method() === 'GET',
+            response.url() === new URL(probeContract.browser.network.path, origin).href &&
+            response.request().method() === probeContract.browser.network.method,
         ),
-        page.getByTestId('export-button').click(),
+        page.getByTestId(probeContract.browser.action.testId).click(),
       ]);
       let networkBody: unknown;
       try {
@@ -132,36 +138,44 @@ export class BrowserRunner {
       } catch {
         networkBody = await response.text();
       }
-      const result = page.getByTestId('export-result');
+      const result = page.getByTestId(probeContract.browser.result.testId);
       await page
         .locator(
-          '[data-testid="export-result"][data-status="allowed"], [data-testid="export-result"][data-status="denied"], [data-testid="export-result"][data-status="unavailable"]',
+          `[data-testid="${probeContract.browser.result.testId}"][${probeContract.browser.result.statusAttribute}="${probeContract.browser.result.allowStatus}"], [data-testid="${probeContract.browser.result.testId}"][${probeContract.browser.result.statusAttribute}="${probeContract.browser.result.denyStatus}"], [data-testid="${probeContract.browser.result.testId}"][${probeContract.browser.result.statusAttribute}="${probeContract.browser.result.unavailableStatus}"]`,
         )
         .waitFor();
-      const uiStatus = await result.getAttribute('data-status');
+      const uiStatus = await result.getAttribute(probeContract.browser.result.statusAttribute);
       const visibleText = await result.innerText();
       let body: unknown = { uiStatus, visibleText, networkBody };
       const networkRecord =
         networkBody !== null && typeof networkBody === 'object' && !Array.isArray(networkBody)
           ? networkBody
           : null;
-      if (uiStatus === 'allowed') {
-        const marker = await result.locator('pre').innerText();
+      if (uiStatus === probeContract.browser.result.allowStatus) {
+        const marker = await result.locator(probeContract.browser.allow.markerElement).innerText();
         if (
           networkRecord &&
-          'fixtureMarker' in networkRecord &&
-          networkRecord.fixtureMarker === marker
+          probeContract.api.allow.markerProperty in networkRecord &&
+          networkRecord[probeContract.api.allow.markerProperty] === marker
         )
-          body = { fixtureMarker: marker, networkBody };
+          body = {
+            [probeContract.api.allow.markerProperty]: marker,
+            networkBody,
+          };
       }
       if (
-        uiStatus === 'denied' &&
+        uiStatus === probeContract.browser.result.denyStatus &&
         visibleText.trim() &&
         networkRecord &&
-        'error' in networkRecord &&
-        networkRecord.error === 'ACCESS_DENIED'
+        probeContract.api.denial.errorProperty in networkRecord &&
+        networkRecord[probeContract.api.denial.errorProperty] ===
+          probeContract.api.denial.errorValue
       )
-        body = { error: 'ACCESS_DENIED', visibleText, networkBody };
+        body = {
+          [probeContract.api.denial.errorProperty]: probeContract.api.denial.errorValue,
+          visibleText,
+          networkBody,
+        };
       const screenshot = await page.screenshot({ fullPage: true });
       requests.signal.throwIfAborted();
       stopRequests();
@@ -170,7 +184,12 @@ export class BrowserRunner {
       const artifactId = `${randomUUID()}.png`;
       await writeFile(resolve(this.artifactDirectory, artifactId), screenshot, { mode: 0o600 });
       return {
-        probe: { status: response.status(), body, transportError: false, denialStatuses: [403] },
+        probe: {
+          status: response.status(),
+          body,
+          transportError: false,
+          denialStatuses: probeContract.api.denial.statuses,
+        },
         artifact: {
           id: artifactId,
           sha256: createHash('sha256').update(screenshot).digest('hex'),
@@ -182,11 +201,16 @@ export class BrowserRunner {
     } catch {
       // No HTTP response or screenshot is invented for a blocked/failed browser request.
       return {
-        probe: { status: null, body: null, transportError: true, denialStatuses: [403] },
+        probe: {
+          status: null,
+          body: null,
+          transportError: true,
+          denialStatuses: probeContract.api.denial.statuses,
+        },
         artifact: null,
       };
     } finally {
-      await browser.close();
+      await browser?.close();
     }
   }
 }

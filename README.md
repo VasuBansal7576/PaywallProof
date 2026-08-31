@@ -17,10 +17,9 @@ On August 29, 2026, PaywallProof completed a native Polar sandbox lifecycle thro
 
 All 12 scenario assertions passed. Polar reported `livemode: false`, so no real payment was processed. The terminal receipt for run `7563883e-62d1-45a3-86e7-5bd09f8cbfb3` has SHA-256 `993f30e59e9e383edda2f9b95681b8474cef104d8c9610761eb2907c5e14ab06`. Provider identifiers, checkout URLs, tokens, and raw webhook data remain outside Git.
 
-The repository also includes reduced, non-secret examples from the completed runs:
+The repository includes one reduced, non-secret run projection and its verification record:
 
 - [Recorded local replay](examples/recorded-local-replay.json)
-- [Recorded repair acceptance](examples/recorded-repair.json)
 - [Executed verification record](docs/verification.md)
 
 These examples are evidence projections. They are not provider transactions.
@@ -35,24 +34,27 @@ The main flow is:
 2. Create isolated test identities and exercise the four access states.
 3. Collect separate API, browser, provider, and application-state observations.
 4. Evaluate the observations without allowing the model to convert missing evidence into a pass.
-5. If a failure is confirmed, copy only approved source into a sandbox and ask the agent for a repair.
+5. If a failure is confirmed on the trusted reference repair profile, copy only approved source into a sandbox and ask the agent for a repair.
 6. Run the original and patched applications against the same host-owned evaluator.
 7. Require approval for the exact verified diff before any publication step.
 
 After a run, a separate TrueForge session can review the saved report. The repository's `paywallproof-evidence-review` skill starts two dynamically delegated reviewers with read-only report access. Their synthesis is stored separately and cannot change the primary verdict.
 
+The worker pins that skill to an immutable Git commit. `pnpm dev` uses the current commit for `PAYWALLPROOF_REVIEW_SKILL_REF`. If you start `pnpm dev:worker` directly, set `PAYWALLPROOF_REVIEW_SKILL_REF` yourself. You can also set `PAYWALLPROOF_REVIEW_SKILL_REPOSITORY`; it defaults to `VasuBansal7576/PaywallProof`.
+
 ## Repository map
 
-| Path                                  | Purpose                                                                 |
-| ------------------------------------- | ----------------------------------------------------------------------- |
-| `apps/web`                            | Operator workspace and authenticated reports                            |
-| `apps/worker`                         | Workflow orchestration, provider adapters, evidence, and repair control |
-| `apps/demo-saas`                      | Reference SaaS used for local and sandbox verification                  |
-| `skills/paywallproof-evidence-review` | Reusable report-review skill and reviewer definitions                   |
-| `tests/independent`                   | Public-boundary tests written from the contract documents               |
-| `tests/acceptance`                    | Cross-module reference and replay checks                                |
-| `docs/contracts`                      | Versioned inputs used to author the independent tests                   |
-| `scripts`                             | Runtime, provider, repair, and repository verification commands         |
+| Path                                  | Purpose                                                                  |
+| ------------------------------------- | ------------------------------------------------------------------------ |
+| `apps/web`                            | Operator workspace and authenticated reports                             |
+| `apps/worker`                         | Workflow orchestration, provider adapters, evidence, and repair control  |
+| `apps/demo-saas`                      | Reference SaaS used for local and sandbox verification                   |
+| `src/adapter-doctor`                  | Read-only contract and source-build validation for owned staging targets |
+| `skills/paywallproof-evidence-review` | Reusable report-review skill and reviewer definitions                    |
+| `tests/independent`                   | Public-boundary tests with explicit authoring-provenance labels          |
+| `tests/acceptance`                    | Cross-module reference and replay checks                                 |
+| `docs/contracts`                      | Versioned inputs used to author the independent tests                    |
+| `scripts`                             | Runtime, provider, repair, and repository verification commands          |
 
 Start with [the product specification](PRD.md) for requirements and [the documentation index](docs/README.md) for implementation details.
 
@@ -65,6 +67,8 @@ Start with [the product specification](PRD.md) for requirements and [the documen
 [Persistence PR #4](https://github.com/VasuBansal7576/PaywallProof/pull/4) moved checkout continuation and control-document persistence behind dedicated owners. Qodo raised two documentation accuracy issues. Both were corrected and marked resolved before CI passed and the PR merged as `4ad469c90ed78944b816e28a56573f938d125af8`.
 
 Qodo is part of the development gate, not the product runtime. Substantive changes are reviewed on a pull request, valid findings are fixed, and the final head is reviewed again before merge.
+
+[PR #6](https://github.com/VasuBansal7576/PaywallProof/pull/6) is post-submission maintenance. It will merge only after exact-head CI and Qodo review, and it is not submission evidence; the dated run receipts and merged PRs above remain the evidence for the judged build.
 
 ## Run locally
 
@@ -120,7 +124,17 @@ POLAR_TEST_CUSTOMER_EMAIL
 
 The read-only `pnpm test:polar` preflight uses `POLAR_PRICE_ID` in place of `BILLING_PRICE_ID`. Configure Polar to deliver signed sandbox events to `/api/polar/webhook`. Tokens, the test mailbox, and private checkout links must stay outside chat and Git.
 
-To connect another owned staging application, implement the authenticated routes in the [target adapter contract](docs/contracts/reference-contract.md), including build identity, run-scoped test users, ordinary user sessions, billing-state reads, and cleanup. Staging hooks must be disabled in production, and the adapter credential must never grant access to the protected feature. The bundled reference app is the only adapter verified by this repository.
+## Connect another staging target
+
+Implement the authenticated routes in the [target adapter contract](docs/contracts/reference-contract.md), including build identity, run-scoped test users, ordinary user sessions, billing-state reads, and cleanup. Staging hooks must be disabled in production, and the adapter credential must never grant access to the protected feature.
+
+Each Adapter Doctor invocation makes at most three read-only requests. PaywallProof runs it during preflight and again before each mutating lifecycle tool. It checks the strict contract version, source-build identity, staging authentication, credential separation, response type, cache policy, and the declared feature descriptor. A compatible Doctor report is a preflight result. It does not prove fixture behavior, the subscription lifecycle, browser behavior, cleanup, production lockout, or Polar delivery.
+
+On August 30, 2026, TrueForge run `593081b1-b770-4784-b146-f4782d431029` completed AT29 against the owned [Revenue Intelligence OS](https://github.com/VasuBansal7576/revenue-intelligence-os) staging target. It bound source commit `49e69922c37446bc229ea14571bba58db34a56ce` to feature `pipeline_export` and browser path `/admin`. The run passed 12/12 API, browser, and application-state assertions. Cleanup deleted both run-owned fixtures. The TrueForge session reached `done`. The report has SHA-256 `be91a885a2624829dcd77cbfc96ebd52f150e804dc030001d0e257a75913ca71`.
+
+This lifecycle used `local_replay`, so it made no Polar lifecycle calls. HydraDB and the target's LLM and CRM integrations were disabled or uncredentialed. TrueForge still used the guarded Codex subscription bridge; a post-run check confirmed zero extra credits and no paid fallback. The run proves contract-v1 lifecycle portability, not the newer probe-hash binding, Polar delivery, or repair portability.
+
+Contract-v1 compatibility does not grant repair access. Automated repair remains limited to the trusted `reference_v1` profile.
 
 ## Verification commands
 
@@ -149,11 +163,11 @@ To connect another owned staging application, implement the authenticated routes
 
 The Codex bridge uses included ChatGPT subscription allowance only when it can verify sign-in, available quota, and a zero extra-credit balance. It blocks unknown or paid fallback states. See [the subscription boundary](docs/codex-subscription.md).
 
-Known limits: this is a local, single-operator MVP; the repair sandbox is verified only on macOS; and portability beyond the bundled Next.js reference adapter has not been established.
+PaywallProof remains a local, single-operator MVP. The repair sandbox is verified only on macOS. One external contract-v1 target has a recorded lifecycle, and repair remains limited to `reference_v1`. The external-target run used `local_replay`, not Polar.
 
 ## Development disclosure
 
-Codex assisted with implementation, independent test authoring, review, and verification. Qodo reviewed the substantive GitHub changes. Human approval remains required for provider mutations and publication, and maintainers must be able to explain the code they merge.
+Codex assisted with implementation, independent test authoring, review, and verification. Qodo reviewed the merged lifecycle, CI, and persistence changes; the current review status is linked above. Human approval remains required for provider mutations and publication, and maintainers must be able to explain the code they merge.
 
 ## License
 

@@ -1,5 +1,29 @@
 # Implementation decisions
 
+## 2026-08-31: Keep model review criterion-bound and subordinate to execution
+
+The evidence-review stage adapts the decomposition pattern from [`llm-as-a-verifier` at `8db8a114`](https://github.com/llm-as-a-verifier/llm-as-a-verifier/tree/8db8a114): split a claim into fixed criteria, send the same bound evidence to independent reviewers, require citations, and synthesize conservatively. The implementation and reviewer contract were inspected beyond that project's README. PaywallProof does not import its package, provider tournament, rank aggregation, or model-written test generation.
+
+The adaptation is deliberately narrower. Host code defines six immutable criteria, removes arbitrary report text before model access, validates every returned criterion and citation, and derives reviewer and synthesis verdicts in code. The two dynamic subagents cannot call tools or see one another's conclusions. Their receipt is advisory: it cannot upgrade or change the deterministic lifecycle outcome. A later cleanup or report-binding change marks the old review stale and requires an explicit new attempt.
+
+## 2026-08-30: Separate lifecycle portability from repair trust
+
+PaywallProof now uses one versioned HTTP contract for owned staging targets. Adapter Doctor performs at most three read-only requests before fixture creation. It validates the target description, exact source-build identity, staging authentication, separation between the adapter credential and ordinary feature access, response type, cache policy, and one bounded feature descriptor. PaywallProof does not load executable adapter code from the target repository.
+
+This decision makes the lifecycle runner reusable without widening the repair boundary. Automated repair remains limited to the trusted `reference_v1` checkout, launcher, editable paths, and host-owned oracle. A target ID, origin, or repository override disables repair by default. Lifecycle compatibility cannot authorize source reads, model work, publication recovery, or a GitHub write.
+
+The second owned target counts only after an acceptance run. [Verification status](verification.md) records the executed AT29 run, its exact build binding, cleanup, and limits.
+
+## 2026-08-28: Replace Stripe with Polar sandbox
+
+The owner authorized replacing Stripe while preserving the four access scenarios, repair workflow, independent checks, and zero-spend rule. Polar's isolated sandbox became the only billing environment. PaywallProof pins `https://sandbox-api.polar.sh`, requires `X-Polar-Sandbox: 1` and the supported API version, rejects redirects, and does not accept a configurable production origin.
+
+Preflight binds one approved organization, product, and positive fixed monthly price through authenticated provider reads. A native lifecycle requires an actual sandbox checkout, a paid initial order, signed webhooks, scheduled period-end cancellation, and a provider read that confirms the terminal state. Synthetic replay remains separate and cannot count as provider evidence. Missing credentials produce a blocked result instead of a passing skip.
+
+PaywallProof records mutation intent and ownership before dispatch. If a create response is uncertain, the worker reconciles current provider state instead of sending the mutation again. Webhook verification uses the exact body, timestamp, and delivery ID. Cleanup touches only revalidated run-owned resources and reports provider audit records as retained when Polar does not allow deletion.
+
+No paid plan, bank account, live card, or credit redemption is permitted. The completed native sandbox receipt is recorded in [verification status](verification.md). Polar's [sandbox](https://polar.sh/docs/integrate/sandbox), [subscription management](https://polar.sh/docs/features/subscriptions/manage), [webhook endpoint](https://polar.sh/docs/integrate/webhooks/endpoints), and [API](https://polar.sh/docs/api-reference/introduction) documentation define the provider boundary.
+
 ## 2026-08-27: Verify the released local TrueForge sandbox
 
 The owner prohibits monetary charges and allows specification changes while preserving functionality. TrueForge's published sandbox page describes Daytona as its only provider. Inspection of the released `@truefoundry/trueforge@0.1.4` package found its supported standalone local sandbox fallback, implemented with `@anthropic-ai/sandbox-runtime@0.0.71`.

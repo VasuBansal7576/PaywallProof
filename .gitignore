@@ -4,10 +4,13 @@ node_modules/
 **/next-env.d.ts
 dist/
 coverage/
+*.log
+*.tsbuildinfo
 .env
 .env.*
 !.env.example
 .local/
+.unlazy/
 *.sqlite
 *.sqlite-*
 *.db

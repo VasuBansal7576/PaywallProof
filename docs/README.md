@@ -4,18 +4,16 @@ The root [README](../README.md) explains the product and local setup. The [produ
 
 ## Current records
 
-- [Verification](verification.md) lists the checks that were actually executed and the evidence they produced.
+- [Verification](verification.md) separates executed evidence from acceptance gates that remain open.
 - [Implementation decisions](decisions.md) records decisions that changed the runtime or its trust boundary.
-- [Billing provider migration](billing-provider-migration.md) explains the completed move from Stripe to Polar.
 - [Codex subscription boundary](codex-subscription.md) documents model access, spending controls, and privacy limits.
 - [Repair sandbox](repair-sandbox.md) describes the isolation boundary for generated repairs.
+- [Product UI API contract](contracts/http-contract.md) records lifecycle, continuation-recovery, and post-run evidence-review responses.
 
 ## Contract archive
 
-The files in [`contracts/`](contracts/) are retained because the independent test suite cites them as the specifications it received before implementation. They are audit inputs, not extra setup guides.
+The files in [`contracts/`](contracts/) began as the specifications supplied to the independent test suite before implementation. A 2026-08-30 audit amended the probe-binding passages after implementation. Git history preserves the original text. Those amendments document the current contract and did not change the existing independent assertions.
 
 [`public-contracts.md`](public-contracts.md) contains the shared public types and rules used across those contracts.
 
-## Historical material
-
-Submission checklists, sponsor research, and the obsolete bundled walkthrough are intentionally excluded from Git. The submitted demo is available from the root README. The compact native Polar receipt remains in ignored local storage for the required 60-day retention window.
+The [target adapter contract](contracts/reference-contract.md) defines contract v1 and Adapter Doctor. A compatible Doctor report is read-only preflight evidence, not a completed lifecycle run.

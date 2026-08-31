@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { z } from 'zod';
+import { adapterDoctorReportSchema, type AdapterDoctorReport } from '#adapter-doctor';
 import {
   assertLocalWorkflowComplete,
   assertPolarWorkflowComplete,
@@ -9,6 +10,18 @@ import {
 export type WorkflowMode = 'local_replay' | 'polar_sandbox';
 
 const origin = 'http://127.0.0.1:8787';
+const workflowConfigSchema = z.object({
+  target: z.object({ id: z.string(), origin: z.url() }),
+  repository: z.string(),
+  defaultRef: z.string(),
+  priceId: z.string(),
+  model: z.string(),
+});
+const workflowPreflightSchema = z.object({
+  ready: z.boolean(),
+  adapter: adapterDoctorReportSchema,
+  connections: z.array(z.unknown()),
+});
 const runDetailSchema = z.object({
   run: z.object({ status: z.string(), outcome: z.string().nullable() }),
   runtime: z.object({ status: z.string(), error: z.string().optional() }).nullable(),
@@ -21,6 +34,14 @@ const runDetailSchema = z.object({
       state: z.object({ verdict: z.string() }),
     }),
   ),
+});
+const checkoutNotReadySchema = z.object({
+  error: z.object({ code: z.literal('CHECKOUT_NOT_READY') }),
+});
+const checkoutContinuationPendingSchema = z.object({
+  error: z.object({
+    code: z.enum(['CHECKOUT_CONTINUATION_NOT_READY', 'CHECKOUT_PENDING']),
+  }),
 });
 
 async function operatorToken() {
@@ -54,7 +75,11 @@ export async function checkoutReadyForVerification(
     redirect: 'manual',
     signal: AbortSignal.timeout(10_000),
   });
-  if (response.status === 409) return false;
+  if (response.status === 409) {
+    const value: unknown = await response.json();
+    if (!checkoutNotReadySchema.safeParse(value).success) throw new Error('CHECKOUT_ROUTE_409');
+    return false;
+  }
   if (response.status !== 303 || !response.headers.get('location'))
     throw new Error(`CHECKOUT_ROUTE_${response.status}`);
   return true;
@@ -76,7 +101,12 @@ export async function continueCheckoutForVerification(
     body: '{}',
     signal: AbortSignal.timeout(15_000),
   });
-  if (response.status === 409) return false;
+  if (response.status === 409) {
+    const value: unknown = await response.json();
+    if (!checkoutContinuationPendingSchema.safeParse(value).success)
+      throw new Error('CHECKOUT_CONTINUATION_409');
+    return false;
+  }
   const value: unknown = await response.json();
   if (!response.ok) throw new Error(`CHECKOUT_CONTINUATION_${response.status}`);
   z.object({ status: z.literal('resumed'), turnId: z.string() }).parse(value);
@@ -98,41 +128,81 @@ export function workflowReadyForReport(runStatus: string, runtimeStatus: string 
   return runStatus === 'completed' && runtimeStatus === 'done';
 }
 
+export function workflowShouldPollCheckout(input: {
+  mode: WorkflowMode;
+  approved: boolean;
+  checkoutAnnounced: boolean;
+  runtimeStatus: string | undefined;
+}) {
+  return (
+    input.mode === 'polar_sandbox' &&
+    input.approved &&
+    !input.checkoutAnnounced &&
+    input.runtimeStatus === 'waiting_external'
+  );
+}
+
+export function workflowProjectRequest(
+  config: z.infer<typeof workflowConfigSchema>,
+  mode: WorkflowMode,
+  createdAt: string,
+) {
+  return {
+    name: `${mode === 'polar_sandbox' ? 'Polar' : 'Local'} workflow verification ${createdAt}`,
+    repository: config.repository,
+    ref: config.defaultRef,
+    targetId: config.target.id,
+    targetOrigin: config.target.origin,
+    modelConsentModel: config.model,
+    ownershipConfirmed: true,
+    modelConsent: true,
+  };
+}
+
+export function workflowPolicyRequest(
+  config: z.infer<typeof workflowConfigSchema>,
+  report: AdapterDoctorReport,
+) {
+  if (report.verdict !== 'compatible') throw new Error('ADAPTER_DOCTOR_BLOCKED');
+  return {
+    schemaVersion: 2,
+    priceId: config.priceId,
+    featureId: report.receipt.description.feature.id,
+    featureConfigHash: report.receipt.featureConfigHash,
+    cancellation: 'allow_until_period_end',
+    requireInitialPaymentConfirmed: true,
+    syncWindowSeconds: 5,
+    predicateVersion: 'paywallproof-entitlement-v1',
+  } as const;
+}
+
 async function createRun(token: string, mode: WorkflowMode) {
-  const config = z
-    .object({ repository: z.string(), defaultRef: z.string(), priceId: z.string() })
-    .parse(await call(token, '/api/config'));
-  const project = z.object({ id: z.string() }).parse(
-    await call(token, '/api/projects', {
-      name: `${mode === 'polar_sandbox' ? 'Polar' : 'Local'} workflow verification ${new Date().toISOString()}`,
-      repository: config.repository,
-      ref: config.defaultRef,
-      targetId: 'reference',
-      ownershipConfirmed: true,
-      modelConsent: true,
-    }),
+  const config = workflowConfigSchema.parse(await call(token, '/api/config'));
+  const project = z
+    .object({ id: z.string() })
+    .parse(
+      await call(
+        token,
+        '/api/projects',
+        workflowProjectRequest(config, mode, new Date().toISOString()),
+      ),
+    );
+  const preflight = workflowPreflightSchema.parse(
+    await call(token, `/api/projects/${project.id}/preflight`, { mode }),
   );
-  const preflight = z
-    .object({
-      ready: z.boolean(),
-      featureConfigHash: z.string().optional(),
-      checks: z.array(z.unknown()),
-    })
-    .parse(await call(token, `/api/projects/${project.id}/preflight`, { mode }));
-  if (!preflight.ready || !preflight.featureConfigHash)
-    throw new Error(`Preflight blocked: ${JSON.stringify(preflight.checks)}`);
-  const policy = z.object({ hash: z.string() }).parse(
-    await call(token, `/api/projects/${project.id}/policies`, {
-      schemaVersion: 2,
-      priceId: config.priceId,
-      featureId: 'pro_export',
-      featureConfigHash: preflight.featureConfigHash,
-      cancellation: 'allow_until_period_end',
-      requireInitialPaymentConfirmed: true,
-      syncWindowSeconds: 5,
-      predicateVersion: 'reference-export-v1',
-    }),
-  );
+  if (!preflight.ready)
+    throw new Error(
+      `Preflight blocked: ${JSON.stringify({ adapter: preflight.adapter, connections: preflight.connections })}`,
+    );
+  const policy = z
+    .object({ hash: z.string() })
+    .parse(
+      await call(
+        token,
+        `/api/projects/${project.id}/policies`,
+        workflowPolicyRequest(config, preflight.adapter),
+      ),
+    );
   return z
     .object({
       id: z.string(),
@@ -219,8 +289,12 @@ export async function verifyWorkflow(mode: WorkflowMode): Promise<void> {
         approved = true;
       }
       if (
-        mode === 'polar_sandbox' &&
-        !checkoutAnnounced &&
+        workflowShouldPollCheckout({
+          mode,
+          approved,
+          checkoutAnnounced,
+          runtimeStatus: detail.runtime?.status,
+        }) &&
         (await checkoutReadyForVerification(token, run.id))
       ) {
         checkoutAnnounced = true;

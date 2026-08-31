@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createPolicy } from '#domain';
+import { createPolicy, hashValue } from '#domain';
 import { openRunStore } from '#run';
 
 // Authored from the PRD and frozen public contracts, without implementation access.
@@ -744,6 +744,73 @@ describe('independent durable control: strict boundaries', () => {
     const store = await connect();
     const policy = { ...runInput().policy, priceId: 'tampered_price' };
     await rejectsCode(() => store.createRun(runInput({ policy })), 'INVALID_INPUT');
+  });
+
+  // Implementation-aware regression added after target-descriptor persistence.
+  it('binds a supplied target descriptor to the same feature hash', async () => {
+    const store = await connect();
+    const targetFeature = {
+      id: 'pipeline_export',
+      method: 'GET' as const,
+      path: '/api/export',
+      denialStatuses: [403],
+      browserPath: '/admin',
+      actionTestId: 'pipeline-export-button',
+      resultTestId: 'pipeline-export-result',
+    };
+    const featureConfigHash = hashValue(targetFeature);
+    const policy = createPolicy({
+      schemaVersion: 2,
+      priceId: 'price_pro',
+      featureId: targetFeature.id,
+      featureConfigHash,
+      cancellation: 'allow_until_period_end',
+      requireInitialPaymentConfirmed: true,
+      syncWindowSeconds: 60,
+      predicateVersion: 'paywallproof-entitlement-v1',
+    });
+
+    const run = await store.createRun(
+      runInput({ policy, featureConfigHash, targetFeature, projectId: 'descriptor_project' }),
+    );
+    expect(run.targetFeature).toEqual(targetFeature);
+    await rejectsCode(
+      () =>
+        store.createRun(
+          runInput({
+            policy,
+            featureConfigHash,
+            targetFeature: { ...targetFeature, browserPath: '/different' },
+            projectId: 'mismatched_descriptor_project',
+          }),
+        ),
+      'INVALID_INPUT',
+    );
+
+    const otherFeature = { ...targetFeature, id: 'different_export' };
+    const otherFeatureConfigHash = hashValue(otherFeature);
+    const mismatchedPolicy = createPolicy({
+      schemaVersion: 2,
+      priceId: 'price_pro',
+      featureId: targetFeature.id,
+      featureConfigHash: otherFeatureConfigHash,
+      cancellation: 'allow_until_period_end',
+      requireInitialPaymentConfirmed: true,
+      syncWindowSeconds: 60,
+      predicateVersion: 'paywallproof-entitlement-v1',
+    });
+    await rejectsCode(
+      () =>
+        store.createRun(
+          runInput({
+            policy: mismatchedPolicy,
+            featureConfigHash: otherFeatureConfigHash,
+            targetFeature: otherFeature,
+            projectId: 'mismatched_descriptor_id_project',
+          }),
+        ),
+      'INVALID_INPUT',
+    );
   });
 
   it.each(Object.keys(runInput()))('rejects missing createRun field %s', async (field) => {

@@ -122,8 +122,19 @@ export function Reproduction({ detail, scenario }: { detail: RunDetail; scenario
         </li>
         <li>
           Wait up to the approved {run.policy.syncWindowSeconds} real seconds for synchronization,
-          then collect provider, application, API, and browser observations together. Request{' '}
-          <code>GET /api/export</code> and use the dashboard's real export action.
+          then collect provider, application, API, and browser observations together.{' '}
+          {run.targetFeature ? (
+            <>
+              Request <code>{`${run.targetFeature.method} ${run.targetFeature.path}`}</code> from{' '}
+              <code>{run.targetFeature.browserPath}</code> using the real{' '}
+              <code>{run.targetFeature.actionTestId}</code> action.
+            </>
+          ) : (
+            <>
+              Use the protected feature recorded in the original evidence. This legacy run predates
+              persisted target descriptors.
+            </>
+          )}
         </li>
         <li>
           Apply the unchanged worker predicates and retain the exact fixture marker check. Do not
@@ -139,6 +150,7 @@ export function Reproduction({ detail, scenario }: { detail: RunDetail; scenario
           targetBuild: run.targetBuild,
           policyHash: run.policy.hash,
           featureConfigHash: run.featureConfigHash,
+          targetFeature: run.targetFeature ?? null,
           ...(run.projectConfigHash ? { projectConfigHash: run.projectConfigHash } : {}),
           observationIds: scenario.observationIds,
         }}

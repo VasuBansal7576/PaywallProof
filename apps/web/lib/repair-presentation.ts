@@ -176,6 +176,8 @@ export function failedFindingId(scenario: Scenario): string | undefined {
 }
 
 export function repairStartBlocker(detail: RunDetail): string | null {
+  if (!detail.repairSupported)
+    return 'Automated repair remains limited to the bundled reference target. This run can still provide lifecycle evidence and a local finding.';
   if (detail.run.status !== 'completed')
     return 'Wait for the original run to finish before preparing a repair.';
   if (detail.run.outcome !== 'failed' || !detail.scenarios.some(failedFindingId))
@@ -194,7 +196,12 @@ export function repairStartBlocker(detail: RunDetail): string | null {
 }
 
 /** Presentation checks only. The worker verifies immutable evidence and the exact runtime tool gate. */
-export function presentRepair(raw: unknown, run: Run, now: number): RepairPresentation {
+export function presentRepair(
+  raw: unknown,
+  run: Run,
+  now: number,
+  repairSupported: boolean,
+): RepairPresentation {
   const parsed = repairJobSchema.safeParse(raw);
   if (!parsed.success)
     return {
@@ -239,12 +246,14 @@ export function presentRepair(raw: unknown, run: Run, now: number): RepairPresen
     approval.args.branch === record.proposal.branch &&
     approval.args.draft;
   const canRequestPublication =
+    repairSupported &&
     run.status === 'completed' &&
     verified &&
     record?.state === 'verified_local' &&
     approval === null &&
     job.publicationRuntime === null;
   const canDecide =
+    repairSupported &&
     run.status === 'completed' &&
     verified &&
     record?.state === 'awaiting_publication' &&
@@ -255,7 +264,10 @@ export function presentRepair(raw: unknown, run: Run, now: number): RepairPresen
     job.publicationRuntime.sessionId === job.sessionId &&
     job.publicationRuntime.approvalId === approval.id;
   let publicationBlocker: string | null = null;
-  if (!verified)
+  if (!repairSupported)
+    publicationBlocker =
+      'Publication is disabled because this run is outside the trusted reference repair profile.';
+  else if (!verified)
     publicationBlocker =
       'Publication requires a recorded verified manifest for this exact candidate.';
   else if (record?.state === 'abandoned')

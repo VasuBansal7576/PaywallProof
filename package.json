@@ -5,6 +5,7 @@
   "license": "MIT",
   "type": "module",
   "imports": {
+    "#adapter-doctor": "./src/adapter-doctor/index.ts",
     "#domain": "./src/domain/index.ts",
     "#evidence": "./src/evidence/index.ts",
     "#evidence/*": "./src/evidence/*.ts",

@@ -2,45 +2,38 @@
 
 ## Product requirements and implementation specification
 
-Version: 2.2
+Version: 2.4
 Updated: August 30, 2026
 Owner: Vasu
-Status: Hackathon MVP implemented and verified. Executed results are recorded in [docs/verification.md](docs/verification.md).
-Working name: PaywallProof. Name availability has not been checked.
-
-**August 28 provider decision:** Polar replaces Stripe. The migration preserved the access scenarios, repair requirements, and safety checks while replacing provider-specific setup, timing, payment evidence, and signing contracts. The [migration record](docs/billing-provider-migration.md) documents the completed native sandbox lifecycle.
-
-**August 29 model decision:** The owner selected Luna through the existing Codex subscription. The [subscription bridge](docs/codex-subscription.md) must require ChatGPT authentication, included quota, zero extra credits, a pinned Luna model and no paid fallback. Codex proposes actions without host environment access; TrueForge retains execution and approval enforcement. Host tests and the independent repair evaluator remain unavailable to the generator. Consent must disclose OpenAI processing and subscription usage. No capability is removed.
+Status: Reference-target repair and second-target lifecycle evidence are complete. The Adapter Doctor changes count as final development evidence only when the exact head of [PR #6](https://github.com/VasuBansal7576/PaywallProof/pull/6) passes CI and Qodo review. GitHub records the authoritative review status.
 
 > Check whether your SaaS gives the right people access to paid features. Reproduce failures, show the evidence, and propose a tested repair.
 
 ### How to read this document
 
-For the product, read sections 1 through 4 and the demo in section 16. For implementation, read the whole document, then follow section 15 in order. A coding agent must not treat a proposed interface as an existing SDK feature.
+For the product, read sections 1 through 4. For implementation, read sections 5 through 14 and the owner constraints in section 17. A coding agent must not treat a proposed interface as an existing SDK feature. [Verification status](docs/verification.md) records executed results. [Implementation decisions](docs/decisions.md) records changes to the original plan.
 
 This document is the source of truth for the hackathon MVP. **MUST** means required for that MVP. **SHOULD** means preferred unless a documented constraint prevents it. **LATER** means outside the MVP. A blocked requirement stays visible. It does not become complete because a demo uses a substitute.
 
 ### Contents
 
-1. [Product and customer](#1-product-and-customer)
-2. [Scope and decisions](#2-scope-and-decisions)
-3. [User journey and interface](#3-user-journey-and-interface)
-4. [Product requirements](#4-product-requirements)
-5. [Access policy and result rules](#5-access-policy-and-result-rules)
-6. [Scenario catalogue](#6-scenario-catalogue)
-7. [Architecture and ownership](#7-architecture-and-ownership)
-8. [Domain model and persistence](#8-domain-model-and-persistence)
-9. [Integration contracts](#9-integration-contracts)
-10. [TrueForge and Qodo integration](#10-trueforge-and-qodo-integration)
-11. [Safety and permissions](#11-safety-and-permissions)
-12. [Recovery, limits, and cleanup](#12-recovery-limits-and-cleanup)
-13. [Repair workflow](#13-repair-workflow)
-14. [Verification and acceptance](#14-verification-and-acceptance)
-15. [Implementation sequence](#15-implementation-sequence)
-16. [Demo and submission](#16-demo-and-submission)
-17. [Commercial assumptions and unresolved risks](#17-commercial-assumptions-and-unresolved-risks)
-18. [Sources](#18-sources)
-19. [Owner constraints and independent verification](#19-owner-constraints-and-independent-verification)
+- [Product and customer](#1-product-and-customer)
+- [Scope and decisions](#2-scope-and-decisions)
+- [User journey and interface](#3-user-journey-and-interface)
+- [Product requirements](#4-product-requirements)
+- [Access policy and result rules](#5-access-policy-and-result-rules)
+- [Scenario catalogue](#6-scenario-catalogue)
+- [Architecture and ownership](#7-architecture-and-ownership)
+- [Domain model and persistence](#8-domain-model-and-persistence)
+- [Integration contracts](#9-integration-contracts)
+- [TrueForge and Qodo integration](#10-trueforge-and-qodo-integration)
+- [Safety and permissions](#11-safety-and-permissions)
+- [Recovery, limits, and cleanup](#12-recovery-limits-and-cleanup)
+- [Repair workflow](#13-repair-workflow)
+- [Verification and acceptance](#14-verification-and-acceptance)
+- [Commercial assumptions and unresolved risks](#15-commercial-assumptions-and-unresolved-risks)
+- [Sources](#16-sources)
+- [Owner constraints and independent verification](#17-owner-constraints-and-independent-verification)
 
 ## 1. Product and customer
 
@@ -68,13 +61,13 @@ Given an authorized staging application, a Polar sandbox, and an approved access
 2. Exercises a real protected feature through its API and user interface.
 3. Compares observed behavior with the approved policy.
 4. Produces reproducible findings with evidence.
-5. Proposes a repair in a disposable checkout, tests it, and requests permission to publish a PR.
+5. For a trusted repair profile, proposes a repair in a disposable checkout, tests it, and requests permission to publish a PR.
 
 The report describes the scenarios actually tested. It MUST NOT say that an application is fully secure, that billing is certified, or that every subscription edge case is covered.
 
 ### 1.4 Why an agent belongs here
 
-The agent reads the application's relevant code, identifies integration points, explains disagreements, and drafts a repair that fits the repository. It can adapt a bounded test setup when a route or selector differs.
+For a trusted repair profile, the agent reads the application's relevant code, explains disagreements, and drafts a repair that fits the repository. For every contract-v1 target, the target declares one bounded feature descriptor and Adapter Doctor validates it before the run; the model does not invent routes or selectors.
 
 Deterministic code owns resource permissions, scenario execution, expected access, evidence validation, and verdicts. The model cannot decide that a failed check passed or authorize its own actions.
 
@@ -88,7 +81,7 @@ Existing tools already automate checkout tests. PaywallProof's proposed focus is
 | ------------------------ | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | Billing provider         | Polar sandbox only                                                                                    | Supports real test objects and subscription simulations without moving funds |
 | Account model            | One isolated Polar sandbox organization                                                               | Bind organization, product, price and run-owned resources                    |
-| Application              | Next.js and TypeScript reference integration                                                          | Keeps code inspection and repair bounded                                     |
+| Application              | Contract-v1 owned staging targets; repair limited to the bundled Next.js reference profile            | Separates reusable lifecycle checks from target-specific source repair       |
 | Plans                    | Free and one monthly Pro plan                                                                         | Sufficient to expose incorrect grants and incorrect denials                  |
 | Protected feature        | One real API-backed feature                                                                           | Gives the checker an observable outcome                                      |
 | Authentication           | Ordinary test-user sessions through a staging adapter                                                 | Admin credentials must not influence access probes                           |
@@ -103,7 +96,7 @@ Polar's test infrastructure does not move funds. TrueForge's sandbox documentati
 
 ### 2.2 What the MVP includes
 
-The MVP MUST include connection checks, policy approval, the core scenario suite, actual API and browser evidence, human-readable findings, reconnectable runs, a bounded repair attempt, and an approved PR publication path.
+The MVP MUST include connection checks, policy approval, the core scenario suite, actual API and browser evidence, human-readable findings, reconnectable runs, and, for the trusted reference profile, a bounded repair attempt and approved PR publication path.
 
 The target application MUST expose the small staging adapter defined in section 9. Implement the reference adapter for the bundled demo application. A second owned application SHOULD be connected before claiming useful portability.
 
@@ -362,30 +355,7 @@ A minimal Next.js demo with SQLite is sufficient for the reference target. Postg
 
 Use the pinned Polar HTTP contract and `standardwebhooks` for native signatures, plus the official `@truefoundry/trueforge-sdk`. Commit the lockfile and record provider API, signing library, TrueForge versions and target commit in each run.
 
-### 7.3 Proposed repository layout
-
-These are files and modules to create, not files that already exist.
-
-```text
-apps/
-  web/                       Project setup, policy UI, run UI, report API
-  worker/                    Durable run controller and MCP transport
-  demo-saas/                 Free/Pro reference app and staging adapter
-packages/
-  contracts/                 Zod schemas and derived TypeScript types
-  core/                      Policies, state transitions, verdicts, limits
-  adapters/                  Polar, target, browser, GitHub, TrueForge
-  evidence/                  Redaction, hashing, artifact manifests, reports
-tests/
-  acceptance/                Cross-module scenarios and known controls
-  fixtures/                  Sanitized SDK payloads and target variants
-docs/
-  integration.md             Supported adapter setup and constraints
-  demo.md                    Recorded demo steps and setup
-  decisions.md               Version choices and documented scope changes
-```
-
-### 7.4 Module responsibilities
+### 7.3 Module responsibilities
 
 The run controller owns durable state, approval validation, operation identity, deadlines, and single-run locking. It does not implement a second LLM agent loop. TrueForge owns model turns, tool orchestration, runtime approval pauses, and the sandbox.
 
@@ -393,7 +363,7 @@ The restricted MCP service owns credentials and validates every tool call. It ex
 
 The core package is pure. It receives typed snapshots and returns verdicts. It never calls a model, Polar, GitHub, or a browser.
 
-The target adapter reads normalized app state and provisions isolated users. The trusted MCP service runs fixed Playwright probe code in an isolated browser context per test user. The model can propose approved selectors and routes, but cannot execute arbitrary generated code inside the credential-bearing worker. Generated scripts and patch tests run only in the verified TrueForge sandbox.
+The target adapter reads normalized app state and provisions isolated users. Its strict description declares one bounded feature path, browser path, and pair of test IDs. Adapter Doctor validates and binds that descriptor before mutation. The trusted MCP service runs fixed Playwright probe code in an isolated browser context per test user. The model cannot replace the descriptor or execute arbitrary generated code inside the credential-bearing worker. Generated scripts and patch tests run only in the verified TrueForge sandbox.
 
 The repair sandbox reads a sanitized checkout and tests changes in a disposable target instance. The required repair path uses local replay with synthetic fixtures and no provider keys. A real Polar rerun against a patched preview is an additional verification path, described in section 13.
 
@@ -403,19 +373,19 @@ The evidence store owns reports. Neither a repository file nor a model tool resp
 
 ### 8.1 Domain terms
 
-| Entity       | Meaning and required fields                                                                    |
-| ------------ | ---------------------------------------------------------------------------------------------- |
-| Project      | Owner, repository identity, default ref, staging origin, adapter ID, connection references     |
-| Policy       | Immutable version, approved access rules, feature predicate, price ID, sync window, hash       |
-| Run          | Project, policy hash, target commit/build, execution mode, status, outcome, limits, timestamps |
-| Scenario     | Catalogue ID, run ID, dependency IDs, stage, assertion IDs                                     |
-| Operation    | Stable logical ID, run ID, kind, arguments hash, state, provider receipt, retry data           |
-| Resource     | Provider ID, parent IDs, run ownership, mode, creation operation, cleanup state                |
-| Observation  | Source, subject, real time, billing time, content hash, redacted payload reference             |
-| Assertion    | Expected predicate, observation IDs, verdict, reason code                                      |
-| Finding      | Failing assertion IDs, severity, observed impact, reproduction, diagnosis status               |
-| Approval     | Actor, action scope, arguments hash, target/base commit, expiry, decision, consumed operation  |
-| PatchAttempt | Base commit, diff hash, allowed paths, checks, before/after evidence, publication state        |
+| Entity       | Meaning and required fields                                                                                                                                 |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Project      | Owner, repository identity, default ref, exact consented staging origin and processing model, adapter ID, connection references                             |
+| Policy       | Immutable version, approved access rules, feature ID and configuration hash, price ID, sync window, hash                                                    |
+| Run          | Project, policy, target build, bound feature descriptor, descriptor/probe/full-config/cleanup-destination hashes, mode, status, outcome, limits, timestamps |
+| Scenario     | Catalogue ID, run ID, dependency IDs, stage, assertion IDs                                                                                                  |
+| Operation    | Stable logical ID, run ID, kind, arguments hash, state, provider receipt, retry data                                                                        |
+| Resource     | Provider ID, parent IDs, run ownership, mode, creation operation, cleanup state                                                                             |
+| Observation  | Source, subject, real time, billing time, content hash, redacted payload reference                                                                          |
+| Assertion    | Expected predicate, observation IDs, verdict, reason code                                                                                                   |
+| Finding      | Failing assertion IDs, severity, observed impact, reproduction, diagnosis status                                                                            |
+| Approval     | Actor, action scope, arguments hash, target/base commit, expiry, decision, consumed operation                                                               |
+| PatchAttempt | Base commit, diff hash, allowed paths, checks, before/after evidence, publication state                                                                     |
 
 ### 8.2 Core TypeScript contracts
 
@@ -440,11 +410,22 @@ interface AccessPolicy {
   readonly schemaVersion: 2;
   readonly priceId: string;
   readonly featureId: string;
+  readonly featureConfigHash: string;
   readonly cancellation: 'allow_until_period_end';
   readonly requireInitialPaymentConfirmed: true;
   readonly syncWindowSeconds: number;
   readonly predicateVersion: string;
   readonly hash: string;
+}
+
+interface TargetFeature {
+  readonly id: string;
+  readonly method: 'GET';
+  readonly path: string;
+  readonly denialStatuses: readonly number[];
+  readonly browserPath: string;
+  readonly actionTestId: string;
+  readonly resultTestId: string;
 }
 
 interface ObservationRef {
@@ -469,6 +450,10 @@ interface RunRecord {
   readonly projectId: string;
   readonly policyHash: string;
   readonly targetCommit: string;
+  readonly featureConfigHash: string;
+  readonly targetFeature?: TargetFeature; // optional only for records created before v2.4
+  readonly projectConfigHash?: string;
+  readonly cleanupConfigHash?: string;
   readonly mode: 'polar_sandbox' | 'local_replay';
   readonly status: RunStatus;
   readonly outcome: RunOutcome | null;
@@ -540,11 +525,13 @@ The target adapter MUST provide these capabilities:
 | `describeFeatureProbe` | Approved method, route, input, allow predicate, denial predicate, and browser steps                   |
 | `cleanupTestUser`      | Remove only this run's users and data according to the approved scope                                 |
 
-Only the reference adapter's fixed implementation is supported automatically. User-supplied executable adapters require operator review; the model cannot install one from an untrusted repository.
+Contract-v1 adapters on server-configured owned targets are supported automatically after a deterministic Adapter Doctor check. PaywallProof does not load target-supplied executable adapters, and the model cannot install one from an untrusted repository.
+
+Each Adapter Doctor invocation makes at most three GET requests. The controller invokes it during preflight and revalidates the exact schema-v2 target, build, feature descriptor, and code-owned probe hash before each mutating lifecycle tool records operation intent. It validates staging authentication, separation between adapter and ordinary-user credentials, JSON responses, and `Cache-Control: no-store`. Only a fully compatible report contains the feature receipt used to bind a policy and run. The target cannot supply executable predicates. The report states that fixture operations, customer sessions, browser behavior, billing lifecycle, and production lockout remain untested until the acceptance run. This pre-dispatch check does not atomically lock a staging deployment; the evidence collector repeats the descriptor and probe-hash check before probing and before it records evidence.
 
 Staging hooks require a dedicated credential, strict run scoping, and a test-environment flag. They MUST fail closed in production builds. Ordinary protected routes must not recognize the adapter credential as an access override.
 
-A successful API probe checks an approved body predicate, such as a run-specific export marker. A denial checks an approved status/body contract and the absence of protected data. Unexpected responses are inconclusive, not conveniently reinterpreted.
+A successful contract-v1 API probe requires GET with an ordinary-session cookie, no request body, HTTP 200, and the exact run fixture marker. A denial requires one of the declared 4xx statuses, `error: 'ACCESS_DENIED'`, and marker absence at every depth. Unexpected responses are inconclusive, not conveniently reinterpreted.
 
 The UI probe uses a normal session and a fresh page. It records action results and network evidence. Read-only inspection sessions and feature-probe sessions must remain separate.
 
@@ -568,6 +555,7 @@ Record stable mutation intents before dispatch and owned resources after verifie
 | `GET /api/runs/:id/events`                 | Stream product events with a resumable cursor              |
 | `POST /api/runs/:id/approvals/:approvalId` | Approve or deny the exact pending action                   |
 | `POST /api/runs/:id/cancel`                | Request stop and bounded cleanup                           |
+| `POST /api/runs/:id/cleanup`               | Retry unresolved terminal cleanup within the saved scope   |
 | `POST /api/runs/:id/repairs`               | Request a new isolated repair attempt                      |
 | `GET /api/runs/:id/report`                 | Download Markdown or JSON with evidence references         |
 
@@ -583,7 +571,9 @@ Each evidence file has a SHA-256 hash, content type, collection source, and coll
 
 ### 10.1 TrueForge responsibilities
 
-Use one TrueForge session per run. Register the restricted MCP server and enable the configured sandbox. The model reads approved project context, calls the restricted tools, investigates findings, and writes the repair.
+Use one TrueForge lifecycle session per run. Register the restricted MCP server and enable the configured sandbox. The model reads approved project context, calls the restricted tools, investigates findings, and writes the repair.
+
+An operator-requested evidence review starts a separate post-run TrueForge session. That auxiliary session mounts an immutable review-skill commit and receives only the read-and-record review tools. Its two dynamic subagents inspect the same data-only report projection independently. The review session cannot resume lifecycle work, change the saved outcome, prepare a repair, or publish code.
 
 The default agent instructions MUST require evidence-backed claims, respect unsupported capabilities, forbid self-approval, and forbid changes to the policy or test oracle during a repair. These instructions supplement server enforcement; they are not the security boundary.
 
@@ -594,6 +584,8 @@ Use a single agent for the MVP. Additional subagents are optional only after the
 The current SDK documents `sessions.create`, `createTurnStream`, `getTurn`, `subscribeToTurn`, `listTurnEvents`, and `sessions.cancel`. Hide these behind a small `TrueForgeAdapter`, and confirm their signatures against the installed SDK. [SDK recipes](https://trueforge.dev/api/use-agent)
 
 Persist session ID, turn ID, and stream sequence number. Reconnect to a running turn with `subscribeToTurn` and its saved sequence. If the turn has ended, rebuild the display from stored events. Do not create a new turn to recover a dropped display connection.
+
+Before opening HTTP or MCP serving, recover persisted lifecycle, repair, and evidence-review state. Before reconnecting or continuing an approved lifecycle, revalidate the saved project configuration, schema-v2 Adapter Doctor receipt, feature descriptor, code-owned probe hash, and process-local Polar sandbox preflight. A legacy or drifted run remains readable but MUST NOT rearm its TrueForge lifecycle session. Reconcile a dispatched plan or checkout continuation through read-only turn lookup. If lookup cannot prove the continuation, expose an unknown continuation receipt and do not resend it. Cleanup requires its separately bound destinations; unrelated model or runtime drift cannot block it, while changed target or Polar destinations fail before intent and remain retryable. Evidence-review recovery requires unchanged processing consent, a completed run, and the exact saved report binding.
 
 TrueForge approval pauses arrive through required actions. Resume the paused call with the SDK's matching `user.tool_approval`, including the original tool call and thread reference. A turn with a pending approval is not a completed product run.
 
@@ -622,6 +614,10 @@ Fix valid high-severity findings or explicitly dismiss them in the Qodo thread w
 The README MUST contain `## Qodo Code Review Evidence`, a representative merged PR link, the findings and decisions, and evidence of follow-up review. This is mandatory even if the product never publishes a repair PR. [Hackathon rules](https://www.wemakedevs.org/hackathons/trueforge/rules)
 
 If a generated repair PR also receives Qodo review, show that as extra evidence. A generated PR does not replace the review history of PaywallProof itself.
+
+The submission MUST contain a public repository, a reproducible README, about three minutes of demo video, and a short explanation of TrueForge's role. It also requires the Qodo Code Review Evidence section. Disclose AI coding assistance and be able to explain the implementation.
+
+The README includes supported scope, required credentials, exact setup, and a version manifest. It also separates real and replay test commands and documents safety boundaries, adapter instructions, known limitations, and a sanitized sample report. No private application code, live keys, customer records, or login-protected data belong in the public demo.
 
 ## 11. Safety and permissions
 
@@ -670,7 +666,7 @@ For this hackathon's judging setup, retain local evidence for 60 days through th
 
 ### 12.1 External operation lifecycle
 
-Each logical external operation moves through `planned -> dispatched -> confirmed`, or ends in `failed` or `unknown`.
+Each logical external operation moves through `planned -> dispatched -> confirmed`, or ends in `failed` or `unknown`. Owner plan decisions use the same rule: persist the exact decision and binding as `prepared` before the run transition, persist `dispatched` before runtime continuation, and reconcile a lost response with read-only turn lookup. An absent continuation after `dispatched` is unknown and is never resent automatically.
 
 Write the operation ID, stable arguments hash, authorization reference, and intended resource ownership before dispatch. After a timeout, reconcile provider state before retrying. A lost response does not prove that nothing happened.
 
@@ -711,19 +707,21 @@ If the runtime cannot expose model-call counts, enforce a conservative turn/toke
 
 ### 12.3 Cancellation and cleanup
 
-On stop, refuse new external mutations, request TrueForge cancellation, and reconcile in-flight operations. Run only cleanup already covered by the approved scope. Explain that stopping does not undo actions already completed.
+On stop, revoke the local MCP capability before requesting TrueForge cancellation, then reconcile locally in-flight operations. Runtime cancellation is best-effort: an outage is recorded but cannot block cleanup already covered by the approved scope. Explain that stopping does not undo actions already completed.
 
 Take final observations before cleanup. Revoke only a revalidated run-owned active subscription. Record canceled provider history as retained, never deleted. An unexpired checkout without a confirmed subscription remains a visible leftover because it can still complete. Delete the run-owned application fixtures and sessions separately.
 
 Cleanup checks the inventory, provider identity, parent relationships, and run ownership. An uncertain ownership match is never deleted. Mark it for manual review.
 
-A failed cleanup does not erase a valid test finding. Report the cleanup failure separately with resource IDs and an owner-safe cleanup procedure. Keep test resources isolated from real users even when cleanup fails.
+A failed cleanup does not erase a valid test finding. Report the cleanup failure separately with resource IDs and an owner-safe cleanup procedure. Keep test resources isolated from real users even when cleanup fails. An authenticated operator can retry unresolved cleanup on a terminal approved run without reopening its scenario or provider-creation authority. Each serialized retry gets a new two-minute deadline, rechecks the exact cleanup-destination binding, and replaces the prior receipt for each resource so the report shows current cleanup truth.
 
 ## 13. Repair workflow
 
 ### 13.1 Required behavior
 
 The owner requests a repair for a specific finding. The agent receives the failing reproduction, policy, observations, relevant code, and an allowlist of editable paths.
+
+Automated repair is available only for the trusted `reference_v1` repair profile. A target ID, origin, or repository override disables repair by default, even when Adapter Doctor accepts the target's lifecycle contract. An unsupported target returns `REPAIR_TARGET_UNSUPPORTED` before PaywallProof reads source, starts model work, or prepares publication. An operator may select `REPAIR_PROFILE=reference_v1` only when the configured checkout, launcher, and host-owned oracle are the exact trusted reference profile.
 
 Create a disposable checkout at the exact scanned commit. Record its base hash. If the working copy or remote base has changed, do not overwrite it or silently rebase an approved patch.
 
@@ -761,38 +759,43 @@ Adapter tests use sanitized pinned-version fixtures for Polar shapes and a real 
 
 Integration tests connect TrueForge, the restricted tools, the evidence store, and the target. A separate credentialed suite executes real Polar sandbox scenarios. The explicit credentialed verifier must exit nonzero as blocked when configuration is absent; an offline suite cannot claim it ran.
 
+A portability acceptance run connects a second owned staging target using only the contract-v1 HTTP interface. It binds the Adapter Doctor receipt to the target's exact source build, runs SC01 through SC04 through the generic API and browser runners, and records cleanup for both run-owned users. A `local_replay` result can establish lifecycle portability. It does not establish Polar delivery or repair portability.
+
 ### 14.2 Required acceptance tests
 
-| ID   | Requirements  | Given and expected result                                                                                                                             |
-| ---- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AT01 | R01, S01      | A live key or live Price is supplied; preflight rejects it and no mutation is called                                                                  |
-| AT02 | R02, S06      | The owner has not approved the policy and plan; no test user or Polar object is created                                                               |
-| AT03 | R03, S03      | A tool receives another run's customer ID; it rejects the request before dispatch                                                                     |
-| AT04 | R04, R05      | Known-good reference app runs SC01 through SC04; every required assertion passes                                                                      |
-| AT05 | R05, R06      | Broken API guard allows a free user to obtain protected fixture data; SC01 fails even if the UI hides the feature                                     |
-| AT06 | R04, R06      | Broken cancellation handling leaves a canceled user authorized; SC04 fails with evidence from both provider and feature                               |
-| AT07 | R04, R06      | Broken activation handling denies a confirmed paying user; SC02 fails as incorrect denial                                                             |
-| AT08 | R04, R06      | Correct scheduled cancellation preserves access before period end; SC03 passes                                                                        |
-| AT09 | R06, R16      | Target or provider is unreachable; result is inconclusive, not a pass or invented billing failure                                                     |
-| AT10 | R06           | An endpoint returns 200 with an error page or missing fixture marker; the assertion does not pass                                                     |
-| AT11 | R07           | Browser reload and worker reconnect restore the same run without another customer, subscription, or active turn                                       |
-| AT12 | R07, S03      | Polar creates an object but the response is lost; read-only reconciliation finds that one owned object or leaves it unknown without a duplicate write |
-| AT13 | R08, S07      | A diff, destination, policy, or base commit changes after approval; execution requires new approval                                                   |
-| AT14 | R08           | Owner denies publication; no branch or PR is created and the local report remains available                                                           |
-| AT15 | R08, S10      | Owner stops during an in-flight request; no subsequent scenario starts and the uncertain effect is reconciled                                         |
-| AT16 | R09, S05      | Seeded synthetic secrets occur in logs and errors; exported reports and model-visible outputs redact them                                             |
-| AT17 | R10           | Repair makes the original failure pass without changing the policy or oracle and preserves passing controls                                           |
-| AT18 | R11           | PR creation response is lost; retry recovers the same matching PR rather than creating another                                                        |
-| AT19 | R12           | Cleanup meets an unowned or uncertain resource; it leaves it untouched and reports it                                                                 |
-| AT20 | R13           | A real TrueForge tool, approval pause, sandbox execution, and continuation appear in the same workflow                                                |
-| AT21 | R14           | Every substantive implementation merge has Qodo review and the README links a representative final review trail                                       |
-| AT22 | R15           | Local replay and missing credentialed tests remain visibly different from a real Polar sandbox run                                                    |
-| AT23 | S04, S12      | Probe session has no admin privilege; malformed webhook signatures are rejected by the target                                                         |
-| AT24 | S09, S11      | Repository prompt injection or a proposed arbitrary host cannot expand tool scope or read a synthetic secret canary                                   |
-| AT25 | R04, R06      | The provider boundary passes but application time or provider cancellation cannot be established; do not infer a pass                                 |
-| AT26 | R06           | App billing state is stale but protected access is correct; report state drift without claiming a proven access leak                                  |
-| AT27 | R02, R06      | Target build changes or observations come from another user, scenario, or policy; reject the comparison and do not pass it                            |
-| AT28 | R01, S02, S08 | An unapproved target or repository is requested; reject it, and prove that no available tool can merge a PR or deploy production                      |
+| ID   | Requirements                 | Given and expected result                                                                                                                                                                                                  |
+| ---- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AT01 | R01, S01                     | A live key or live Price is supplied; preflight rejects it and no mutation is called                                                                                                                                       |
+| AT02 | R02, S06                     | The owner has not approved the policy and plan; no test user or Polar object is created                                                                                                                                    |
+| AT03 | R03, S03                     | A tool receives another run's customer ID; it rejects the request before dispatch                                                                                                                                          |
+| AT04 | R04, R05                     | Known-good reference app runs SC01 through SC04; every required assertion passes                                                                                                                                           |
+| AT05 | R05, R06                     | Broken API guard allows a free user to obtain protected fixture data; SC01 fails even if the UI hides the feature                                                                                                          |
+| AT06 | R04, R06                     | Broken cancellation handling leaves a canceled user authorized; SC04 fails with evidence from both provider and feature                                                                                                    |
+| AT07 | R04, R06                     | Broken activation handling denies a confirmed paying user; SC02 fails as incorrect denial                                                                                                                                  |
+| AT08 | R04, R06                     | Correct scheduled cancellation preserves access before period end; SC03 passes                                                                                                                                             |
+| AT09 | R06, R16                     | Target or provider is unreachable; result is inconclusive, not a pass or invented billing failure                                                                                                                          |
+| AT10 | R06                          | An endpoint returns 200 with an error page or missing fixture marker; the assertion does not pass                                                                                                                          |
+| AT11 | R07                          | Browser reload and worker reconnect restore the same run without another customer, subscription, or active turn                                                                                                            |
+| AT12 | R07, S03                     | Polar creates an object but the response is lost; read-only reconciliation finds that one owned object or leaves it unknown without a duplicate write                                                                      |
+| AT13 | R08, S07                     | A diff, destination, policy, or base commit changes after approval; execution requires new approval                                                                                                                        |
+| AT14 | R08                          | Owner denies publication; no branch or PR is created and the local report remains available                                                                                                                                |
+| AT15 | R08, S10                     | Owner stops during an in-flight request; no subsequent scenario starts and the uncertain effect is reconciled                                                                                                              |
+| AT16 | R09, S05                     | Seeded synthetic secrets occur in logs and errors; exported reports and model-visible outputs redact them                                                                                                                  |
+| AT17 | R10                          | Repair makes the original failure pass without changing the policy or oracle and preserves passing controls                                                                                                                |
+| AT18 | R11                          | PR creation response is lost; retry recovers the same matching PR rather than creating another                                                                                                                             |
+| AT19 | R12                          | Cleanup meets an unowned or uncertain resource; it leaves it untouched and reports it                                                                                                                                      |
+| AT20 | R13                          | A real TrueForge tool, approval pause, sandbox execution, and continuation appear in the same workflow                                                                                                                     |
+| AT21 | R14                          | Every substantive implementation merge has Qodo review and the README links a representative final review trail                                                                                                            |
+| AT22 | R15                          | Local replay and missing credentialed tests remain visibly different from a real Polar sandbox run                                                                                                                         |
+| AT23 | S04, S12                     | Probe session has no admin privilege; malformed webhook signatures are rejected by the target                                                                                                                              |
+| AT24 | S09, S11                     | Repository prompt injection or a proposed arbitrary host cannot expand tool scope or read a synthetic secret canary                                                                                                        |
+| AT25 | R04, R06                     | The provider boundary passes but application time or provider cancellation cannot be established; do not infer a pass                                                                                                      |
+| AT26 | R06                          | App billing state is stale but protected access is correct; report state drift without claiming a proven access leak                                                                                                       |
+| AT27 | R02, R06                     | Target build changes or observations come from another user, scenario, or policy; reject the comparison and do not pass it                                                                                                 |
+| AT28 | R01, S02, S08                | An unapproved target or repository is requested; reject it, and prove that no available tool can merge a PR or deploy production                                                                                           |
+| AT29 | R01, R03, R05, R06, R12, R15 | A second owned target passes Adapter Doctor and generic SC01 through SC04 runners; all twelve assertions bind to the exact source build and mode, and both users are deleted                                               |
+| AT30 | R08, R10, S02, S06           | A target outside `reference_v1` requests repair or publication; return `REPAIR_TARGET_UNSUPPORTED` before any source read, model work, publication recovery, or GitHub write                                               |
+| AT31 | R12, S05, S08                | A crash between plan decision, wait credit, or cleanup receipt commits recovers from the durable prior state without duplicate dispatch; a terminal leftover can be retried only through the scoped operator cleanup route |
 
 ### 14.3 Controls that make results credible
 
@@ -808,82 +811,9 @@ The MVP passes all required automated tests and the manual Qodo review check. A 
 
 Target a normal core run of under ten minutes after connections are ready. Measure cold sandbox startup separately. These are goals to measure, not promises for the landing page.
 
-### 14.5 Supplementary public-demo audits
+## 15. Commercial assumptions and unresolved risks
 
-PaywallProof MAY use an unrelated SaaS's public demo or vendor-provided sandbox as supplementary black-box evidence when the vendor explicitly permits fictional test activity and the workflow cannot charge anyone. This adds external product evidence without weakening the owned staging requirements.
-
-Public-demo audits MUST use only the application's supported UI, fictional data, reserved non-delivery email domains, and visibly test-mode payment behavior. Do not enter a card, create a live subscription, load-test the service, bypass access controls, or inspect private state. Stop before any screen that could create a real charge.
-
-Label the result `black_box_public_sandbox`, record the exact browser observations and cleanup attempts, redact bearer links, and preserve screenshots with hashes. API, provider, database, source, and controller assertions remain false unless each was actually collected. A public browser audit cannot be promoted to a PaywallProof pass or replace AT04, the second owned application proof, or the Polar lifecycle gate.
-
-If the supported cleanup path fails, record the leftover and the vendor's reset behavior. Do not alter unrelated records or invent cleanup. A failed refund followed by an archive action that requires that refund is a valid workflow finding when both outcomes are reproduced and the customer link is checked again.
-
-## 15. Implementation sequence
-
-### 15.1 Instructions for the coding agent
-
-Read this PRD before creating code. Preserve the priority boundaries. Implement a working path before adding extra providers, scenarios, or dashboards.
-
-At each step, report changed files, the checks actually run, their results, and unresolved blockers. Never describe skipped credentialed tests as passing. Never silently replace a real provider operation with a mock.
-
-Create decisions in `docs/decisions.md` when a verified SDK or environment constraint requires a change. Explain the impact and obtain owner approval before removing a required capability or weakening safety.
-
-### 15.2 Ordered work packages
-
-| Package | Work                                                                                    | Exit condition                                                                                                                     |
-| ------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| IP00    | Set up repository, Qodo, supported runtime versions, and an integration spike           | TrueForge executes one restricted MCP read, a sandbox command, an approval denial, and a reconnect; Polar sandbox read succeeds    |
-| IP01    | Implement contracts, policies, durable run state, operations, and approvals             | Pure unit tests pass; duplicate approvals and invalid transitions fail safely                                                      |
-| IP02    | Build reference Free/Pro target and staging adapter                                     | An ordinary free user is denied and a seeded authorized user is allowed in target tests; seeded setup is not used as scan evidence |
-| IP03    | Implement owned fixture creation, Polar lifecycle, and webhook connectivity             | Real SC02 through SC04 provider states are observed with resource inventory and cleanup                                            |
-| IP04    | Add protected API/browser probes, deterministic assertions, and reports                 | Known-good suite passes; three known-bad variants are detected with actual observations                                            |
-| IP05    | Connect TrueForge investigation and repair to the working runner                        | Agent explains an observed failure, generates a bounded patch, and retests it without altering the oracle                          |
-| IP06    | Add project/policy/run/finding UI, reconnect, cancellation, and approved PR publication | Owner completes the full workflow; deny and reconnect paths pass                                                                   |
-| IP07    | Run acceptance suite, review Qodo feedback, document setup, and record the demo         | Required evidence exists, limitations are explicit, and a stranger can reproduce the supported path                                |
-
-Each substantive package uses PRs reviewed by Qodo before merge. Small PRs are preferred, but don't split a change into fragments that cannot be tested.
-
-IP00 is a feasibility gate. Missing access to an approved TrueForge sandbox provider, unreachable target networking, or unsupported approval semantics must be resolved or surfaced immediately. Provider startup is not evidence that generated-code execution or the product workflow passed.
-
-### 15.3 Preserve scope and disclose incomplete verification
-
-The owner does not authorize feature cuts based on development effort or deadlines. Preserve every accepted capability and required check. Optional work remains optional as specified elsewhere; it must not be used to imply that an incomplete required path is complete.
-
-If the live repair rerun cannot be finished, retain a locally tested draft patch with its limitation. Do not fabricate an integration success. If the real core Polar run itself cannot be completed, the stated MVP is incomplete.
-
-### 15.4 Commands the implementation must supply
-
-Provide documented scripts for `lint`, `typecheck`, `test`, `test:acceptance`, `test:polar`, `dev`, and `demo:reset`. These are required future scripts, not commands that exist at specification time.
-
-`test:polar` is read-only preflight and exits nonzero as blocked when credentials are absent. Passing preflight explicitly leaves lifecycle verification false. The full workflow verifier must inspect all four scenarios and real provider provenance before claiming lifecycle acceptance. `demo:reset` must affect only the reference demo and inventoried test resources. It must never reset an arbitrary database selected by an unchecked environment variable.
-
-## 16. Demo and submission
-
-### 16.1 Three-minute demo plan
-
-| Time         | What the judge sees                                                                      |
-| ------------ | ---------------------------------------------------------------------------------------- |
-| 0:00 to 0:20 | The question: a canceled user still gets a paid feature                                  |
-| 0:20 to 0:45 | Connected sandbox, approved policy, and bounded test-plan approval                       |
-| 0:45 to 1:20 | Real billing state and the protected feature disagree; evidence opens                    |
-| 1:20 to 1:40 | Refresh/reconnect preserves the run; deny a publication request and show no write        |
-| 1:40 to 2:20 | Agent's isolated repair, exact diff, and passing reproduction with its verification mode |
-| 2:20 to 2:45 | Approve publication; open the resulting PR and show Qodo development review evidence     |
-| 2:45 to 3:00 | Coverage, known-good control, and limitations                                            |
-
-A three-minute video may use an honestly labeled time cut or a completed run's saved trace. Do not label a replay as live execution or imply that Qodo completed a review instantly. Keep a reproducible live path available.
-
-### 16.2 Submission checklist
-
-The current deadline is August 30, 2026, at 20:00 London time, which is August 31 at 00:30 IST. Confirm the organizer page before submission. [Rules](https://www.wemakedevs.org/hackathons/trueforge/rules)
-
-The submission MUST contain a public repository, reproducible README, about three minutes of demo video, a short explanation of TrueForge's role, and the required Qodo Code Review Evidence section. Disclose AI coding assistance and be able to explain the implementation.
-
-The README includes supported scope, credentials required, exact setup, version manifest, real versus replay test commands, safety boundaries, adapter instructions, known limitations, and a sanitized sample report. No private application code, live keys, customer records, or login-protected data belong in the public demo.
-
-## 17. Commercial assumptions and unresolved risks
-
-### 17.1 Commercial hypothesis
+### 15.1 Commercial hypothesis
 
 The first offer is a pre-launch or pre-release check for a specific paid feature. A recurring PR check may follow if customers use it repeatedly.
 
@@ -891,7 +821,7 @@ Do not implement PaywallProof's own paid plans during the hackathon. Pricing, wi
 
 Before claiming demand, ask a prospective user to supply an owned staging app, its access policy, and time to run a check. Track whether the result found a real issue, whether the evidence was useful, and whether the user wants another run. A paid pilot is stronger evidence than enthusiasm about the idea.
 
-### 17.2 Risks and decisions
+### 15.2 Risks and decisions
 
 | Risk                                                   | Mitigation or decision                                                                                                   |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
@@ -901,19 +831,13 @@ Before claiming demand, ask a prospective user to supply an owned staging app, i
 | Billing state is correct but a cached session is stale | Probe both the current session and a fresh session when diagnosing; keep the required assertion's session behavior fixed |
 | Subscription API passes but checkout is broken         | Explicitly exclude hosted checkout UI coverage in every report                                                           |
 | Automated repair removes protection                    | Immutable oracle, restricted edit paths, negative controls, and human review                                             |
-| Sandbox or provider access blocks the build            | Resolve in IP00 and disclose the blocker; no simulated replacement presented as real                                     |
+| Sandbox or provider access blocks the build            | Keep the integration blocked and disclose the cause. Do not present a simulated replacement as real                      |
 | Account data or credentials leak through evidence      | Synthetic users, structured redaction, secret canaries, and review before sharing                                        |
 | Existing QA products add the same feature              | Compete on low setup cost, trustworthy findings, and a narrow useful workflow; no assumed technical moat                 |
 
-### 17.3 Inputs needed before implementation
+## 16. Sources
 
-The builder needs an owned GitHub repository, Qodo installation, a TrueForge runtime, a verified no-charge model connection, an approved TrueForge sandbox provider, a Polar sandbox, and a reachable staging target or the bundled reference app.
-
-The first integration spike must settle the exact SDK versions, sandbox network route, webhook delivery setup, and supported target session mechanism. Browser probes run in the trusted MCP service with isolated user contexts, while generated code runs in the configured TrueForge sandbox. These are explicit environment-dependent setup choices, not permission to defer the core architecture.
-
-## 18. Sources
-
-Primary documentation was inspected on August 27, 2026. Product APIs and hackathon rules can change. Pin installed versions and recheck the relevant source during IP00.
+Primary documentation was inspected on August 27, 2026. Product APIs and hackathon rules can change. Pin installed versions and recheck the relevant source before changing a provider or runtime integration.
 
 | Source                                                                                | Used for                                                                    |
 | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
@@ -932,11 +856,11 @@ Primary documentation was inspected on August 27, 2026. Product APIs and hackath
 | [Kortix/Suna reconciliation PR](https://github.com/kortix-ai/suna/pull/6669)          | Concrete example of Polar/application state drift                           |
 | [Autonoma checkout testing](https://getautonoma.com/blog/how-to-test-stripe-checkout) | Competitor positioning only, not authority for Polar implementation details |
 
-## 19. Owner constraints and independent verification
+## 17. Owner constraints and independent verification
 
 Added August 27, 2026, following the owner's implementation authorization. Every existing MUST requirement remains in scope. Development effort and elapsed development time are not grounds for removing capabilities.
 
-### 19.1 No monetary charges
+### 17.1 No monetary charges
 
 The authorized external spending limit is zero. Do not buy a plan, enter a payment method, enable automatic recharge, accept paid overages, or invoke an unverified metered service. Promotional credits alone do not prove that an account cannot incur charges. Verify the account's billing behavior and a provider-enforced stop before consuming credits. If that cannot be established, keep the integration blocked while implementing and testing the remaining work.
 
@@ -946,7 +870,7 @@ Track each external integration's access, billing verification, and execution ev
 
 For the selected Codex subscription bridge, a completed empty model decision may receive one replacement generation under the existing deadline and spending checks. Never manufacture an acknowledgment, execute an empty proposal, or retry a transport, billing or authorization error through this path. Report combined token usage only when both generations supply measured usage. The same exact-command and tool restrictions apply to the replacement.
 
-### 19.2 Independent tests
+### 17.2 Independent tests
 
 Independent test authors receive the PRD and frozen public interface contracts only. They must not read product implementation, proposed repairs, or implementation-agent conversations. Use fresh agents without inherited history. Keep their inputs, authored tests, and revision history identifiable. Shared filesystem access is not technical isolation; enforce read boundaries in task instructions and record what was supplied.
 
@@ -955,9 +879,3 @@ Test public behavior through the product HTTP API, restricted MCP tools, policy 
 Run independent tests against the implementation. Fix implementation defects, then rerun the original cases. Add regression cases for newly discovered failures. Change a test expectation only to correct a demonstrated conflict with the approved specification, and record that reason. Never delete, skip, soften, or rewrite a failing assertion merely to obtain a passing result.
 
 Synthetic fixtures and injected faults are allowed as clearly labeled test inputs. They are not observed customer data, real provider receipts, or evidence of a live integration. Credentialed checks that cannot execute remain blocked or skipped, and do not count as passed. Record the command, environment, exit result, verification mode, and required cases not exercised.
-
-### 19.3 Early integration proof
-
-Before expanding the implementation, complete an early path through one actual access failure, TrueForge investigation, generated repair in its configured sandbox, unchanged reproduction, and a publication approval decision. This adds an integration checkpoint and removes no existing work package or acceptance criterion.
-
-In the recorded workflow, generate and test the patch before requesting publication. After denial, a later publication attempt needs a fresh approval request. Show the resulting action or absence of action using provider evidence.

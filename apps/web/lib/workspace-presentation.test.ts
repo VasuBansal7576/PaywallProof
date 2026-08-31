@@ -7,6 +7,8 @@ import { ApiSession } from './api';
 import { configSchema, projectSchema, runSchema, type Run } from './contracts';
 import {
   adjacentTab,
+  approvalFeatureLabel,
+  canStartEvidenceReview,
   needsAttention,
   newestRuns,
   parseRunTab,
@@ -21,6 +23,8 @@ const project = projectSchema.parse({
   repository: 'example/repository',
   ref: 'main',
   targetId: 'reference',
+  targetOrigin: 'http://127.0.0.1:3001',
+  modelConsentModel: 'synthetic',
   ownershipConfirmed: true,
   modelConsent: true,
 });
@@ -28,6 +32,7 @@ const config = configSchema.parse({
   target: { id: 'reference', origin: 'http://127.0.0.1:3001' },
   repository: project.repository,
   defaultRef: 'main',
+  reviewSkill: { repository: 'example/repository', ref: 'a'.repeat(40) },
   polarConfigured: false,
   priceId: 'price-test',
   model: 'test-model',
@@ -63,6 +68,45 @@ function fixture(id: string, createdAt = 1000, overrides: Partial<Run> = {}): Ru
 }
 
 describe('workspace presentation', () => {
+  it('allows evidence review only after both the run and lifecycle runtime are terminal', () => {
+    const completed = fixture('review-ready');
+    const runtime = (status: string) => ({
+      sessionId: 'review-session',
+      turnId: 'lifecycle-turn',
+      lastSequenceNumber: 1,
+      status,
+    });
+
+    expect(canStartEvidenceReview({ run: completed, runtime: runtime('done') })).toBe(true);
+    expect(canStartEvidenceReview({ run: completed, runtime: runtime('error') })).toBe(true);
+    expect(canStartEvidenceReview({ run: completed, runtime: runtime('running') })).toBe(false);
+    expect(canStartEvidenceReview({ run: completed, runtime: null })).toBe(false);
+    expect(
+      canStartEvidenceReview({
+        run: fixture('run-still-active', 1, { status: 'running', outcome: null }),
+        runtime: runtime('done'),
+      }),
+    ).toBe(false);
+  });
+
+  it('presents the exact run-bound feature in the approval scope', () => {
+    const run = fixture('dynamic-target', 1, {
+      targetFeature: {
+        id: 'pipeline_export',
+        method: 'GET',
+        path: '/api/export',
+        denialStatuses: [403],
+        browserPath: '/admin',
+        actionTestId: 'pipeline-export-button',
+        resultTestId: 'pipeline-export-result',
+      },
+    });
+
+    expect(approvalFeatureLabel(run)).toBe('pipeline_export · GET /api/export · ordinary session');
+    expect(approvalFeatureLabel(fixture('legacy'))).toBe(
+      'pro_export · legacy descriptor unavailable · ordinary session',
+    );
+  });
   it('sorts by recorded creation time without mutating API data and breaks ties deterministically', () => {
     const input = [fixture('old', 1), fixture('z', 2), fixture('a', 2)];
     expect(newestRuns(input).map((run) => run.id)).toEqual(['a', 'z', 'old']);
@@ -132,6 +176,37 @@ describe('workspace presentation', () => {
     expect(html).toContain('href="/projects/new"');
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Review run approval/);
     expect(project.ref).toBe('main');
+  });
+  it('treats a changed target identity as a new configuration', () => {
+    const html = renderToStaticMarkup(
+      createElement(ProjectView, {
+        config: { ...config, target: { ...config.target, id: 'secondary-contract-target' } },
+        project,
+        api: new ApiSession('presentation-only'),
+        runs: [],
+        onRun: async () => {},
+      }),
+    );
+    expect(html).toContain('This project uses an earlier configuration');
+    expect(html).toContain('Connect current configuration');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Review run approval/);
+  });
+  it('requires fresh ownership consent when the configured target origin changes', () => {
+    const html = renderToStaticMarkup(
+      createElement(ProjectView, {
+        config: {
+          ...config,
+          target: { ...config.target, origin: 'http://127.0.0.1:4001' },
+        },
+        project,
+        api: new ApiSession('presentation-only'),
+        runs: [],
+        onRun: async () => {},
+      }),
+    );
+    expect(html).toContain('This project uses an earlier configuration');
+    expect(html).toContain('Connect current configuration');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Review run approval/);
   });
   it('escapes untrusted names and preserves exact run bindings in links and machine-readable data', () => {
     const run = fixture('run/<untrusted>');

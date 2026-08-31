@@ -3,6 +3,4 @@
 **/next-env.d.ts
 node_modules/
 pnpm-lock.yaml
-docs/media/
-docs/real-world/
 *.patch

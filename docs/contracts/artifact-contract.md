@@ -20,7 +20,7 @@ Options:
 
 `rootDirectory` is an absolute, operator-configured artifact directory, never a request parameter. `lookup` reads persisted artifact metadata from the authoritative store; it must not accept metadata supplied by a browser or model. `now` returns real Unix milliseconds and defaults to `Date.now`. Default retention is seven days. Default maximum file size is 10 MiB. Optional limits must be positive safe integers; `maxBytes` must be at least eight bytes and no greater than 50 MiB. Invalid configuration throws `ArtifactError` with code `ARTIFACT_CONFIGURATION_INVALID` and status 500.
 
-The worker accepts `ARTIFACT_RETENTION_DAYS` as a positive whole-number string. `pnpm dev` selects 60 days for the owner's judging setup unless explicitly overridden. Starting the worker directly retains the seven-day default. A longer retention window never overrides an earlier receipt-specific `expiresAt`, changes collection times, or extends a Stripe sandbox. Files remain local and authenticated; this setting does not publish them or guarantee backup availability.
+The worker accepts `ARTIFACT_RETENTION_DAYS` as a positive whole-number string. `pnpm dev` selects 60 days for the owner's judging setup unless explicitly overridden. Starting the worker directly retains the seven-day default. A longer retention window never overrides an earlier receipt-specific `expiresAt`, changes collection times, or extends a payment-provider sandbox. Files remain local and authenticated; this setting does not publish them or guarantee backup availability.
 
 The returned object exposes:
 

@@ -24,6 +24,16 @@ import {
 } from './evidence-review.ts';
 
 type Variables = { csrfToken: string };
+
+/** Keeps every HTTP/MCP entry point closed until persisted safety state is recovered. */
+export async function startAfterRecovery<T>(
+  controller: Pick<Controller, 'recover'>,
+  start: () => T,
+): Promise<T> {
+  await controller.recover();
+  return start();
+}
+
 export function createControlApp(config: ControllerConfig) {
   const controller = new Controller(config);
   const app = new Hono<{ Variables: Variables }>();
@@ -80,15 +90,17 @@ export function createControlApp(config: ControllerConfig) {
           ? 400
           : code === 'TARGET_SCOPE_REJECTED'
             ? 403
-            : code === 'PREFLIGHT_BLOCKED'
-              ? 422
-              : code.includes('APPROVAL') ||
-                  code.includes('CONFLICT') ||
-                  code.includes('IN_FLIGHT') ||
-                  code.includes('NOT_READY') ||
-                  code.includes('PENDING')
-                ? 409
-                : 422;
+            : code === 'PROJECT_CONFIG_CHANGED'
+              ? 409
+              : code === 'PREFLIGHT_BLOCKED'
+                ? 422
+                : code.includes('APPROVAL') ||
+                    code.includes('CONFLICT') ||
+                    code.includes('IN_FLIGHT') ||
+                    code.includes('NOT_READY') ||
+                    code.includes('PENDING')
+                  ? 409
+                  : 422;
     return c.json(
       {
         error: {
@@ -203,9 +215,13 @@ export function createControlApp(config: ControllerConfig) {
   app.get('/api/session', (c) => c.json({ csrfToken: c.get('csrfToken') }));
   app.get('/api/config', (c) =>
     c.json({
-      target: { id: 'reference', origin: config.targetOrigin },
+      target: { id: config.targetId, origin: config.targetOrigin },
       repository: config.repository,
       defaultRef: config.defaultRef,
+      reviewSkill: {
+        repository: config.reviewSkillRepository,
+        ref: config.reviewSkillRef,
+      },
       polarConfigured: controller.polar !== null,
       priceId: config.priceId,
       model: config.model,
@@ -213,7 +229,7 @@ export function createControlApp(config: ControllerConfig) {
       coverageLimits,
     }),
   );
-  app.get('/api/projects', (c) => c.json(controller.list('project')));
+  app.get('/api/projects', (c) => c.json(controller.projects()));
   app.post('/api/projects', async (c) => c.json(controller.createProject(await c.req.json()), 201));
   app.post('/api/projects/:id/preflight', async (c) => {
     const { mode } = z
@@ -272,6 +288,10 @@ export function createControlApp(config: ControllerConfig) {
     z.strictObject({}).parse(await c.req.json());
     return c.json(await controller.continueCheckout(c.req.param('id')));
   });
+  app.post('/api/runs/:id/cleanup', async (c) => {
+    z.strictObject({}).parse(await c.req.json());
+    return c.json(await controller.retryCleanup(c.req.param('id')));
+  });
   app.get('/api/runs/:id/artifacts/:artifactId', async (c) => {
     const artifact = await controller.artifact(c.req.param('id'), c.req.param('artifactId'));
     return new Response(artifact.bytes, {
@@ -303,13 +323,13 @@ export function createControlApp(config: ControllerConfig) {
     return c.json(await controller.cancel(c.req.param('id')));
   });
   app.post('/api/runs/:id/repairs', async (c) => {
-    return c.json(await controller.repairs.start(c.req.param('id'), await c.req.json()), 202);
+    return c.json(await controller.startRepair(c.req.param('id'), await c.req.json()), 202);
   });
   app.post('/api/runs/:id/evidence-review', async (c) => {
     const input = z
       .strictObject({ retryCompleted: z.boolean().optional() })
       .parse(await c.req.json());
-    return c.json(await controller.reviews.start(c.req.param('id'), input), 202);
+    return c.json(await controller.startEvidenceReview(c.req.param('id'), input), 202);
   });
   app.post('/api/runs/:id/repairs/:jobId/cancel', async (c) => {
     z.strictObject({}).parse(await c.req.json());

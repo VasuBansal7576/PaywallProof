@@ -1,6 +1,6 @@
 # Public contracts for independent verification
 
-Version 2. These contracts are written before product implementation. They define externally observable behavior, not implementation algorithms. The PRD remains authoritative. Test authors must not inspect product source or proposed fixes.
+Version 2. The original contracts were written before product implementation. The probe-hash passage is a 2026-08-30 post-audit amendment preserved alongside the original in Git history. The amendment did not change the existing independent assertions. These contracts define externally observable behavior, not implementation algorithms. The PRD remains authoritative.
 
 ## First boundary: policy and result evaluation
 
@@ -10,7 +10,7 @@ The public module is `src/domain/index.ts`. It exports these functions:
 
 Input fields: `schemaVersion: 2`, `priceId: string`, `featureId: string`, `featureConfigHash: lowercase SHA-256 digest`, `cancellation: 'allow_until_period_end'`, `requireInitialPaymentConfirmed: true`, `syncWindowSeconds: integer from 5 through 300`, `predicateVersion: string`.
 
-Identifiers and predicate versions must be nonempty strings with no leading or trailing whitespace; reject rather than silently normalize them. Unknown fields and wrong types are rejected. Caller-supplied policy hashes are rejected. Output contains those fields and a lowercase 64-character SHA-256 `hash`. Equivalent input object key order produces the same hash; a change in any policy field changes it. The returned object is immutable. Invalid input throws a validation error. The feature configuration digest binds routes, predicates, denial statuses, and browser steps; the later controller verifies that digest before a probe.
+Identifiers and predicate versions must be nonempty strings with no leading or trailing whitespace; reject rather than silently normalize them. Unknown fields and wrong types are rejected. Caller-supplied policy hashes are rejected. Output contains those fields and a lowercase 64-character SHA-256 `hash`. Equivalent input object key order produces the same hash; a change in any policy field changes it. The returned object is immutable. Invalid input throws a validation error. `featureConfigHash` binds the target-declared feature ID, GET route, denial statuses, browser path, and test IDs. The controller separately binds `featureProbeHash`, which covers those resolved values plus the code-owned input, allowance, denial, and browser rules. New runs require both before mutation or feature probing. Legacy runs without the probe hash remain readable and cleanable, but cannot resume lifecycle work.
 
 ### expectedAccess({ policy, billing })
 
@@ -38,10 +38,10 @@ Output is `failed` if any assertion failed, otherwise `passed` only for a nonemp
 
 An allowed response must be HTTP 200 with an object body whose `fixtureMarker` property exactly equals the expected marker. A denial must use an approved denial status, an object body with `error: 'ACCESS_DENIED'`, and must not contain protected data. Detect the marker as a substring of decoded string values or property names at any nesting level, including strings with escaped characters. When expected access is deny, any such marker is a failure regardless of HTTP status or denial wording. An allow when denial is expected or a denial when allowance is expected is `fail`. Matching trustworthy behavior is `pass`. Unknown expectations and transport errors take precedence and produce `inconclusive`. Other unexpected responses and missing markers are `inconclusive`. Output is `{ verdict, code }`. Tests must assert behavior, not require particular wording of reason codes.
 
-These are low-level pure primitives. A primitive pass is not an authoritative scenario result. The later evidence boundary must enforce observation IDs, provenance, ownership, freshness, target identity, immutable feature configuration, synchronization deadlines, and repeated confirmation before recording assertions. The model never supplies replacement evidence to that boundary.
+These are low-level pure primitives. A primitive pass is not an authoritative scenario result. The evidence boundary enforces observation IDs, provenance, ownership, freshness, target identity, immutable feature configuration, synchronization deadlines, and repeated confirmation before recording assertions. The model never supplies replacement evidence to that boundary.
 
 Transport-failure addition: when `transportError` is true, `status` may be null to represent the absence of any HTTP response. Do not manufacture an HTTP status for a blocked connection. A null status remains invalid when `transportError` is false. All transport failures remain inconclusive.
 
 ## Further boundaries
 
-HTTP, MCP, persistence, approval, and browser contracts will be added before their independent test slices. Existing routes and required behaviors are specified in PRD sections 8 through 14. No seam-specific tests may depend on internal collaborators. There is no implementation source in this contract package.
+The contract archive now covers HTTP, persistence, approvals, browser probes, replay, repair, and artifacts. Existing routes and required behaviors are specified in PRD sections 8 through 14. Public-boundary tests do not depend on internal collaborators. The archive contains no implementation source.

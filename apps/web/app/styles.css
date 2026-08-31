@@ -1380,6 +1380,29 @@ tbody tr:hover {
 .check-list {
   padding: 0 24px 20px;
 }
+.doctor-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 0 4px;
+}
+.doctor-summary strong,
+.doctor-scope strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.doctor-summary p,
+.doctor-scope p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.doctor-scope {
+  padding: 16px 0 18px 35px;
+  border-bottom: 1px solid var(--line);
+}
 .check-row {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) auto;
