@@ -24,6 +24,7 @@ const observations = scenarioIds.flatMap((scenarioId) =>
     id: `observation-${scenarioId}-${source}`,
     runId,
     scenarioId,
+    subjectId: scenarioId === 'SC01' ? 'owned-free-user' : 'owned-paid-user',
     source,
     policyHash,
     targetBuild,
@@ -67,10 +68,23 @@ const report = {
       .map((observation) => observation.id),
   })),
   observations,
+  artifacts: scenarioIds.map((scenarioId) => ({
+    id: `artifact-${scenarioId}`,
+    sha256: scenarioId.toLowerCase().charCodeAt(3).toString(16).padStart(64, '0'),
+    contentType: 'image/png' as const,
+    source: 'browser' as const,
+    collectedAt: new Date(1).toISOString(),
+    runId,
+    observationId: `observation-${scenarioId}-browser`,
+  })),
   cleanup: [
     { resourceId: 'owned-free-user', status: 'deleted' as const },
     { resourceId: 'owned-paid-user', status: 'deleted' as const },
   ],
+  cleanupInventory: {
+    resourceIds: ['owned-free-user', 'owned-paid-user'],
+    deleteResourceIds: ['owned-free-user', 'owned-paid-user'],
+  },
   coverageLimits: ['Synthetic contract fixture.'],
   coverageLimitCodes: [
     'SINGLE_TARGET_SINGLE_PRICE_SINGLE_FEATURE',
@@ -124,7 +138,7 @@ const completedReview = {
           verdict: 'confirmed',
           summary: 'Cleanup and the stated coverage limits are recorded.',
           citations: {
-            reportFields: ['cleanup', 'coverageLimitCodes'],
+            reportFields: ['cleanup', 'cleanupBindings', 'coverageLimitCodes'],
             scenarioIds: [],
             observationIds: [],
           },
@@ -160,7 +174,7 @@ const completedReview = {
         {
           id: 'ARTIFACT_ORACLE_RUNTIME_BINDINGS',
           verdict: 'confirmed',
-          summary: 'The optional artifact, oracle, and runtime bindings are explicit.',
+          summary: 'The required artifact, oracle, and runtime bindings are explicit.',
           citations: {
             reportFields: ['artifacts', 'oracle', 'runtime'],
             scenarioIds: [],
@@ -443,11 +457,32 @@ describe('skill-backed evidence review', () => {
           buildMismatchIds: [],
           modeMismatchIds: [],
         },
+        artifacts: {
+          count: 4,
+          expectedCount: 4,
+          missingObservationIds: [],
+          duplicateObservationIds: [],
+          unexpectedObservationIds: [],
+          bindingIssueIds: [],
+        },
+        cleanupBindings: {
+          expectedCount: 2,
+          expectedDeletedCount: 2,
+          receiptCount: 2,
+          duplicateResourceHashes: [],
+          inventoryDuplicateResourceHashes: [],
+          missingResourceHashes: [],
+          unexpectedResourceHashes: [],
+          nonDeletedTargetResourceHashes: [],
+          invalidDeletedResourceHashes: [],
+        },
         coverageLimitHashes: [expect.stringMatching(/^[a-f0-9]{64}$/)],
         coverageLimitCodes: report.coverageLimitCodes,
       },
       reportHash: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
+    expect(JSON.stringify(read)).not.toContain('owned-free-user');
+    expect(JSON.stringify(read)).not.toContain('owned-paid-user');
 
     const recorded = await coordinator.tool(runId, 'record_evidence_review', completedReview);
     expect(recorded).toMatchObject({ runId, status: 'completed', verdict: 'confirmed' });
@@ -491,6 +526,26 @@ describe('skill-backed evidence review', () => {
 
     await expect(
       coordinator.tool(runId, 'record_evidence_review', falseConfirmation),
+    ).rejects.toMatchObject({ code: 'EVIDENCE_REVIEW_OBJECTIVE_DEFECT_IGNORED' });
+    expect(coordinator.view(runId)).toMatchObject({ status: 'running' });
+  });
+
+  it('rejects a false confirmation when required browser screenshots are missing', async () => {
+    const { coordinator } = fixture({ ...report, artifacts: [] });
+    await coordinator.start(runId);
+
+    await expect(
+      coordinator.tool(runId, 'record_evidence_review', completedReview),
+    ).rejects.toMatchObject({ code: 'EVIDENCE_REVIEW_OBJECTIVE_DEFECT_IGNORED' });
+    expect(coordinator.view(runId)).toMatchObject({ status: 'running' });
+  });
+
+  it('rejects a false confirmation when target cleanup misses an owned user', async () => {
+    const { coordinator } = fixture({ ...report, cleanup: report.cleanup.slice(0, 1) });
+    await coordinator.start(runId);
+
+    await expect(
+      coordinator.tool(runId, 'record_evidence_review', completedReview),
     ).rejects.toMatchObject({ code: 'EVIDENCE_REVIEW_OBJECTIVE_DEFECT_IGNORED' });
     expect(coordinator.view(runId)).toMatchObject({ status: 'running' });
   });

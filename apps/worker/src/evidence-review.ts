@@ -127,6 +127,12 @@ const reviewSourceSchema = z.object({
     )
     .max(100)
     .default([]),
+  cleanupInventory: z
+    .strictObject({
+      resourceIds: z.array(z.string().min(1).max(500)).max(100),
+      deleteResourceIds: z.array(z.string().min(1).max(500)).max(100),
+    })
+    .default({ resourceIds: [], deleteResourceIds: [] }),
   coverageLimits: z.array(z.string().max(10_000)).max(100).default([]),
   coverageLimitCodes: z.array(z.enum(COVERAGE_LIMIT_CODES)),
   oracle: z
@@ -191,6 +197,12 @@ function dataOnlyReviewReport(value: ReturnType<typeof parseJson>) {
   const observationById = new Map(
     source.observations.map((observation) => [observation.id, observation]),
   );
+  const browserObservationIds = source.observations
+    .filter((observation) => observation.source === 'browser')
+    .map((observation) => observation.id);
+  const browserObservationIdSet = new Set(browserObservationIds);
+  const artifactObservationIds = source.artifacts.map((artifact) => artifact.observationId);
+  const artifactObservationIdSet = new Set(artifactObservationIds);
   const artifactBindingIssueIds = source.artifacts
     .filter((artifact) => {
       const observation = observationById.get(artifact.observationId);
@@ -203,6 +215,40 @@ function dataOnlyReviewReport(value: ReturnType<typeof parseJson>) {
       );
     })
     .map((artifact) => artifact.observationId);
+  const missingArtifactObservationIds = browserObservationIds.filter(
+    (id) => !artifactObservationIdSet.has(id),
+  );
+  const duplicateArtifactObservationIds = artifactObservationIds.filter(
+    (id, index) => artifactObservationIds.indexOf(id) !== index,
+  );
+  const unexpectedArtifactObservationIds = artifactObservationIds.filter(
+    (id) => !browserObservationIdSet.has(id),
+  );
+  const cleanupResourceIds = source.cleanup.map((receipt) => receipt.resourceId);
+  const cleanupResourceIdSet = new Set(cleanupResourceIds);
+  const expectedCleanupResourceIdSet = new Set(source.cleanupInventory.resourceIds);
+  const expectedDeletedResourceIdSet = new Set(source.cleanupInventory.deleteResourceIds);
+  const cleanupReceiptByResourceId = new Map(
+    source.cleanup.map((receipt) => [receipt.resourceId, receipt]),
+  );
+  const cleanupDuplicateResourceIds = cleanupResourceIds.filter(
+    (id, index) => cleanupResourceIds.indexOf(id) !== index,
+  );
+  const cleanupInventoryDuplicateResourceIds = source.cleanupInventory.resourceIds.filter(
+    (id, index) => source.cleanupInventory.resourceIds.indexOf(id) !== index,
+  );
+  const missingCleanupResourceIds = source.cleanupInventory.resourceIds.filter(
+    (id) => !cleanupResourceIdSet.has(id),
+  );
+  const unexpectedCleanupResourceIds = cleanupResourceIds.filter(
+    (id) => !expectedCleanupResourceIdSet.has(id),
+  );
+  const nonDeletedTargetResourceIds = source.cleanupInventory.deleteResourceIds.filter(
+    (id) => cleanupReceiptByResourceId.get(id)?.status !== 'deleted',
+  );
+  const invalidDeletedResourceIds = source.cleanupInventory.deleteResourceIds.filter(
+    (id) => !expectedCleanupResourceIdSet.has(id),
+  );
   const targetFeatureBinding = source.run.targetFeature
     ? (() => {
         const feature = source.run.targetFeature;
@@ -282,14 +328,31 @@ function dataOnlyReviewReport(value: ReturnType<typeof parseJson>) {
     },
     artifacts: {
       count: source.artifacts.length,
-      observationIds: source.artifacts.map((artifact) => artifact.observationId),
+      expectedCount: browserObservationIds.length,
+      observationIds: artifactObservationIds,
       bindingIssueIds: artifactBindingIssueIds,
+      missingObservationIds: missingArtifactObservationIds,
+      duplicateObservationIds: duplicateArtifactObservationIds,
+      unexpectedObservationIds: unexpectedArtifactObservationIds,
     },
     cleanup: source.cleanup.map((item) => ({
       resourceHash: hashValue(item.resourceId),
       status: item.status,
       codeHash: item.code ? hashValue(item.code) : null,
     })),
+    cleanupBindings: {
+      expectedCount: expectedCleanupResourceIdSet.size,
+      expectedDeletedCount: expectedDeletedResourceIdSet.size,
+      receiptCount: source.cleanup.length,
+      duplicateResourceHashes: cleanupDuplicateResourceIds.map((id) => hashValue(id)),
+      inventoryDuplicateResourceHashes: cleanupInventoryDuplicateResourceIds.map((id) =>
+        hashValue(id),
+      ),
+      missingResourceHashes: missingCleanupResourceIds.map((id) => hashValue(id)),
+      unexpectedResourceHashes: unexpectedCleanupResourceIds.map((id) => hashValue(id)),
+      nonDeletedTargetResourceHashes: nonDeletedTargetResourceIds.map((id) => hashValue(id)),
+      invalidDeletedResourceHashes: invalidDeletedResourceIds.map((id) => hashValue(id)),
+    },
     coverageLimitHashes: source.coverageLimits.map((limit) => hashValue(limit)),
     coverageLimitCodes: source.coverageLimitCodes,
     oracle: source.oracle
@@ -370,6 +433,15 @@ function objectiveDefectCriteria(report: ReturnType<typeof dataOnlyReviewReport>
     defects.add('EVIDENCE_COVERAGE');
   if (
     report.cleanup.length === 0 ||
+    report.cleanupBindings.expectedCount !== (report.run.mode === 'polar_sandbox' ? 5 : 2) ||
+    report.cleanupBindings.expectedDeletedCount !== 2 ||
+    report.cleanupBindings.receiptCount !== report.cleanupBindings.expectedCount ||
+    report.cleanupBindings.duplicateResourceHashes.length > 0 ||
+    report.cleanupBindings.inventoryDuplicateResourceHashes.length > 0 ||
+    report.cleanupBindings.missingResourceHashes.length > 0 ||
+    report.cleanupBindings.unexpectedResourceHashes.length > 0 ||
+    report.cleanupBindings.nonDeletedTargetResourceHashes.length > 0 ||
+    report.cleanupBindings.invalidDeletedResourceHashes.length > 0 ||
     report.cleanup.some((receipt) => receipt.status === 'leftover') ||
     report.coverageLimitCodes.length === 0
   )
@@ -404,7 +476,11 @@ function objectiveDefectCriteria(report: ReturnType<typeof dataOnlyReviewReport>
   )
     defects.add('OBSERVATION_BINDINGS');
   if (
+    report.artifacts.count !== report.artifacts.expectedCount ||
     report.artifacts.bindingIssueIds.length > 0 ||
+    report.artifacts.missingObservationIds.length > 0 ||
+    report.artifacts.duplicateObservationIds.length > 0 ||
+    report.artifacts.unexpectedObservationIds.length > 0 ||
     report.oracle === null ||
     !report.runtime ||
     !['done', 'error'].includes(report.runtime.status) ||
@@ -421,6 +497,7 @@ const reviewReportField = z.enum([
   'observationBindings',
   'artifacts',
   'cleanup',
+  'cleanupBindings',
   'coverageLimitCodes',
   'oracle',
   'runtime',
@@ -493,7 +570,7 @@ const legacyReviewerSchema = z.strictObject({
 const requiredReportFields = {
   SCENARIO_ASSERTIONS: ['scenarios'],
   EVIDENCE_COVERAGE: ['scenarios', 'observationBindings'],
-  CLEANUP_AND_LIMITS: ['cleanup', 'coverageLimitCodes'],
+  CLEANUP_AND_LIMITS: ['cleanup', 'cleanupBindings', 'coverageLimitCodes'],
   RUN_CONFIGURATION_BINDINGS: ['run', 'configurationHash'],
   OBSERVATION_BINDINGS: ['run', 'observationBindings'],
   ARTIFACT_ORACLE_RUNTIME_BINDINGS: ['artifacts', 'oracle', 'runtime'],

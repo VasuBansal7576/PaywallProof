@@ -1987,8 +1987,20 @@ export class Controller {
   }
   private reviewSource(runId: string) {
     const view = this.baseRunView(runId);
+    const context = this.context(runId);
+    const targetResourceIds = [context.free?.principalId, context.paid?.principalId].filter(
+      (id): id is string => id !== undefined,
+    );
+    const providerResourceIds =
+      view.run.mode === 'polar_sandbox' && this.polar
+        ? this.polar.listOwned(runId).map((resource) => resource.id)
+        : [];
     return {
       ...view,
+      cleanupInventory: {
+        resourceIds: [...targetResourceIds, ...providerResourceIds],
+        deleteResourceIds: targetResourceIds,
+      },
       parentRunId: null,
       project: this.project(view.run.projectId),
       versions: {

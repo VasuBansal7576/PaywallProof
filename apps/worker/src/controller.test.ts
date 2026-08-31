@@ -491,6 +491,15 @@ describe('adapter doctor control surface', () => {
       bindingHash: run.approval.bindingHash,
       decision: 'allow',
     });
+    controller.put('context', run.id, {
+      ...controller.context(run.id),
+      free: { principalId: 'owned-free-user', runId: run.id, fixtureMarker: 'free-marker' },
+      paid: { principalId: 'owned-paid-user', runId: run.id, fixtureMarker: 'paid-marker' },
+      cleanup: [
+        { resourceId: 'owned-free-user', status: 'deleted' },
+        { resourceId: 'owned-paid-user', status: 'deleted' },
+      ],
+    });
     controller.runs.finishRun({ runId: run.id, verdicts: ['inconclusive'] });
     lifecycleRegistration.mockResolvedValue({
       data: {
@@ -556,7 +565,17 @@ describe('adapter doctor control surface', () => {
         operationId: 'read-report-a1',
       }),
     ).resolves.toMatchObject({
-      report: { run: { id: run.id, status: 'completed' } },
+      report: {
+        run: { id: run.id, status: 'completed' },
+        cleanupBindings: {
+          expectedCount: 2,
+          expectedDeletedCount: 2,
+          receiptCount: 2,
+          missingResourceHashes: [],
+          unexpectedResourceHashes: [],
+          nonDeletedTargetResourceHashes: [],
+        },
+      },
       reportHash: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
   });
