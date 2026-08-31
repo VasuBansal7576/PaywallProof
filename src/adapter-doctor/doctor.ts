@@ -1,5 +1,5 @@
 import { hashValue } from '#domain';
-import { targetDescriptionSchema } from '#integrations/target-contract';
+import { bindTargetFeatureProbe, targetDescriptionSchema } from '#integrations/target-contract';
 import { z } from 'zod';
 import {
   ADAPTER_DOCTOR_SCOPE,
@@ -52,6 +52,10 @@ function notObserved(id: AdapterDoctorCheckId): AdapterDoctorCheck {
   };
 }
 
+function withNotObservedSuffix(observed: readonly AdapterDoctorCheck[]): AdapterDoctorCheck[] {
+  return checkOrder.map((id, index) => observed[index] ?? notObserved(id));
+}
+
 function noStore(response: AdapterDoctorResponse): boolean {
   return (
     response.headers.cacheControl
@@ -95,7 +99,7 @@ function blockedReport(input: {
   checks: AdapterDoctorCheck[];
 }): AdapterDoctorReport {
   return adapterDoctorReportSchema.parse({
-    schemaVersion: 1,
+    schemaVersion: 2,
     verdict: 'blocked',
     scope: ADAPTER_DOCTOR_SCOPE,
     targetId: input.targetId,
@@ -121,16 +125,14 @@ export function createAdapterDoctor(input: {
         return blockedReport({
           targetId: input.targetId,
           expectedBuildId: input.expectedBuildId,
-          checks: checkOrder.map((id) =>
-            id === 'description'
-              ? blocked(
-                  id,
-                  transportFailureCode(error),
-                  'The configured target could not be inspected.',
-                  'Verify the staging origin, network policy, and adapter service health.',
-                )
-              : notObserved(id),
-          ),
+          checks: withNotObservedSuffix([
+            blocked(
+              'description',
+              transportFailureCode(error),
+              'The configured target could not be inspected.',
+              'Verify the staging origin, network policy, and adapter service health.',
+            ),
+          ]),
         });
       }
       const parsed =
@@ -141,18 +143,16 @@ export function createAdapterDoctor(input: {
         return blockedReport({
           targetId: input.targetId,
           expectedBuildId: input.expectedBuildId,
-          checks: checkOrder.map((id) =>
-            id === 'description'
-              ? blocked(
-                  id,
-                  described.status === 401
-                    ? 'ADAPTER_CREDENTIAL_REJECTED'
-                    : 'TARGET_DESCRIPTION_INVALID',
-                  'The authenticated description did not satisfy target contract v1.',
-                  'Check the adapter credential and return the exact versioned description.',
-                )
-              : notObserved(id),
-          ),
+          checks: withNotObservedSuffix([
+            blocked(
+              'description',
+              described.status === 401
+                ? 'ADAPTER_CREDENTIAL_REJECTED'
+                : 'TARGET_DESCRIPTION_INVALID',
+              'The authenticated description did not satisfy target contract v1.',
+              'Check the adapter credential and return the exact versioned description.',
+            ),
+          ]),
         });
 
       const description = parsed.data;
@@ -178,13 +178,7 @@ export function createAdapterDoctor(input: {
         return blockedReport({
           targetId: input.targetId,
           expectedBuildId: input.expectedBuildId,
-          checks: [
-            descriptionCheck,
-            buildCheck,
-            notObserved('staging_authentication'),
-            notObserved('ordinary_feature_isolation'),
-            notObserved('response_cache_policy'),
-          ],
+          checks: withNotObservedSuffix([descriptionCheck, buildCheck]),
         });
       let unauthenticated: AdapterDoctorResponse;
       try {
@@ -196,7 +190,7 @@ export function createAdapterDoctor(input: {
         return blockedReport({
           targetId: input.targetId,
           expectedBuildId: input.expectedBuildId,
-          checks: [
+          checks: withNotObservedSuffix([
             descriptionCheck,
             buildCheck,
             blocked(
@@ -205,9 +199,7 @@ export function createAdapterDoctor(input: {
               'The staging authentication check could not be completed safely.',
               'Remove redirects and verify the staging adapter is reachable at the configured origin.',
             ),
-            notObserved('ordinary_feature_isolation'),
-            notObserved('response_cache_policy'),
-          ],
+          ]),
         });
       }
       const stagingCheck =
@@ -231,13 +223,7 @@ export function createAdapterDoctor(input: {
         return blockedReport({
           targetId: input.targetId,
           expectedBuildId: input.expectedBuildId,
-          checks: [
-            descriptionCheck,
-            buildCheck,
-            stagingCheck,
-            notObserved('ordinary_feature_isolation'),
-            notObserved('response_cache_policy'),
-          ],
+          checks: withNotObservedSuffix([descriptionCheck, buildCheck, stagingCheck]),
         });
       let feature: AdapterDoctorResponse;
       try {
@@ -249,7 +235,7 @@ export function createAdapterDoctor(input: {
         return blockedReport({
           targetId: input.targetId,
           expectedBuildId: input.expectedBuildId,
-          checks: [
+          checks: withNotObservedSuffix([
             descriptionCheck,
             buildCheck,
             stagingCheck,
@@ -259,8 +245,7 @@ export function createAdapterDoctor(input: {
               'The protected-feature isolation check could not be completed safely.',
               'Remove redirects and keep the protected feature on the configured target origin.',
             ),
-            notObserved('response_cache_policy'),
-          ],
+          ]),
         });
       }
       const featureCheck =
@@ -284,13 +269,7 @@ export function createAdapterDoctor(input: {
         return blockedReport({
           targetId: input.targetId,
           expectedBuildId: input.expectedBuildId,
-          checks: [
-            descriptionCheck,
-            buildCheck,
-            stagingCheck,
-            featureCheck,
-            notObserved('response_cache_policy'),
-          ],
+          checks: withNotObservedSuffix([descriptionCheck, buildCheck, stagingCheck, featureCheck]),
         });
       const checks: AdapterDoctorCheck[] = [
         descriptionCheck,
@@ -316,8 +295,9 @@ export function createAdapterDoctor(input: {
           expectedBuildId: input.expectedBuildId,
           checks,
         });
+      const featureProbe = bindTargetFeatureProbe(description.feature);
       return adapterDoctorReportSchema.parse({
-        schemaVersion: 1,
+        schemaVersion: 2,
         verdict: 'compatible',
         scope: ADAPTER_DOCTOR_SCOPE,
         targetId: input.targetId,
@@ -326,6 +306,8 @@ export function createAdapterDoctor(input: {
         receipt: {
           description,
           featureConfigHash: hashValue(description.feature),
+          featureProbe: featureProbe.contract,
+          featureProbeHash: featureProbe.hash,
         },
       });
     },

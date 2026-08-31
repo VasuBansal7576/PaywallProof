@@ -11,10 +11,11 @@ export type WorkflowMode = 'local_replay' | 'polar_sandbox';
 
 const origin = 'http://127.0.0.1:8787';
 const workflowConfigSchema = z.object({
-  target: z.object({ id: z.string() }),
+  target: z.object({ id: z.string(), origin: z.url() }),
   repository: z.string(),
   defaultRef: z.string(),
   priceId: z.string(),
+  model: z.string(),
 });
 const workflowPreflightSchema = z.object({
   ready: z.boolean(),
@@ -33,6 +34,14 @@ const runDetailSchema = z.object({
       state: z.object({ verdict: z.string() }),
     }),
   ),
+});
+const checkoutNotReadySchema = z.object({
+  error: z.object({ code: z.literal('CHECKOUT_NOT_READY') }),
+});
+const checkoutContinuationPendingSchema = z.object({
+  error: z.object({
+    code: z.enum(['CHECKOUT_CONTINUATION_NOT_READY', 'CHECKOUT_PENDING']),
+  }),
 });
 
 async function operatorToken() {
@@ -66,7 +75,11 @@ export async function checkoutReadyForVerification(
     redirect: 'manual',
     signal: AbortSignal.timeout(10_000),
   });
-  if (response.status === 409) return false;
+  if (response.status === 409) {
+    const value: unknown = await response.json();
+    if (!checkoutNotReadySchema.safeParse(value).success) throw new Error('CHECKOUT_ROUTE_409');
+    return false;
+  }
   if (response.status !== 303 || !response.headers.get('location'))
     throw new Error(`CHECKOUT_ROUTE_${response.status}`);
   return true;
@@ -88,7 +101,12 @@ export async function continueCheckoutForVerification(
     body: '{}',
     signal: AbortSignal.timeout(15_000),
   });
-  if (response.status === 409) return false;
+  if (response.status === 409) {
+    const value: unknown = await response.json();
+    if (!checkoutContinuationPendingSchema.safeParse(value).success)
+      throw new Error('CHECKOUT_CONTINUATION_409');
+    return false;
+  }
   const value: unknown = await response.json();
   if (!response.ok) throw new Error(`CHECKOUT_CONTINUATION_${response.status}`);
   z.object({ status: z.literal('resumed'), turnId: z.string() }).parse(value);
@@ -110,6 +128,20 @@ export function workflowReadyForReport(runStatus: string, runtimeStatus: string 
   return runStatus === 'completed' && runtimeStatus === 'done';
 }
 
+export function workflowShouldPollCheckout(input: {
+  mode: WorkflowMode;
+  approved: boolean;
+  checkoutAnnounced: boolean;
+  runtimeStatus: string | undefined;
+}) {
+  return (
+    input.mode === 'polar_sandbox' &&
+    input.approved &&
+    !input.checkoutAnnounced &&
+    input.runtimeStatus === 'waiting_external'
+  );
+}
+
 export function workflowProjectRequest(
   config: z.infer<typeof workflowConfigSchema>,
   mode: WorkflowMode,
@@ -120,6 +152,8 @@ export function workflowProjectRequest(
     repository: config.repository,
     ref: config.defaultRef,
     targetId: config.target.id,
+    targetOrigin: config.target.origin,
+    modelConsentModel: config.model,
     ownershipConfirmed: true,
     modelConsent: true,
   };
@@ -255,8 +289,12 @@ export async function verifyWorkflow(mode: WorkflowMode): Promise<void> {
         approved = true;
       }
       if (
-        mode === 'polar_sandbox' &&
-        !checkoutAnnounced &&
+        workflowShouldPollCheckout({
+          mode,
+          approved,
+          checkoutAnnounced,
+          runtimeStatus: detail.runtime?.status,
+        }) &&
         (await checkoutReadyForVerification(token, run.id))
       ) {
         checkoutAnnounced = true;

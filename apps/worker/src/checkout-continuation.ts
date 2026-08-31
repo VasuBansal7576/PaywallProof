@@ -19,10 +19,16 @@ const confirmedSchema = z.strictObject({
   ...continuationFields,
   turnId: identifier,
 });
+const unknownSchema = z.strictObject({
+  status: z.literal('unknown'),
+  ...continuationFields,
+  reason: z.enum(['RUNTIME_CONTINUATION_NOT_FOUND', 'RUNTIME_LOOKUP_UNAVAILABLE']).optional(),
+});
 const checkoutContinuationSchema = z.discriminatedUnion('status', [
   observedSchema,
   dispatchedSchema,
   confirmedSchema,
+  unknownSchema,
 ]);
 
 type CheckoutObserved = z.infer<typeof observedSchema>;
@@ -30,6 +36,9 @@ type CheckoutDispatched = z.infer<typeof dispatchedSchema>;
 type CheckoutConfirmed = z.infer<typeof confirmedSchema>;
 type CheckoutPending = CheckoutObserved | CheckoutDispatched;
 type CheckoutContinuation = z.infer<typeof checkoutContinuationSchema>;
+type ResumeRuntimeState =
+  | { status: 'running' }
+  | { status: 'error'; error: 'RUN_STOPPED_AFTER_CONTINUATION' };
 
 /** Persists checkout state and makes confirmation indivisible from runtime resumption. */
 export class CheckoutContinuationStore {
@@ -56,22 +65,35 @@ export class CheckoutContinuationStore {
     return dispatched;
   }
 
-  confirm(runId: string, continuation: CheckoutPending, turnId: string): CheckoutConfirmed {
+  confirm(
+    runId: string,
+    continuation: CheckoutPending,
+    turnId: string,
+    runtime: ResumeRuntimeState = { status: 'running' },
+  ): CheckoutConfirmed {
     const confirmed = confirmedSchema.parse({
       status: 'confirmed',
       sessionId: continuation.sessionId,
       previousTurnId: continuation.previousTurnId,
       turnId,
     });
-    this.commitResume(runId, confirmed);
+    this.commitResume(runId, confirmed, runtime);
     return confirmed;
   }
 
-  restore(runId: string, continuation: CheckoutConfirmed) {
-    this.commitResume(runId, continuation);
+  restore(
+    runId: string,
+    continuation: CheckoutConfirmed,
+    runtime: ResumeRuntimeState = { status: 'running' },
+  ) {
+    this.commitResume(runId, continuation, runtime);
   }
 
-  private commitResume(runId: string, continuation: CheckoutConfirmed) {
+  private commitResume(
+    runId: string,
+    continuation: CheckoutConfirmed,
+    runtime: ResumeRuntimeState,
+  ) {
     this.documents.putAll([
       { kind: 'checkout-continuation', id: runId, value: continuation },
       {
@@ -81,7 +103,7 @@ export class CheckoutContinuationStore {
           sessionId: continuation.sessionId,
           turnId: continuation.turnId,
           lastSequenceNumber: 0,
-          status: 'running',
+          ...runtime,
         },
       },
     ]);

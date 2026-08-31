@@ -746,6 +746,7 @@ describe('independent durable control: strict boundaries', () => {
     await rejectsCode(() => store.createRun(runInput({ policy })), 'INVALID_INPUT');
   });
 
+  // Implementation-aware regression added after target-descriptor persistence.
   it('binds a supplied target descriptor to the same feature hash', async () => {
     const store = await connect();
     const targetFeature = {

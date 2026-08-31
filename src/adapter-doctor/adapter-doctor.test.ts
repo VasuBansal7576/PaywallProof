@@ -4,8 +4,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TargetTransport } from '#integrations/network';
+import { bindTargetFeatureProbe } from '#integrations/target-contract';
 import { createReferenceApp } from '#reference';
-import { createAdapterDoctor, HttpAdapterDoctorTarget } from './index.ts';
+import {
+  adapterDoctorReportSchema,
+  createAdapterDoctor,
+  HttpAdapterDoctorTarget,
+} from './index.ts';
+import { hashValue } from '#domain';
 
 const buildId = 'a'.repeat(40);
 const adapterToken = 'synthetic-adapter-doctor-token';
@@ -25,6 +31,7 @@ async function fixture(
     rejectConfiguredCredential?: boolean;
     customFeature?: boolean;
     invalidJsonMediaType?: boolean;
+    targetSuppliedPredicate?: boolean;
     nonCanonicalFeaturePath?: '/api/./admin' | '/api/%2e%2e/admin';
   } = {},
 ) {
@@ -60,6 +67,30 @@ async function fixture(
             return Response.json(
               { error: 'WRONG_AUTH_CONTRACT' },
               { status: 401, headers: { 'Cache-Control': 'no-store' } },
+            );
+          if (
+            options.targetSuppliedPredicate &&
+            path === '/staging/describe' &&
+            request.headers.has('authorization')
+          )
+            return Response.json(
+              {
+                adapterVersion: '1',
+                environment: 'test',
+                buildId,
+                billingTimeModel: 'provider_status',
+                feature: {
+                  id: 'pro_export',
+                  method: 'GET',
+                  path: '/api/export',
+                  denialStatuses: [403],
+                  browserPath: '/dashboard',
+                  actionTestId: 'export-button',
+                  resultTestId: 'export-result',
+                  allowPredicate: 'target-authored-code-is-not-a-contract',
+                },
+              },
+              { headers: { 'Cache-Control': 'no-store' } },
             );
           if (
             options.nonCanonicalFeaturePath &&
@@ -228,9 +259,41 @@ describe('Adapter Doctor', () => {
 
     expect(report.verdict).toBe('compatible');
     if (report.verdict !== 'compatible') throw new Error('Expected a compatible report');
+    expect(report.schemaVersion).toBe(2);
     expect(report.receipt.description.buildId).toBe(buildId);
     expect(report.receipt.description.feature.id).toBe('pro_export');
     expect(report.receipt.featureConfigHash).toMatch(/^[a-f0-9]{64}$/);
+    if (report.schemaVersion !== 2) throw new Error('Expected a bound probe receipt');
+    const binding = bindTargetFeatureProbe(report.receipt.description.feature);
+    expect(report.receipt.featureProbe).toEqual(binding.contract);
+    expect(report.receipt.featureProbeHash).toBe(binding.hash);
+    expect(report.receipt.featureProbe).toMatchObject({
+      featureId: 'pro_export',
+      api: {
+        method: 'GET',
+        path: '/api/export',
+        input: { authentication: 'ordinary_session_cookie', body: 'none' },
+        allow: { status: 200, markerProperty: 'fixtureMarker', markerMatch: 'exact' },
+        denial: {
+          statuses: [403],
+          errorProperty: 'error',
+          errorValue: 'ACCESS_DENIED',
+          protectedMarker: 'absent_at_any_depth',
+        },
+      },
+      browser: {
+        page: 'fresh',
+        path: '/dashboard',
+        action: { kind: 'click', testId: 'export-button' },
+        result: {
+          testId: 'export-result',
+          statusAttribute: 'data-status',
+          allowStatus: 'allowed',
+          denyStatus: 'denied',
+        },
+        network: { method: 'GET', path: '/api/export' },
+      },
+    });
     expect(report.checks.map(({ id, status }) => ({ id, status }))).toEqual([
       { id: 'description', status: 'pass' },
       { id: 'build_binding', status: 'pass' },
@@ -347,6 +410,20 @@ describe('Adapter Doctor', () => {
     });
   });
 
+  it('rejects target-supplied predicate fields instead of treating them as executable rules', async () => {
+    const { doctor, requests } = await fixture({ targetSuppliedPredicate: true });
+
+    const report = await doctor.inspect();
+
+    expect(report.verdict).toBe('blocked');
+    expect(report.checks[0]).toMatchObject({
+      id: 'description',
+      status: 'blocked',
+      code: 'TARGET_DESCRIPTION_INVALID',
+    });
+    expect(requests).toHaveLength(1);
+  });
+
   it('rejects a JSON-like media type that is not application/json', async () => {
     const { doctor, requests } = await fixture({ invalidJsonMediaType: true });
 
@@ -423,7 +500,34 @@ describe('Adapter Doctor', () => {
       browserPath: '/admin',
       denialStatuses: [402, 403],
     });
+    if (report.schemaVersion !== 2) throw new Error('Expected a bound probe receipt');
+    expect(report.receipt.featureProbe).toMatchObject({
+      featureId: 'pipeline_export',
+      api: { path: '/api/paywallproof/export', denial: { statuses: [402, 403] } },
+      browser: {
+        path: '/admin',
+        action: { testId: 'pipeline-export-button' },
+        result: { testId: 'pipeline-export-result' },
+      },
+    });
     expect(requests[2]?.path).toBe('/api/paywallproof/export');
+  });
+
+  it('continues to parse a sound saved schema-v1 report', async () => {
+    const { doctor } = await fixture();
+    const current = await doctor.inspect();
+    if (current.verdict !== 'compatible') throw new Error('Expected a compatible report');
+
+    const legacy = {
+      ...current,
+      schemaVersion: 1,
+      receipt: {
+        description: current.receipt.description,
+        featureConfigHash: hashValue(current.receipt.description.feature),
+      },
+    };
+
+    expect(adapterDoctorReportSchema.parse(legacy)).toEqual(legacy);
   });
 
   it('classifies a platform timeout without probing dependent routes', async () => {

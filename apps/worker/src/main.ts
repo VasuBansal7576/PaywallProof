@@ -1,8 +1,8 @@
 import { serve } from '@hono/node-server';
 import { resolve } from 'node:path';
-import { createControlApp } from './http.ts';
+import { createControlApp, startAfterRecovery } from './http.ts';
 import { artifactRetentionFromDays } from './artifacts.ts';
-import { repairProfileFromEnvironment } from './repair-profile.ts';
+import { REFERENCE_REPAIR_TARGET, repairProfileFromEnvironment } from './repair-profile.ts';
 function required(key: string) {
   const value = process.env[key];
   if (!value) throw new Error(`Missing ${key}; use pnpm dev to configure local services.`);
@@ -12,15 +12,18 @@ const control = createControlApp({
   databasePath: process.env.CONTROL_DATABASE_PATH ?? resolve('.local/control-v2.sqlite'),
   artifactDirectory: resolve('.local/artifacts'),
   artifactRetentionMs: artifactRetentionFromDays(process.env.ARTIFACT_RETENTION_DAYS),
-  targetId: process.env.TARGET_ID ?? 'reference',
-  targetOrigin: process.env.TARGET_ORIGIN ?? 'http://127.0.0.1:3001',
+  targetId: process.env.TARGET_ID ?? REFERENCE_REPAIR_TARGET.id,
+  targetOrigin: process.env.TARGET_ORIGIN ?? REFERENCE_REPAIR_TARGET.origin,
   workerOrigin: 'http://127.0.0.1:8787',
   webOrigin: 'http://127.0.0.1:3000',
   adapterToken: required('TARGET_ADAPTER_TOKEN'),
   replaySecret: required('LOCAL_REPLAY_SECRET'),
   operatorToken: required('OPERATOR_TOKEN'),
-  repository: process.env.PROJECT_REPOSITORY ?? 'VasuBansal7576/PaywallProof',
+  repository: process.env.PROJECT_REPOSITORY ?? REFERENCE_REPAIR_TARGET.repository,
   defaultRef: required('TARGET_BUILD_ID'),
+  reviewSkillRepository:
+    process.env.PAYWALLPROOF_REVIEW_SKILL_REPOSITORY ?? 'VasuBansal7576/PaywallProof',
+  reviewSkillRef: required('PAYWALLPROOF_REVIEW_SKILL_REF'),
   priceId: required('BILLING_PRICE_ID'),
   polarToken: process.env.POLAR_ACCESS_TOKEN,
   polarOrganizationId: process.env.POLAR_ORGANIZATION_ID,
@@ -30,8 +33,9 @@ const control = createControlApp({
   model: process.env.TRUEFORGE_MODEL ?? 'paywallproof-local/qwen3-4b-instruct',
   repairProfile: repairProfileFromEnvironment(process.env),
 });
-const server = serve({ fetch: control.app.fetch, hostname: '127.0.0.1', port: 8787 });
-void control.controller.recover();
+const server = await startAfterRecovery(control.controller, () =>
+  serve({ fetch: control.app.fetch, hostname: '127.0.0.1', port: 8787 }),
+);
 process.stderr.write('PaywallProof worker listening on http://127.0.0.1:8787\n');
 for (const signal of ['SIGINT', 'SIGTERM'] as const)
   process.once(signal, () => {

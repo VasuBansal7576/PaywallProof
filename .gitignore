@@ -4,6 +4,8 @@ node_modules/
 **/next-env.d.ts
 dist/
 coverage/
+*.log
+*.tsbuildinfo
 .env
 .env.*
 !.env.example

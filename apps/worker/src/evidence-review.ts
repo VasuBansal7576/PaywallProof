@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { hashValue, identifier, parseJson } from '#domain';
+import { bindTargetFeatureProbe, targetFeatureSchema } from '#integrations/target-contract';
 import type { RuntimeTurn, TrueForgeAdapter } from '#integrations/trueforge';
 import type { ControlDocuments } from './control-documents.ts';
+import { COVERAGE_LIMIT_CODES } from './coverage-limits.ts';
 
 export const EVIDENCE_REVIEW_SKILL = 'paywallproof-evidence-review';
 export const EVIDENCE_REVIEW_TOOLS = ['read_run_report', 'record_evidence_review'] as const;
@@ -19,6 +21,12 @@ const sourceIdentifier = z
   .min(1)
   .max(255)
   .refine((value) => value.trim() === value);
+const githubRepository = z
+  .string()
+  .min(3)
+  .max(200)
+  .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
+const immutableCommitRef = z.string().regex(/^[a-f0-9]{40}$/);
 const repositoryRef = sourceIdentifier
   .refine((value) => !/[\s~^:?*\\[\]]/.test(value))
   .refine((value) => !value.includes('..') && !value.includes('@{'))
@@ -45,7 +53,10 @@ const reviewSourceSchema = z.object({
     outcome: z.enum(['passed', 'failed', 'inconclusive']),
     targetBuild: sourceIdentifier,
     featureConfigHash: digestSchema.optional(),
+    featureProbeHash: digestSchema.optional(),
+    targetFeature: targetFeatureSchema.optional(),
     projectConfigHash: digestSchema.optional(),
+    cleanupConfigHash: digestSchema.optional(),
     mode: z.enum(['polar_sandbox', 'local_replay']).optional(),
     createdAt: safeTime.optional(),
     startedAt: safeTime.nullable().optional(),
@@ -117,14 +128,7 @@ const reviewSourceSchema = z.object({
     .max(100)
     .default([]),
   coverageLimits: z.array(z.string().max(10_000)).max(100).default([]),
-  coverageLimitCodes: z.array(
-    z.enum([
-      'SINGLE_TARGET_SINGLE_PRICE_SINGLE_FEATURE',
-      'PRODUCTION_BILLING_VARIANTS_NOT_TESTED',
-      'LOCAL_REPLAY_NOT_NATIVE_PROVIDER_DELIVERY',
-      'BUILD_SCOPED_NOT_SECURITY_CERTIFICATE',
-    ]),
-  ),
+  coverageLimitCodes: z.array(z.enum(COVERAGE_LIMIT_CODES)),
   oracle: z
     .object({
       hash: digestSchema,
@@ -199,6 +203,32 @@ function dataOnlyReviewReport(value: ReturnType<typeof parseJson>) {
       );
     })
     .map((artifact) => artifact.observationId);
+  const targetFeatureBinding = source.run.targetFeature
+    ? (() => {
+        const feature = source.run.targetFeature;
+        const descriptorHash = hashValue(feature);
+        const resolvedProbeHash = bindTargetFeatureProbe(feature).hash;
+        return {
+          descriptorHash,
+          resolvedProbeHash,
+          featureIdHash: hashValue(feature.id),
+          method: feature.method,
+          pathHash: hashValue(feature.path),
+          denialStatuses: feature.denialStatuses,
+          browserPathHash: hashValue(feature.browserPath),
+          actionTestIdHash: hashValue(feature.actionTestId),
+          resultTestIdHash: hashValue(feature.resultTestId),
+          featureConfigMatchesDescriptor:
+            source.run.featureConfigHash === undefined
+              ? null
+              : source.run.featureConfigHash === descriptorHash,
+          featureProbeMatchesResolvedContract:
+            source.run.featureProbeHash === undefined
+              ? null
+              : source.run.featureProbeHash === resolvedProbeHash,
+        };
+      })()
+    : null;
   return {
     schemaVersion: 2,
     run: {
@@ -208,7 +238,10 @@ function dataOnlyReviewReport(value: ReturnType<typeof parseJson>) {
       targetBuildHash,
       policyHash: source.run.policy.hash,
       featureConfigHash: source.run.featureConfigHash ?? null,
+      featureProbeHash: source.run.featureProbeHash ?? null,
+      targetFeatureBinding,
       projectConfigHash: source.run.projectConfigHash ?? null,
+      cleanupConfigHash: source.run.cleanupConfigHash ?? null,
       mode: source.run.mode ?? null,
       createdAt: source.run.createdAt ?? null,
       startedAt: source.run.startedAt ?? null,
@@ -280,6 +313,11 @@ function dataOnlyReviewReport(value: ReturnType<typeof parseJson>) {
     versionsHash: source.versions === undefined ? null : hashValue(source.versions),
   };
 }
+function legacyReviewReportWithoutCleanupBinding(report: ReturnType<typeof dataOnlyReviewReport>) {
+  const { cleanupConfigHash: _cleanupConfigHash, ...run } = report.run;
+  void _cleanupConfigHash;
+  return { ...report, run };
+}
 export const EVIDENCE_REVIEW_CRITERIA = {
   coverage: ['SCENARIO_ASSERTIONS', 'EVIDENCE_COVERAGE', 'CLEANUP_AND_LIMITS'],
   binding: [
@@ -288,6 +326,93 @@ export const EVIDENCE_REVIEW_CRITERIA = {
     'ARTIFACT_ORACLE_RUNTIME_BINDINGS',
   ],
 } as const;
+type EvidenceReviewCriterion =
+  (typeof EVIDENCE_REVIEW_CRITERIA)[keyof typeof EVIDENCE_REVIEW_CRITERIA][number];
+
+function objectiveDefectCriteria(report: ReturnType<typeof dataOnlyReviewReport>) {
+  const defects = new Set<EvidenceReviewCriterion>();
+  const requiredScenarioIds = ['SC01', 'SC02', 'SC03', 'SC04'];
+  const recordedScenarioIds = report.scenarios.map((scenario) => scenario.id);
+  const recordedScenarioIdSet = new Set<string>(recordedScenarioIds);
+  const assertionVerdicts = report.scenarios.flatMap((scenario) => [
+    scenario.api.verdict,
+    scenario.browser.verdict,
+    scenario.state.verdict,
+  ]);
+  const derivedOutcome = assertionVerdicts.includes('fail')
+    ? 'failed'
+    : assertionVerdicts.length === 12 && assertionVerdicts.every((verdict) => verdict === 'pass')
+      ? 'passed'
+      : 'inconclusive';
+  if (
+    recordedScenarioIds.length !== 4 ||
+    new Set(recordedScenarioIds).size !== 4 ||
+    requiredScenarioIds.some((id) => !recordedScenarioIdSet.has(id)) ||
+    assertionVerdicts.length !== 12 ||
+    report.run.verdicts.length !== 12 ||
+    hashValue(report.run.verdicts) !== hashValue(assertionVerdicts) ||
+    report.run.outcome !== derivedOutcome
+  )
+    defects.add('SCENARIO_ASSERTIONS');
+  const requiredSources = ['billing_provider', 'application', 'api_probe', 'browser'];
+  if (
+    report.observationBindings.count === 0 ||
+    report.scenarios.some((scenario) => {
+      const sourceSet = new Set<string>(scenario.sources);
+      return (
+        scenario.observationCount < requiredSources.length ||
+        requiredSources.some((source) => !sourceSet.has(source))
+      );
+    }) ||
+    report.observationBindings.unknownReferencedIds.length > 0 ||
+    report.observationBindings.unreferencedIds.length > 0
+  )
+    defects.add('EVIDENCE_COVERAGE');
+  if (
+    report.cleanup.length === 0 ||
+    report.cleanup.some((receipt) => receipt.status === 'leftover') ||
+    report.coverageLimitCodes.length === 0
+  )
+    defects.add('CLEANUP_AND_LIMITS');
+  const targetBinding = report.run.targetFeatureBinding;
+  if (
+    report.run.projectIdHash === null ||
+    report.run.featureConfigHash === null ||
+    report.run.featureProbeHash === null ||
+    report.run.projectConfigHash === null ||
+    report.run.cleanupConfigHash === null ||
+    report.run.mode === null ||
+    report.run.startedAt === null ||
+    report.run.approval?.decision !== 'allow' ||
+    !targetBinding ||
+    targetBinding.featureConfigMatchesDescriptor !== true ||
+    targetBinding.featureProbeMatchesResolvedContract !== true ||
+    report.configurationHash === null
+  )
+    defects.add('RUN_CONFIGURATION_BINDINGS');
+  if (
+    [
+      report.observationBindings.duplicateIds,
+      report.observationBindings.unknownReferencedIds,
+      report.observationBindings.unreferencedIds,
+      report.observationBindings.runMismatchIds,
+      report.observationBindings.scenarioMismatchIds,
+      report.observationBindings.policyMismatchIds,
+      report.observationBindings.buildMismatchIds,
+      report.observationBindings.modeMismatchIds,
+    ].some((ids) => ids.length > 0)
+  )
+    defects.add('OBSERVATION_BINDINGS');
+  if (
+    report.artifacts.bindingIssueIds.length > 0 ||
+    report.oracle === null ||
+    !report.runtime ||
+    !['done', 'error'].includes(report.runtime.status) ||
+    report.versionsHash === null
+  )
+    defects.add('ARTIFACT_ORACLE_RUNTIME_BINDINGS');
+  return defects;
+}
 const coverageCriterionId = z.enum(EVIDENCE_REVIEW_CRITERIA.coverage);
 const bindingCriterionId = z.enum(EVIDENCE_REVIEW_CRITERIA.binding);
 const reviewReportField = z.enum([
@@ -469,12 +594,17 @@ export const recordEvidenceReviewSchema = z
       context.addIssue({ code: 'custom', message: `Synthesis must be ${expected}.` });
   });
 
-const skillBindingSchema = z.strictObject({
+const legacySkillBindingSchema = z.strictObject({
   name: z.literal(EVIDENCE_REVIEW_SKILL),
   ref: z.string(),
   path: z.literal('skills/paywallproof-evidence-review'),
   dynamicSubAgents: z.literal(true),
 });
+const currentSkillBindingSchema = legacySkillBindingSchema.extend({
+  repository: githubRepository,
+  ref: immutableCommitRef,
+});
+const skillBindingSchema = z.union([currentSkillBindingSchema, legacySkillBindingSchema]);
 const stateFields = {
   runId: identifier,
   attempt: z.number().int().positive().default(1),
@@ -504,6 +634,7 @@ export const evidenceReviewStateSchema = z.union([
   errorStateSchema,
 ]);
 export type EvidenceReviewState = z.infer<typeof evidenceReviewStateSchema>;
+export type EvidenceReviewView = EvidenceReviewState & { reportCurrent: boolean };
 
 export type ReviewRuntime = {
   registerSkill(options: Parameters<TrueForgeAdapter['registerSkill']>[0]): Promise<unknown>;
@@ -529,6 +660,8 @@ export class EvidenceReviewError extends Error {
 export class EvidenceReviewCoordinator {
   private readonly starts = new Set<string>();
   private readonly watchers = new Set<string>();
+  private readonly skillRepository: string;
+  private readonly skillRef: string;
 
   constructor(
     private readonly options: {
@@ -536,14 +669,30 @@ export class EvidenceReviewCoordinator {
       documents: ControlDocuments;
       report(runId: string): Report;
       workerOrigin: string;
-      repository: string;
+      skillRepository: string;
       skillRef: string;
+      authorizeModelUse?(runId: string): void;
     },
-  ) {}
+  ) {
+    this.skillRepository = githubRepository.parse(options.skillRepository);
+    this.skillRef = immutableCommitRef.parse(options.skillRef);
+  }
 
-  view(runId: string): EvidenceReviewState | null {
+  private stored(runId: string): EvidenceReviewState | null {
     const value = this.options.documents.get('evidence-review', runId);
     return value === null ? null : evidenceReviewStateSchema.parse(value);
+  }
+
+  view(runId: string): EvidenceReviewView | null {
+    const state = this.stored(runId);
+    if (!state) return null;
+    let reportCurrent = false;
+    try {
+      reportCurrent = hashValue(this.boundReport(runId)) === state.reportHash;
+    } catch {
+      // A review is never current when the present report cannot satisfy its bound projection.
+    }
+    return { ...state, reportCurrent };
   }
 
   authorize(runId: string, token: string): boolean {
@@ -551,13 +700,27 @@ export class EvidenceReviewCoordinator {
     const binding = z
       .object({ runId: identifier, attempt: z.number().int().positive() })
       .safeParse(this.options.documents.get('evidence-review-token', hashValue(token)));
-    const state = this.view(runId);
-    return (
-      binding.success &&
-      binding.data.runId === runId &&
-      binding.data.attempt === state?.attempt &&
-      (state?.status === 'starting' || state?.status === 'running' || state?.status === 'completed')
-    );
+    const state = this.stored(runId);
+    if (
+      !binding.success ||
+      binding.data.runId !== runId ||
+      binding.data.attempt !== state?.attempt ||
+      !['starting', 'running', 'completed'].includes(state.status)
+    )
+      return false;
+    if (this.options.documents.get('evidence-review-revoked', `${runId}:${state?.attempt}`))
+      return false;
+    try {
+      this.options.authorizeModelUse?.(runId);
+    } catch {
+      if (state)
+        this.options.documents.put('evidence-review-revoked', `${runId}:${state.attempt}`, {
+          runId,
+          attempt: state.attempt,
+        });
+      return false;
+    }
+    return true;
   }
 
   async start(
@@ -565,13 +728,20 @@ export class EvidenceReviewCoordinator {
     options: { retryCompleted?: boolean } = {},
   ): Promise<EvidenceReviewState> {
     identifier.parse(runId);
-    const existing = this.view(runId);
+    const existing = this.stored(runId);
+    if (
+      existing?.status === 'completed' &&
+      !options.retryCompleted &&
+      hashValue(this.boundReport(runId)) !== existing.reportHash
+    )
+      throw new EvidenceReviewError('EVIDENCE_REVIEW_STALE_RETRY_REQUIRED');
     if (
       (existing?.status === 'completed' && !options.retryCompleted) ||
       existing?.status === 'running' ||
       existing?.status === 'starting'
     )
       return existing;
+    this.options.authorizeModelUse?.(runId);
     if (this.starts.has(runId)) throw new EvidenceReviewError('EVIDENCE_REVIEW_IN_FLIGHT');
     this.starts.add(runId);
     try {
@@ -591,7 +761,8 @@ export class EvidenceReviewCoordinator {
       const createdAt = Date.now();
       const skill = {
         name: EVIDENCE_REVIEW_SKILL,
-        ref: repositoryRef.parse(this.options.skillRef),
+        repository: this.skillRepository,
+        ref: repositoryRef.parse(this.skillRef),
         path: 'skills/paywallproof-evidence-review' as const,
         dynamicSubAgents: true as const,
       };
@@ -613,7 +784,7 @@ export class EvidenceReviewCoordinator {
       await this.options.runtime.registerSkill({
         name: EVIDENCE_REVIEW_SKILL,
         description: 'Independently audit a completed PaywallProof run report.',
-        repositoryUrl: `https://github.com/${this.options.repository}.git`,
+        repositoryUrl: `https://github.com/${this.skillRepository}.git`,
         ref: skill.ref,
         path: skill.path,
       });
@@ -655,7 +826,7 @@ Call read_run_report first with runId ${runId} and operationId ${readOperationId
       void this.watch(running);
       return running;
     } catch (error) {
-      const current = this.view(runId);
+      const current = this.stored(runId);
       if (current && current.status !== 'completed') {
         await this.cancelSession(current.sessionId);
         this.options.documents.put('evidence-review', runId, {
@@ -678,11 +849,15 @@ Call read_run_report first with runId ${runId} and operationId ${readOperationId
         : z.strictObject({ runId: identifier, operationId: identifier }).parse(json);
     const fields = { runId: request.runId, operationId: request.operationId };
     if (fields.runId !== boundRunId) throw new EvidenceReviewError('OWNERSHIP_MISMATCH');
-    const state = this.view(boundRunId);
+    const state = this.stored(boundRunId);
     if (!state || (state.status !== 'running' && state.status !== 'completed'))
       throw new EvidenceReviewError('EVIDENCE_REVIEW_NOT_ACTIVE');
     const sourceReport = parseJson(this.options.report(boundRunId));
-    const report = dataOnlyReviewReport(sourceReport);
+    const currentReport = dataOnlyReviewReport(sourceReport);
+    const report =
+      hashValue(currentReport) === state.reportHash
+        ? currentReport
+        : legacyReviewReportWithoutCleanupBinding(currentReport);
     if (hashValue(report) !== state.reportHash)
       throw new EvidenceReviewError('EVIDENCE_REVIEW_REPORT_CHANGED');
     if (name === 'read_run_report') return { report, reportHash: state.reportHash };
@@ -723,7 +898,19 @@ Call read_run_report first with runId ${runId} and operationId ${readOperationId
   async recover(): Promise<void> {
     for (const value of this.options.documents.list('evidence-review')) {
       const state = evidenceReviewStateSchema.parse(value);
-      if (state.status === 'running') void this.watch(state);
+      if (state.status === 'running') {
+        try {
+          this.options.authorizeModelUse?.(state.runId);
+          void this.watch(state);
+        } catch {
+          this.options.documents.put('evidence-review', state.runId, {
+            ...state,
+            status: 'error',
+            error: 'EVIDENCE_REVIEW_CONSENT_CHANGED',
+          });
+          void this.cancelSession(state.sessionId);
+        }
+      }
       if (state.status === 'starting') {
         await this.cancelSession(state.sessionId);
         this.options.documents.put('evidence-review', state.runId, {
@@ -744,6 +931,27 @@ Call read_run_report first with runId ${runId} and operationId ${readOperationId
     request: z.infer<typeof recordEvidenceReviewSchema>,
   ) {
     const parsed = reviewSourceSchema.parse(report);
+    const projected = dataOnlyReviewReport(report);
+    for (const criterionId of objectiveDefectCriteria(projected)) {
+      let acknowledged = false;
+      for (const reviewer of request.reviewers) {
+        if (reviewer.role === 'coverage') {
+          if (
+            reviewer.criteria.some(
+              (criterion) =>
+                criterion.id === criterionId && criterion.verdict === 'needs_attention',
+            )
+          )
+            acknowledged = true;
+        } else if (
+          reviewer.criteria.some(
+            (criterion) => criterion.id === criterionId && criterion.verdict === 'needs_attention',
+          )
+        )
+          acknowledged = true;
+      }
+      if (!acknowledged) throw new EvidenceReviewError('EVIDENCE_REVIEW_OBJECTIVE_DEFECT_IGNORED');
+    }
     const scenarioIds = new Set(parsed.scenarios.map((scenario) => scenario.id));
     const observationIds = new Set(parsed.observations.map((observation) => observation.id));
     const observationsByScenario = new Map(
@@ -774,13 +982,33 @@ Call read_run_report first with runId ${runId} and operationId ${readOperationId
       }
     };
     for (const reviewer of request.reviewers) {
-      if (reviewer.role === 'coverage') {
-        for (const criterion of reviewer.criteria) assertCitations(criterion.citations);
-        for (const finding of reviewer.findings) assertFinding(finding);
-      } else {
-        for (const criterion of reviewer.criteria) assertCitations(criterion.citations);
-        for (const finding of reviewer.findings) assertFinding(finding);
+      for (const criterion of reviewer.criteria) {
+        assertCitations(criterion.citations);
+        if (
+          criterion.verdict === 'confirmed' &&
+          ['SCENARIO_ASSERTIONS', 'EVIDENCE_COVERAGE', 'OBSERVATION_BINDINGS'].includes(
+            criterion.id,
+          )
+        ) {
+          if (
+            criterion.citations.scenarioIds.length !== projected.scenarios.length ||
+            projected.scenarios.some(
+              (scenario) => !criterion.citations.scenarioIds.includes(scenario.id),
+            )
+          )
+            throw new EvidenceReviewError('EVIDENCE_REVIEW_CITATION_COVERAGE_INCOMPLETE');
+          if (
+            criterion.id !== 'SCENARIO_ASSERTIONS' &&
+            (criterion.citations.observationIds.length !==
+              projected.observationBindings.ids.length ||
+              projected.observationBindings.ids.some(
+                (id) => !criterion.citations.observationIds.includes(id),
+              ))
+          )
+            throw new EvidenceReviewError('EVIDENCE_REVIEW_CITATION_COVERAGE_INCOMPLETE');
+        }
       }
+      for (const finding of reviewer.findings) assertFinding(finding);
     }
   }
 
@@ -795,7 +1023,7 @@ Call read_run_report first with runId ${runId} and operationId ${readOperationId
         signal: AbortSignal.timeout(10 * 60 * 1000),
       });
       for await (const _event of stream.withMetadata()) void _event;
-      if (this.view(state.runId)?.status === 'completed') return;
+      if (this.stored(state.runId)?.status === 'completed') return;
       const turn = await this.options.runtime.inspectTurn({
         sessionId: state.sessionId,
         turnId: state.turnId,
@@ -810,7 +1038,7 @@ Call read_run_report first with runId ${runId} and operationId ${readOperationId
         error: error.slice(0, 500),
       });
     } catch (error) {
-      if (this.view(state.runId)?.status === 'completed') return;
+      if (this.stored(state.runId)?.status === 'completed') return;
       await this.cancelSession(state.sessionId);
       if (!this.isCurrentRunning(state)) return;
       this.options.documents.put('evidence-review', state.runId, {
@@ -830,7 +1058,7 @@ Call read_run_report first with runId ${runId} and operationId ${readOperationId
   }
 
   private isCurrentRunning(state: z.infer<typeof runningStateSchema>): boolean {
-    const current = this.view(state.runId);
+    const current = this.stored(state.runId);
     return (
       current?.status === 'running' &&
       current.attempt === state.attempt &&

@@ -45,7 +45,7 @@ Bridge requests and ordinary responses are limited to 4 MiB; the trusted evidenc
 
 Each browser probe permits at most 128 intercepted requests, two concurrent forwarded requests and 64 MiB of total response bytes. The byte budget is enforced while reading chunks, before buffering them. Exceeding any probe budget aborts in-flight requests, rejects the waiting queue and closes the browser context; it produces an inconclusive transport result with no screenshot artifact. These limits also apply to browser probes outside the repair bridge.
 
-The launcher receives only sandbox HOME/TMPDIR/PATH, generated disposable fixture/replay/webhook secrets, staging/database defaults, disabled Next telemetry, and bridge configuration. Public price/build IDs can be embedded in the trusted launcher bytes. It receives no Stripe API key, GitHub token, model-provider key, operator browser cookie, or host environment. The oracle remains outside the sandbox.
+The launcher receives only sandbox HOME/TMPDIR/PATH, generated disposable fixture/replay/webhook secrets, staging/database defaults, disabled Next telemetry, and bridge configuration. Public price/build IDs can be embedded in the trusted launcher bytes. It receives no billing-provider API key, GitHub token, model-provider key, operator browser cookie, or host environment. The oracle remains outside the sandbox.
 
 For negative authorization controls, the bridge also forwards the single fixed header `Authorization: Bearer invalid_synthetic_token`. This is not a credential. Every other nonmatching authorization value is rejected. The target must reject this request itself; a bridge rejection cannot count as proof of target authorization.
 

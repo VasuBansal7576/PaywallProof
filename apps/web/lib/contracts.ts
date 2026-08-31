@@ -8,6 +8,7 @@ export const configSchema = z.object({
   target: z.object({ id: z.string(), origin: z.string() }),
   repository: z.string(),
   defaultRef: z.string(),
+  reviewSkill: z.object({ repository: z.string(), ref: z.string() }),
   polarConfigured: z.boolean(),
   priceId: z.string(),
   model: z.string(),
@@ -21,6 +22,8 @@ export const projectSchema = z.object({
   repository: z.string(),
   ref: z.string(),
   targetId: z.string(),
+  targetOrigin: z.string().nullable(),
+  modelConsentModel: z.string().nullable(),
   ownershipConfirmed: z.boolean(),
   modelConsent: z.boolean(),
 });
@@ -43,8 +46,10 @@ export const runSchema = z.object({
   policy: policySchema,
   targetBuild: z.string(),
   featureConfigHash: z.string(),
+  featureProbeHash: z.string().optional(),
   targetFeature: targetFeatureSchema.optional(),
   projectConfigHash: z.string().optional(),
+  cleanupConfigHash: z.string().optional(),
   mode: modeSchema,
   status: z.enum(['awaiting_plan_approval', 'running', 'stopping', 'completed', 'canceled']),
   outcome: z.enum(['passed', 'failed', 'inconclusive']).nullable(),
@@ -62,6 +67,11 @@ export type Run = z.infer<typeof runSchema>;
 const assertionSchema = z.object({
   verdict: z.enum(['pass', 'fail', 'inconclusive', 'unsupported', 'skipped']),
   code: z.string(),
+});
+const cleanupReceiptSchema = z.object({
+  resourceId: z.string(),
+  status: z.enum(['deleted', 'retained', 'leftover']),
+  code: z.string().optional(),
 });
 export const scenarioSchema = z.object({
   id: z.string(),
@@ -82,6 +92,7 @@ const evidenceReviewSchema = z.object({
   error: z.string().nullable(),
   skill: z.object({
     name: z.literal('paywallproof-evidence-review'),
+    repository: z.string().optional(),
     ref: z.string(),
     path: z.string(),
     dynamicSubAgents: z.literal(true),
@@ -90,6 +101,34 @@ const evidenceReviewSchema = z.object({
   summary: z.string().optional(),
   reviewers: z.array(z.unknown()).optional(),
   completedAt: z.number().optional(),
+  reportCurrent: z.boolean().default(true),
+});
+const controlErrorReceiptSchema = z.object({
+  code: z.string().default('CONTROL_OPERATION_FAILED'),
+  message: z.string(),
+});
+const operationReconciliationSchema = z.object({
+  status: z.enum(['manual_review', 'safe_cleanup']),
+  operations: z.array(
+    z.object({
+      operationId: z.string(),
+      kind: z.string(),
+      state: z.enum(['dispatched', 'unknown']),
+      argsHash: z.string(),
+    }),
+  ),
+});
+const continuationReconciliationSchema = z.object({
+  status: z.enum(['reconciled', 'unknown']),
+  continuations: z.array(
+    z.object({
+      kind: z.enum(['plan', 'checkout']),
+      status: z.enum(['confirmed', 'unknown']),
+      previousTurnId: z.string(),
+      turnId: z.string().optional(),
+      code: z.enum(['RUNTIME_CONTINUATION_NOT_FOUND', 'RUNTIME_LOOKUP_UNAVAILABLE']).optional(),
+    }),
+  ),
 });
 export const detailSchema = z.object({
   run: runSchema,
@@ -103,11 +142,15 @@ export const detailSchema = z.object({
       pendingApprovals: z.unknown().optional(),
     })
     .nullable(),
-  runtimeError: z.object({ code: z.string(), message: z.string() }).nullable().optional(),
+  runtimeError: controlErrorReceiptSchema.nullable().optional(),
+  runtimeCancelError: controlErrorReceiptSchema.nullable().optional(),
+  stopError: controlErrorReceiptSchema.nullable().optional(),
+  operationReconciliation: operationReconciliationSchema.nullable().optional(),
+  continuationReconciliation: continuationReconciliationSchema.nullable().optional(),
   artifacts: z.array(z.unknown()).optional(),
   scenarios: z.array(scenarioSchema),
   observations: z.array(z.unknown()),
-  cleanup: z.unknown(),
+  cleanup: z.array(cleanupReceiptSchema),
   repairs: z.array(z.unknown()),
   repairSupported: z.boolean().default(false),
   evidenceReview: evidenceReviewSchema.nullable().optional(),

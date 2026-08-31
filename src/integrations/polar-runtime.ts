@@ -45,6 +45,15 @@ const delay = (milliseconds: number) =>
 const verificationPeriodSeconds = 120;
 const cancellationConfirmationGraceMs = 60_000;
 
+/** The exact mailbox identity used to derive per-run Polar sandbox customers. */
+export function canonicalPolarTestMailbox(value: string) {
+  const email = z.email().parse(value);
+  const separator = email.lastIndexOf('@');
+  const local = email.slice(0, separator).split('+')[0];
+  const domain = email.slice(separator + 1).toLowerCase();
+  return z.email().parse(`${local}@${domain}`);
+}
+
 /** Mutations stay on the sandbox host. A dispatched request is never blindly retried. */
 export class PolarSandboxAdapter {
   readonly #config: z.infer<typeof configSchema>;
@@ -60,7 +69,10 @@ export class PolarSandboxAdapter {
   ) {
     const config = configSchema.safeParse(input);
     if (!config.success) throw new PolarError('POLAR_CONFIGURATION_INVALID');
-    this.#config = config.data;
+    this.#config = {
+      ...config.data,
+      testCustomerEmail: canonicalPolarTestMailbox(config.data.testCustomerEmail),
+    };
     this.#guard = guard;
     const { token, organizationId, productId, priceId } = config.data;
     this.#api = new PolarSandboxApi({ token, organizationId, productId, priceId }, transport);
@@ -73,6 +85,10 @@ export class PolarSandboxAdapter {
   async preflight() {
     this.#verified = await this.#reader.preflight();
     return this.#verified;
+  }
+  /** Re-establishes the process-local safety proof after a worker restart. */
+  async ensurePreflight() {
+    return this.#verified ?? this.preflight();
   }
   #ready() {
     if (!this.#verified) throw new PolarError('POLAR_PREFLIGHT_REQUIRED');
@@ -156,9 +172,7 @@ export class PolarSandboxAdapter {
     this.#ready();
     // The mailbox is explicit operator configuration. Never read an account email implicitly.
     const [local, domain] = this.#config.testCustomerEmail.split('@');
-    const email = z
-      .email()
-      .parse(`${local?.split('+')[0]}+pp${runId.replaceAll('-', '')}@${domain}`);
+    const email = z.email().parse(`${local}+pp${runId.replaceAll('-', '')}@${domain}`);
     const body = {
       email,
       type: 'individual',

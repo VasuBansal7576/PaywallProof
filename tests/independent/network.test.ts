@@ -10,7 +10,7 @@ import { evaluateProbe } from '#domain';
 
 // Independent synthetic local faults only. Servers bind ephemeral 127.0.0.1
 // ports, and the browser runs only through the public BrowserRunner boundary.
-// Nothing here is a Stripe receipt or reference-application acceptance run.
+// Nothing here is a provider receipt or reference-application acceptance run.
 
 type Handler = (request: IncomingMessage, response: ServerResponse) => void;
 type BrowserResult = Awaited<ReturnType<BrowserRunner['probe']>>;
@@ -231,6 +231,7 @@ describe('independent network: pure address classification', () => {
 });
 
 describe('independent network: checked target transport', () => {
+  // Implementation-aware deadline regressions added after transport hardening.
   it('applies its default request deadline while DNS resolution is still pending', async () => {
     const transport = new TargetTransport({
       origin: 'https://example.com',
@@ -499,6 +500,7 @@ describe('independent network: checked target transport', () => {
   }, 5_000);
 });
 
+// Implementation-aware regressions added after the contract-v1 adapter was extracted.
 describe('independent network: contract-v1 mutation receipts', () => {
   function adapter(origin: string) {
     return new TargetContractV1Adapter(
@@ -618,6 +620,7 @@ describe('independent network: contract-v1 mutation receipts', () => {
 });
 
 describe('independent network: real browser against synthetic local HTML', () => {
+  // Implementation-aware regression added when feature descriptors became portable.
   it('uses the validated feature paths and test ids instead of reference-app constants', async () => {
     const feature = {
       id: 'pipeline_export',

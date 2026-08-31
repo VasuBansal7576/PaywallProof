@@ -17,10 +17,9 @@ On August 29, 2026, PaywallProof completed a native Polar sandbox lifecycle thro
 
 All 12 scenario assertions passed. Polar reported `livemode: false`, so no real payment was processed. The terminal receipt for run `7563883e-62d1-45a3-86e7-5bd09f8cbfb3` has SHA-256 `993f30e59e9e383edda2f9b95681b8474cef104d8c9610761eb2907c5e14ab06`. Provider identifiers, checkout URLs, tokens, and raw webhook data remain outside Git.
 
-The repository also includes reduced, non-secret examples from the completed runs:
+The repository includes one reduced, non-secret run projection and its verification record:
 
 - [Recorded local replay](examples/recorded-local-replay.json)
-- [Recorded repair acceptance](examples/recorded-repair.json)
 - [Executed verification record](docs/verification.md)
 
 These examples are evidence projections. They are not provider transactions.
@@ -50,7 +49,7 @@ After a run, a separate TrueForge session can review the saved report. The repos
 | `apps/demo-saas`                      | Reference SaaS used for local and sandbox verification                   |
 | `src/adapter-doctor`                  | Read-only contract and source-build validation for owned staging targets |
 | `skills/paywallproof-evidence-review` | Reusable report-review skill and reviewer definitions                    |
-| `tests/independent`                   | Public-boundary tests written from the contract documents                |
+| `tests/independent`                   | Public-boundary tests with explicit authoring-provenance labels          |
 | `tests/acceptance`                    | Cross-module reference and replay checks                                 |
 | `docs/contracts`                      | Versioned inputs used to author the independent tests                    |
 | `scripts`                             | Runtime, provider, repair, and repository verification commands          |
@@ -67,7 +66,7 @@ Start with [the product specification](PRD.md) for requirements and [the documen
 
 Qodo is part of the development gate, not the product runtime. Substantive changes are reviewed on a pull request, valid findings are fixed, and the final head is reviewed again before merge.
 
-The Adapter Doctor and second-target work remains outside the final development evidence until Qodo reviews its GitHub heads.
+[PR #6](https://github.com/VasuBansal7576/PaywallProof/pull/6) is post-submission maintenance. It will merge only after exact-head CI and Qodo review, and it is not submission evidence; the dated run receipts and merged PRs above remain the evidence for the judged build.
 
 ## Run locally
 
@@ -127,11 +126,11 @@ The read-only `pnpm test:polar` preflight uses `POLAR_PRICE_ID` in place of `BIL
 
 Implement the authenticated routes in the [target adapter contract](docs/contracts/reference-contract.md), including build identity, run-scoped test users, ordinary user sessions, billing-state reads, and cleanup. Staging hooks must be disabled in production, and the adapter credential must never grant access to the protected feature.
 
-Adapter Doctor makes at most three read-only requests before PaywallProof creates a fixture. It checks the strict contract version, source-build identity, staging authentication, credential separation, response type, cache policy, and the declared feature descriptor. A compatible Doctor report is a preflight result. It does not prove fixture behavior, the subscription lifecycle, browser behavior, cleanup, production lockout, or Polar delivery.
+Each Adapter Doctor invocation makes at most three read-only requests. PaywallProof runs it during preflight and again before each mutating lifecycle tool. It checks the strict contract version, source-build identity, staging authentication, credential separation, response type, cache policy, and the declared feature descriptor. A compatible Doctor report is a preflight result. It does not prove fixture behavior, the subscription lifecycle, browser behavior, cleanup, production lockout, or Polar delivery.
 
 On August 30, 2026, TrueForge run `593081b1-b770-4784-b146-f4782d431029` completed AT29 against the owned [Revenue Intelligence OS](https://github.com/VasuBansal7576/revenue-intelligence-os) staging target. It bound source commit `49e69922c37446bc229ea14571bba58db34a56ce` to feature `pipeline_export` and browser path `/admin`. The run passed 12/12 API, browser, and application-state assertions. Cleanup deleted both run-owned fixtures. The TrueForge session reached `done`. The report has SHA-256 `be91a885a2624829dcd77cbfc96ebd52f150e804dc030001d0e257a75913ca71`.
 
-This run used `local_replay` with provider credentials removed. It proves contract-v1 lifecycle portability, not Polar delivery or repair portability. A post-run bridge check confirmed zero extra credits and no paid fallback.
+This lifecycle used `local_replay`, so it made no Polar lifecycle calls. HydraDB and the target's LLM and CRM integrations were disabled or uncredentialed. TrueForge still used the guarded Codex subscription bridge; a post-run check confirmed zero extra credits and no paid fallback. The run proves contract-v1 lifecycle portability, not the newer probe-hash binding, Polar delivery, or repair portability.
 
 Contract-v1 compatibility does not grant repair access. Automated repair remains limited to the trusted `reference_v1` profile.
 
@@ -166,7 +165,7 @@ PaywallProof remains a local, single-operator MVP. The repair sandbox is verifie
 
 ## Development disclosure
 
-Codex assisted with implementation, independent test authoring, review, and verification. Qodo reviewed the substantive GitHub changes. Human approval remains required for provider mutations and publication, and maintainers must be able to explain the code they merge.
+Codex assisted with implementation, independent test authoring, review, and verification. Qodo reviewed the merged lifecycle, CI, and persistence changes; the current review status is linked above. Human approval remains required for provider mutations and publication, and maintainers must be able to explain the code they merge.
 
 ## License
 

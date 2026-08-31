@@ -7,7 +7,7 @@ import { billingSchema, hashValue, parsePolicy, type AccessPolicy, type Billing 
 import { EvidenceStore, type Observation } from '#evidence';
 import { observeFeature, observeScenario } from '#evidence/probe';
 import { TargetTransport } from '#integrations/network';
-import { TargetContractV1Adapter } from '#integrations/target-contract';
+import { bindTargetFeatureProbe, TargetContractV1Adapter } from '#integrations/target-contract';
 import { BrowserRunner } from '#integrations/browser';
 import { RepairError } from './model.ts';
 import type { SandboxTargetReady } from './sandbox.ts';
@@ -263,6 +263,7 @@ export async function runRepairOracle(input: {
       hashValue(description.feature) !== policy.featureConfigHash
     )
       throw new RepairError('TARGET_CHANGED');
+    const featureProbeHash = bindTargetFeatureProbe(description.feature).hash;
     for (const kind of ['free', 'paid'] as const) {
       input.signal.throwIfAborted();
       const principal = await target.createUser({
@@ -330,6 +331,7 @@ export async function runRepairOracle(input: {
             fixtureMarker: principal.fixtureMarker,
             policy,
             targetBuild: input.targetBuild,
+            featureProbeHash,
             mode: 'local_replay',
             notBefore,
             billing,

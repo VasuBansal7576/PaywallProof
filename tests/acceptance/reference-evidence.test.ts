@@ -8,7 +8,7 @@ import { createPolicy, aggregateVerdicts } from '#domain';
 import { EvidenceStore, evaluateEvidence } from '#evidence';
 
 // Vertical acceptance: actual reference HTTP handlers + durable evidence.
-// Billing is signed synthetic local_replay, never an observed Stripe receipt.
+// Billing is signed synthetic local_replay, never an observed provider receipt.
 // Browser execution is deliberately unavailable, not replaced by a second API
 // call. Consequently a good application cannot receive an overall passing run.
 
@@ -218,7 +218,7 @@ async function collectScenario(
             : startedBillingTime,
   };
 
-  const stripe = await store.record({
+  const provider = await store.record({
     ...metadata,
     source: 'billing_provider',
     observedAt: Date.now(),
@@ -257,7 +257,7 @@ async function collectScenario(
     targetBuild: buildId,
     mode: 'local_replay',
     fixtureMarker: user.fixtureMarker,
-    providerId: stripe.id,
+    providerId: provider.id,
     applicationId: application.id,
     apiId: api.id,
     browserId: browser.id,
@@ -266,9 +266,9 @@ async function collectScenario(
   });
   expect(result.browser.verdict).toBe('inconclusive');
   expect([...result.observationIds].sort()).toEqual(
-    [stripe.id, application.id, api.id, browser.id].sort(),
+    [provider.id, application.id, api.id, browser.id].sort(),
   );
-  for (const observation of [stripe, application, api, browser]) {
+  for (const observation of [provider, application, api, browser]) {
     expect(observation).toMatchObject({
       runId: identity.runId,
       scenarioId,

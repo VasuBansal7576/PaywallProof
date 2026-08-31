@@ -311,7 +311,12 @@ export class TrueForgeAdapter {
     return data;
   }
 
-  async continueTurn(options: { sessionId: string; previousTurnId: string; input: string }) {
+  async continueTurn(options: {
+    sessionId: string;
+    previousTurnId: string;
+    input: string;
+    beforeDispatch?: () => void;
+  }) {
     const latest = await newestTurn(
       await this.client.sessions.listTurns(options.sessionId, { limit: 1 }),
     );
@@ -324,6 +329,7 @@ export class TrueForgeAdapter {
       throw new Error(
         'Runtime continuation requires the latest completed turn without pending approvals.',
       );
+    options.beforeDispatch?.();
     const { data } = await this.client.sessions.createTurn(options.sessionId, {
       previousTurnId: options.previousTurnId,
       input: [{ type: 'user.message', content: options.input }],
@@ -390,6 +396,7 @@ export class TrueForgeAdapter {
     sessionId: string;
     turnId: string;
     decisions: RuntimeApprovalDecision[];
+    beforeDispatch?: () => void;
   }) {
     const latest = await newestTurn(
       await this.client.sessions.listTurns(options.sessionId, { limit: 1 }),
@@ -415,6 +422,7 @@ export class TrueForgeAdapter {
       type: 'user.tool_approval',
       ...decision,
     }));
+    options.beforeDispatch?.();
     const { data } = await this.client.sessions.createTurn(options.sessionId, {
       previousTurnId: options.turnId,
       input,

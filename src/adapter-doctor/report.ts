@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { targetDescriptionSchema } from '#integrations/target-contract';
+import { hashValue } from '#domain';
+import {
+  bindTargetFeatureProbe,
+  targetDescriptionSchema,
+  targetFeatureProbeContractSchema,
+} from '#integrations/target-contract';
 
 const identifier = z
   .string()
@@ -67,21 +72,57 @@ export const ADAPTER_DOCTOR_SCOPE = {
   ],
 } satisfies AdapterDoctorScope;
 
-const reportBase = z.strictObject({
-  schemaVersion: z.literal(1),
+const reportBaseFields = {
   scope: scopeSchema,
   targetId: identifier,
   expectedBuildId: identifier,
   checks: adapterDoctorChecksSchema,
-});
-export const adapterDoctorReportSchema = z.discriminatedUnion('verdict', [
-  reportBase.extend({
+};
+
+const legacyReceiptSchema = z
+  .strictObject({
+    description: targetDescriptionSchema,
+    featureConfigHash: digest,
+  })
+  .superRefine((receipt, context) => {
+    if (receipt.featureConfigHash !== hashValue(receipt.description.feature))
+      context.addIssue({ code: 'custom', message: 'Feature descriptor hash mismatch' });
+  });
+const boundReceiptSchema = z
+  .strictObject({
+    description: targetDescriptionSchema,
+    featureConfigHash: digest,
+    featureProbe: targetFeatureProbeContractSchema,
+    featureProbeHash: digest,
+  })
+  .superRefine((receipt, context) => {
+    if (receipt.featureConfigHash !== hashValue(receipt.description.feature))
+      context.addIssue({ code: 'custom', message: 'Feature descriptor hash mismatch' });
+    const binding = bindTargetFeatureProbe(receipt.description.feature);
+    if (
+      receipt.featureProbeHash !== binding.hash ||
+      hashValue(receipt.featureProbe) !== binding.hash
+    )
+      context.addIssue({ code: 'custom', message: 'Feature probe contract hash mismatch' });
+  });
+
+const legacyReportSchema = z.discriminatedUnion('verdict', [
+  z.strictObject({ schemaVersion: z.literal(1), ...reportBaseFields }).extend({
     verdict: z.literal('compatible'),
-    receipt: z.strictObject({
-      description: targetDescriptionSchema,
-      featureConfigHash: digest,
-    }),
+    receipt: legacyReceiptSchema,
   }),
-  reportBase.extend({ verdict: z.literal('blocked') }),
+  z
+    .strictObject({ schemaVersion: z.literal(1), ...reportBaseFields })
+    .extend({ verdict: z.literal('blocked') }),
 ]);
+const boundReportSchema = z.discriminatedUnion('verdict', [
+  z.strictObject({ schemaVersion: z.literal(2), ...reportBaseFields }).extend({
+    verdict: z.literal('compatible'),
+    receipt: boundReceiptSchema,
+  }),
+  z
+    .strictObject({ schemaVersion: z.literal(2), ...reportBaseFields })
+    .extend({ verdict: z.literal('blocked') }),
+]);
+export const adapterDoctorReportSchema = z.union([boundReportSchema, legacyReportSchema]);
 export type AdapterDoctorReport = Readonly<z.infer<typeof adapterDoctorReportSchema>>;

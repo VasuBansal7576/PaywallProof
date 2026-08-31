@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { TargetTransport } from './network.ts';
-import { type TargetDescription } from './target-contract.ts';
+import { bindTargetFeatureProbe, type TargetDescription } from './target-contract.ts';
 
 export class BrowserRunner {
   constructor(
@@ -11,6 +11,7 @@ export class BrowserRunner {
     private readonly artifactDirectory: string,
   ) {}
   async probe(cookie: string, feature: TargetDescription['feature']) {
+    const probeContract = bindTargetFeatureProbe(feature).contract;
     let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
     try {
       const destination = await this.transport.destination();
@@ -58,14 +59,17 @@ export class BrowserRunner {
           if (++count > 128) rejectBudget();
           const url = new URL(route.request().url());
           const allowedPath =
-            [feature.browserPath, '/api/me', feature.path].includes(url.pathname) ||
-            url.pathname.startsWith('/_next/');
+            [
+              probeContract.browser.path,
+              probeContract.browser.profilePath,
+              probeContract.browser.network.path,
+            ].includes(url.pathname) || url.pathname.startsWith('/_next/');
           if (
             url.origin !== origin.origin ||
             !['http:', 'https:'].includes(url.protocol) ||
             url.username ||
             url.password ||
-            route.request().method() !== 'GET' ||
+            route.request().method() !== probeContract.browser.network.method ||
             !allowedPath
           ) {
             await route.abort('blockedbyclient').catch(() => {});
@@ -114,7 +118,7 @@ export class BrowserRunner {
       ]);
       const page = await context.newPage();
       page.setDefaultTimeout(15_000);
-      await page.goto(new URL(feature.browserPath, origin).href, {
+      await page.goto(new URL(probeContract.browser.path, origin).href, {
         waitUntil: 'domcontentloaded',
         timeout: 30_000,
       });
@@ -123,10 +127,10 @@ export class BrowserRunner {
       const [response] = await Promise.all([
         page.waitForResponse(
           (response) =>
-            response.url() === new URL(feature.path, origin).href &&
-            response.request().method() === 'GET',
+            response.url() === new URL(probeContract.browser.network.path, origin).href &&
+            response.request().method() === probeContract.browser.network.method,
         ),
-        page.getByTestId(feature.actionTestId).click(),
+        page.getByTestId(probeContract.browser.action.testId).click(),
       ]);
       let networkBody: unknown;
       try {
@@ -134,36 +138,44 @@ export class BrowserRunner {
       } catch {
         networkBody = await response.text();
       }
-      const result = page.getByTestId(feature.resultTestId);
+      const result = page.getByTestId(probeContract.browser.result.testId);
       await page
         .locator(
-          `[data-testid="${feature.resultTestId}"][data-status="allowed"], [data-testid="${feature.resultTestId}"][data-status="denied"], [data-testid="${feature.resultTestId}"][data-status="unavailable"]`,
+          `[data-testid="${probeContract.browser.result.testId}"][${probeContract.browser.result.statusAttribute}="${probeContract.browser.result.allowStatus}"], [data-testid="${probeContract.browser.result.testId}"][${probeContract.browser.result.statusAttribute}="${probeContract.browser.result.denyStatus}"], [data-testid="${probeContract.browser.result.testId}"][${probeContract.browser.result.statusAttribute}="${probeContract.browser.result.unavailableStatus}"]`,
         )
         .waitFor();
-      const uiStatus = await result.getAttribute('data-status');
+      const uiStatus = await result.getAttribute(probeContract.browser.result.statusAttribute);
       const visibleText = await result.innerText();
       let body: unknown = { uiStatus, visibleText, networkBody };
       const networkRecord =
         networkBody !== null && typeof networkBody === 'object' && !Array.isArray(networkBody)
           ? networkBody
           : null;
-      if (uiStatus === 'allowed') {
-        const marker = await result.locator('pre').innerText();
+      if (uiStatus === probeContract.browser.result.allowStatus) {
+        const marker = await result.locator(probeContract.browser.allow.markerElement).innerText();
         if (
           networkRecord &&
-          'fixtureMarker' in networkRecord &&
-          networkRecord.fixtureMarker === marker
+          probeContract.api.allow.markerProperty in networkRecord &&
+          networkRecord[probeContract.api.allow.markerProperty] === marker
         )
-          body = { fixtureMarker: marker, networkBody };
+          body = {
+            [probeContract.api.allow.markerProperty]: marker,
+            networkBody,
+          };
       }
       if (
-        uiStatus === 'denied' &&
+        uiStatus === probeContract.browser.result.denyStatus &&
         visibleText.trim() &&
         networkRecord &&
-        'error' in networkRecord &&
-        networkRecord.error === 'ACCESS_DENIED'
+        probeContract.api.denial.errorProperty in networkRecord &&
+        networkRecord[probeContract.api.denial.errorProperty] ===
+          probeContract.api.denial.errorValue
       )
-        body = { error: 'ACCESS_DENIED', visibleText, networkBody };
+        body = {
+          [probeContract.api.denial.errorProperty]: probeContract.api.denial.errorValue,
+          visibleText,
+          networkBody,
+        };
       const screenshot = await page.screenshot({ fullPage: true });
       requests.signal.throwIfAborted();
       stopRequests();
@@ -176,7 +188,7 @@ export class BrowserRunner {
           status: response.status(),
           body,
           transportError: false,
-          denialStatuses: feature.denialStatuses,
+          denialStatuses: probeContract.api.denial.statuses,
         },
         artifact: {
           id: artifactId,
@@ -193,7 +205,7 @@ export class BrowserRunner {
           status: null,
           body: null,
           transportError: true,
-          denialStatuses: feature.denialStatuses,
+          denialStatuses: probeContract.api.denial.statuses,
         },
         artifact: null,
       };

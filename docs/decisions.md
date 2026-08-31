@@ -1,12 +1,18 @@
 # Implementation decisions
 
+## 2026-08-31: Keep model review criterion-bound and subordinate to execution
+
+The evidence-review stage adapts the decomposition pattern from [`llm-as-a-verifier` at `8db8a114`](https://github.com/llm-as-a-verifier/llm-as-a-verifier/tree/8db8a114): split a claim into fixed criteria, send the same bound evidence to independent reviewers, require citations, and synthesize conservatively. The implementation and reviewer contract were inspected beyond that project's README. PaywallProof does not import its package, provider tournament, rank aggregation, or model-written test generation.
+
+The adaptation is deliberately narrower. Host code defines six immutable criteria, removes arbitrary report text before model access, validates every returned criterion and citation, and derives reviewer and synthesis verdicts in code. The two dynamic subagents cannot call tools or see one another's conclusions. Their receipt is advisory: it cannot upgrade or change the deterministic lifecycle outcome. A later cleanup or report-binding change marks the old review stale and requires an explicit new attempt.
+
 ## 2026-08-30: Separate lifecycle portability from repair trust
 
 PaywallProof now uses one versioned HTTP contract for owned staging targets. Adapter Doctor performs at most three read-only requests before fixture creation. It validates the target description, exact source-build identity, staging authentication, separation between the adapter credential and ordinary feature access, response type, cache policy, and one bounded feature descriptor. PaywallProof does not load executable adapter code from the target repository.
 
 This decision makes the lifecycle runner reusable without widening the repair boundary. Automated repair remains limited to the trusted `reference_v1` checkout, launcher, editable paths, and host-owned oracle. A target ID, origin, or repository override disables repair by default. Lifecycle compatibility cannot authorize source reads, model work, publication recovery, or a GitHub write.
 
-The second owned target counts only after an acceptance run. On August 30, TrueForge bound Revenue Intelligence OS commit `49e69922c37446bc229ea14571bba58db34a56ce` to a compatible Doctor receipt. The run passed 12/12 SC01 through SC04 assertions. Cleanup deleted both fixtures, and the session reached `done`. The run used `local_replay`. It proves lifecycle portability, not Polar delivery or repair portability.
+The second owned target counts only after an acceptance run. [Verification status](verification.md) records the executed AT29 run, its exact build binding, cleanup, and limits.
 
 ## 2026-08-28: Replace Stripe with Polar sandbox
 

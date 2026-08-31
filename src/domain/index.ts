@@ -160,6 +160,61 @@ export function aggregateVerdicts(input: unknown): RunOutcome {
     : 'inconclusive';
 }
 
+export const featureProbeRulesV1Schema = z.strictObject({
+  version: z.literal('paywallproof-feature-probe-v1'),
+  input: z.strictObject({
+    authentication: z.literal('ordinary_session_cookie'),
+    body: z.literal('none'),
+  }),
+  allow: z.strictObject({
+    status: z.literal(200),
+    markerProperty: z.literal('fixtureMarker'),
+    markerMatch: z.literal('exact'),
+  }),
+  denial: z.strictObject({
+    errorProperty: z.literal('error'),
+    errorValue: z.literal('ACCESS_DENIED'),
+    protectedMarker: z.literal('absent_at_any_depth'),
+  }),
+  browser: z.strictObject({
+    page: z.literal('fresh'),
+    profilePath: z.literal('/api/me'),
+    action: z.literal('click'),
+    statusAttribute: z.literal('data-status'),
+    allowStatus: z.literal('allowed'),
+    denyStatus: z.literal('denied'),
+    unavailableStatus: z.literal('unavailable'),
+    allowMarkerElement: z.literal('pre'),
+    allowMarkerMatch: z.literal('exact_network_marker'),
+    denialText: z.literal('non_empty'),
+    denialNetwork: z.literal('api_denial'),
+  }),
+});
+export type FeatureProbeRulesV1 = Readonly<z.infer<typeof featureProbeRulesV1Schema>>;
+export const FEATURE_PROBE_RULES_V1 = Object.freeze({
+  version: 'paywallproof-feature-probe-v1',
+  input: Object.freeze({ authentication: 'ordinary_session_cookie', body: 'none' }),
+  allow: Object.freeze({ status: 200, markerProperty: 'fixtureMarker', markerMatch: 'exact' }),
+  denial: Object.freeze({
+    errorProperty: 'error',
+    errorValue: 'ACCESS_DENIED',
+    protectedMarker: 'absent_at_any_depth',
+  }),
+  browser: Object.freeze({
+    page: 'fresh',
+    profilePath: '/api/me',
+    action: 'click',
+    statusAttribute: 'data-status',
+    allowStatus: 'allowed',
+    denyStatus: 'denied',
+    unavailableStatus: 'unavailable',
+    allowMarkerElement: 'pre',
+    allowMarkerMatch: 'exact_network_marker',
+    denialText: 'non_empty',
+    denialNetwork: 'api_denial',
+  }),
+}) satisfies FeatureProbeRulesV1;
+
 const probeFields = {
   status: z.number().int().min(100).max(599),
   body: z.unknown(),
@@ -206,10 +261,15 @@ export function evaluateProbe(input: unknown): ProbeResult {
     );
   }
   const record = body !== null && typeof body === 'object' && !Array.isArray(body) ? body : null;
-  const allows = probe.status === 200 && record?.fixtureMarker === fixtureMarker;
+  const allows =
+    probe.status === FEATURE_PROBE_RULES_V1.allow.status &&
+    record?.[FEATURE_PROBE_RULES_V1.allow.markerProperty] === fixtureMarker;
   const leaks = containsMarker(body);
   const denies =
-    probe.denialStatuses.includes(probe.status) && record?.error === 'ACCESS_DENIED' && !leaks;
+    probe.denialStatuses.includes(probe.status) &&
+    record?.[FEATURE_PROBE_RULES_V1.denial.errorProperty] ===
+      FEATURE_PROBE_RULES_V1.denial.errorValue &&
+    !leaks;
   if (expected.kind === 'deny' && leaks) return { verdict: 'fail', code: 'PROTECTED_DATA_LEAK' };
   if (expected.kind === 'allow' && allows) return { verdict: 'pass', code: 'ACCESS_ALLOWED' };
   if (expected.kind === 'deny' && denies) return { verdict: 'pass', code: 'ACCESS_DENIED' };

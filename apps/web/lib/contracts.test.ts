@@ -1,8 +1,36 @@
 import { describe, expect, it } from 'vitest';
 import { ADAPTER_DOCTOR_SCOPE, adapterDoctorReportSchema } from '#adapter-doctor';
-import { preflightSchema } from './contracts.ts';
+import { hashValue } from '#domain';
+import { detailSchema, preflightSchema } from './contracts.ts';
 
 describe('operator contracts', () => {
+  it('preserves actionable stop and runtime-cancellation failures', () => {
+    const result = detailSchema.partial().parse({
+      stopError: {
+        code: 'STOP_FINALIZATION_FAILED',
+        message: 'Cleanup could not be confirmed.',
+      },
+      runtimeCancelError: {
+        code: 'RUNTIME_CANCELLATION_FAILED',
+        message: 'The runtime cancellation request failed.',
+      },
+      continuationReconciliation: {
+        status: 'unknown',
+        continuations: [
+          {
+            kind: 'checkout',
+            status: 'unknown',
+            previousTurnId: 'turn-before-checkout',
+          },
+        ],
+      },
+    });
+
+    expect(result.stopError?.code).toBe('STOP_FINALIZATION_FAILED');
+    expect(result.runtimeCancelError?.code).toBe('RUNTIME_CANCELLATION_FAILED');
+    expect(result.continuationReconciliation?.status).toBe('unknown');
+  });
+
   it('parses the Adapter Doctor report and connection checks as one preflight result', () => {
     const feature = {
       id: 'pro_export',
@@ -34,7 +62,7 @@ describe('operator contracts', () => {
           billingTimeModel: 'provider_status',
           feature,
         },
-        featureConfigHash: 'b'.repeat(64),
+        featureConfigHash: hashValue(feature),
       },
     });
 

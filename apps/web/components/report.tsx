@@ -1,5 +1,6 @@
 import type { RunDetail } from '../lib/contracts';
 import { expectedRule } from '../lib/evidence-presentation';
+import { canStartEvidenceReview } from '../lib/workspace-presentation';
 import { ScenarioEvidence } from './evidence';
 import { Reproduction } from './findings';
 import {
@@ -22,6 +23,7 @@ export function RunReport({
   reviewing?: boolean;
 }) {
   const { run } = detail;
+  const reviewReady = canStartEvidenceReview(detail);
   const assertions = detail.scenarios.flatMap((scenario) => [
     scenario.api,
     scenario.browser,
@@ -142,7 +144,8 @@ export function RunReport({
         <section className="coverage-note">
           <div>
             <strong>Independent TrueForge review</strong>
-            {detail.evidenceReview?.status === 'completed' ? (
+            {detail.evidenceReview?.status === 'completed' &&
+            detail.evidenceReview.reportCurrent ? (
               <>
                 <p>
                   Two skill-guided dynamic subagents reviewed evidence coverage and binding
@@ -152,6 +155,22 @@ export function RunReport({
                   {detail.evidenceReview.verdict ?? 'Recorded'}
                 </Badge>
                 <JsonDetails title="Independent review receipt" value={detail.evidenceReview} />
+              </>
+            ) : detail.evidenceReview?.status === 'completed' ? (
+              <>
+                <p>
+                  This receipt reviews an earlier report. Cleanup or another bound report field has
+                  changed, so its verdict is preserved as history and is not current evidence.
+                </p>
+                <Badge tone="amber">Stale review</Badge>
+                <button
+                  className="button secondary small"
+                  disabled={!reviewReady || reviewing || !onReview}
+                  onClick={onReview}
+                >
+                  {reviewing ? 'Refreshing review…' : 'Review current report'}
+                </button>
+                <JsonDetails title="Earlier review receipt" value={detail.evidenceReview} />
               </>
             ) : detail.evidenceReview ? (
               <>
@@ -163,7 +182,7 @@ export function RunReport({
                 {detail.evidenceReview.status === 'error' && (
                   <button
                     className="button secondary small"
-                    disabled={reviewing || !onReview}
+                    disabled={!reviewReady || reviewing || !onReview}
                     onClick={onReview}
                   >
                     {reviewing ? 'Retrying review…' : 'Retry independent review'}
@@ -178,7 +197,7 @@ export function RunReport({
                 </p>
                 <button
                   className="button secondary small"
-                  disabled={run.status !== 'completed' || reviewing || !onReview}
+                  disabled={!reviewReady || reviewing || !onReview}
                   onClick={onReview}
                 >
                   {reviewing ? 'Starting review…' : 'Run independent review'}

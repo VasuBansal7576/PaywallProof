@@ -4,6 +4,8 @@ Automated repair is currently implemented only for the trusted `reference_v1` ch
 
 These routes use the same operator authentication, CSRF protection and X-Request-Id mutation deduplication as other control routes. No route accepts patches, test receipts, oracle replacements or arbitrary commands from the browser.
 
+Every entry point that starts or continues TrueForge work checks the run's project and exact persisted `modelConsentModel`. A changed or legacy-null consent blocks before selected source, observations, or a continuation are sent. Recovery cancels an existing publication turn instead of reusing withdrawn consent.
+
 - `POST /api/runs/:runId/repairs` accepts `{findingId?}`. A findingId is `SC01:api`, `SC01:browser`, `SC01:state` or the equivalent for SC02 through SC04. Omitting it selects the first recorded failed channel. The original run must be completed, have a confirmed failure and a recorded unchanged oracle. Two repair jobs maximum per original run; only one executes at once. Returns 202 with the persisted job.
 - `POST /api/runs/:runId/repairs/:jobId/cancel` accepts `{}` and requests termination of that job's local execution. It never cancels unrelated runs or provider objects.
 - `POST /api/runs/:runId/repairs/:jobId/publication-request` accepts `{}` after verified local repair evidence. It requests the exact publication approval and starts the TrueForge publication tool gate. No GitHub write occurs yet. Returns 202 with the current job view.

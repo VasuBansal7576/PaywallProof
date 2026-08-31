@@ -110,6 +110,7 @@ type Config = {
   documents: ControlDocuments;
   source: (runId: string) => Promise<RepairSource>;
   repairSupported: boolean;
+  authorizeRepairUse?(runId: string): void;
 };
 
 /** Owns repair execution. HTTP/model input can select a finding, never supply verification. */
@@ -155,6 +156,7 @@ export class RepairCoordinator {
     if (this.starting.has(runId)) throw new RepairError('REPAIR_IN_FLIGHT');
     this.starting.add(runId);
     try {
+      this.config.authorizeRepairUse?.(runId);
       const request = z
         .strictObject({
           findingId: z
@@ -508,6 +510,7 @@ export class RepairCoordinator {
   }
   async requestPublication(runId: string, jobId: string) {
     this.requireSupported();
+    this.config.authorizeRepairUse?.(runId);
     const job = this.job(runId, jobId);
     if (job.state !== 'verified_local' || !job.proposalId)
       throw new RepairError('VERIFICATION_REQUIRED');
@@ -569,6 +572,19 @@ export class RepairCoordinator {
       this.config.documents.get('repair-publication-intent', job.id);
     if (!raw) return;
     const intent = publicationIntentSchema.parse(raw);
+    try {
+      this.config.authorizeRepairUse?.(job.runId);
+    } catch {
+      this.config.documents.put('repair-publication-runtime', job.id, {
+        sessionId: job.sessionId,
+        turnId: job.turnId,
+        approvalId: intent.approvalId,
+        status: 'error',
+        error: 'REPAIR_PUBLICATION_CONSENT_CHANGED',
+      });
+      await this.runtime.cancel({ sessionId: job.sessionId }).catch(() => undefined);
+      return;
+    }
     const state = publicationRuntimeSchema.safeParse(
       this.config.documents.get('repair-publication-runtime', job.id),
     );
@@ -652,6 +668,7 @@ export class RepairCoordinator {
   }
   async decidePublication(runId: string, jobId: string, approvalId: string, input: unknown) {
     this.requireSupported();
+    this.config.authorizeRepairUse?.(runId);
     const request = z
         .strictObject({
           decision: z.enum(['allow', 'deny']),
@@ -741,6 +758,7 @@ export class RepairCoordinator {
   }
   async publishFromTool(runId: string, proposalId: string) {
     this.requireSupported();
+    this.config.authorizeRepairUse?.(runId);
     const record = this.getProposal(runId, proposalId);
     if (!record.approval || record.approval.decision !== 'allow')
       throw new RepairError('APPROVAL_REQUIRED');
@@ -767,10 +785,10 @@ export class RepairCoordinator {
         if (this.config.repairSupported) await this.recoverPublication(job);
         continue;
       }
-      await this.runtime.cancel({ sessionId: job.sessionId });
       job.state = 'abandoned';
       job.error = 'REPAIR_INTERRUPTED_NO_REDISPATCH';
       this.save(job);
+      await this.runtime.cancel({ sessionId: job.sessionId }).catch(() => undefined);
     }
   }
   cancel(runId: string, jobId: string) {

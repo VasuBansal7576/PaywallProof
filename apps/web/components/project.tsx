@@ -56,6 +56,8 @@ export function ProjectSetup({
             repository: config.repository,
             ref: config.defaultRef,
             targetId: config.target.id,
+            targetOrigin: config.target.origin,
+            modelConsentModel: config.model,
             ownershipConfirmed: ownership,
             modelConsent: consent,
           },
@@ -265,7 +267,9 @@ export function ProjectView({
   const configurationChanged =
     project.repository !== config.repository ||
     project.ref !== config.defaultRef ||
-    project.targetId !== config.target.id;
+    project.targetId !== config.target.id ||
+    project.targetOrigin !== config.target.origin ||
+    project.modelConsentModel !== config.model;
   const stoppingRun = runs.find((run) => run.status === 'stopping');
   async function savePolicy() {
     const featureConfigHash = adapterReceipt?.featureConfigHash;

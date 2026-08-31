@@ -21,12 +21,12 @@ let databasePath: string;
 let artifactDirectory: string;
 const applications = new Set<ControlApp>();
 
-function open(targetId = 'reference') {
+function open(targetId = 'reference', targetOrigin = 'http://127.0.0.1:39991') {
   const application = createControlApp({
     databasePath,
     artifactDirectory,
     targetId,
-    targetOrigin: 'http://127.0.0.1:39991',
+    targetOrigin,
     workerOrigin,
     webOrigin,
     adapterToken,
@@ -34,6 +34,8 @@ function open(targetId = 'reference') {
     operatorToken,
     repository,
     defaultRef,
+    reviewSkillRepository: 'VasuBansal7576/PaywallProof',
+    reviewSkillRef: 'b'.repeat(40),
     priceId: 'price_pro_synthetic',
     runtimeUrl: 'http://127.0.0.1:39992',
     model: 'synthetic-local-model',
@@ -79,6 +81,8 @@ function projectInput(overrides: Record<string, unknown> = {}) {
     repository,
     ref: defaultRef,
     targetId: 'reference',
+    targetOrigin: 'http://127.0.0.1:39991',
+    modelConsentModel: 'synthetic-local-model',
     ownershipConfirmed: true,
     modelConsent: true,
     ...overrides,
@@ -346,8 +350,9 @@ describe('independent control HTTP: origin, host, and CSRF', () => {
 });
 
 describe('independent control HTTP: configured scope and honest reads', () => {
+  // Implementation-aware post-review regression. This is not blind independent evidence.
   it('advertises and accepts a server-configured non-reference target id', async () => {
-    const targetId = 'revenue-intelligence-os';
+    const targetId = 'secondary-contract-target';
     const application = open(targetId);
 
     expect(
@@ -364,7 +369,7 @@ describe('independent control HTTP: configured scope and honest reads', () => {
     expect(await json(response)).toMatchObject({ targetId });
   });
 
-  it('reports configured target and unavailable Stripe without exposing credentials', async () => {
+  it('reports configured target and unavailable provider without exposing credentials', async () => {
     const application = open();
     const response = await request(application, '/api/config', 'GET', undefined, bearer());
     expect(response.status).toBe(200);
@@ -406,6 +411,8 @@ describe('independent control HTTP: configured scope and honest reads', () => {
     ['repository', 'foreign-owner/foreign-repository'],
     ['ref', 'unapproved-branch'],
     ['targetId', 'foreign-target'],
+    ['targetOrigin', 'http://127.0.0.1:49991'],
+    ['modelConsentModel', 'unapproved-model'],
   ])('rejects a project with an unconfigured %s', async (key, value) => {
     const application = open();
     await expectError(
@@ -433,8 +440,8 @@ describe('independent control HTTP: configured scope and honest reads', () => {
     ['name', ' padded'],
     ['repository', ' padded'],
     ['ref', 'main '],
+    ['targetOrigin', 'not-an-origin'],
     ['extra', true],
-    ['targetOrigin', 'http://127.0.0.1:39993'],
     ['operatorToken', 'replacement-token'],
   ])('rejects malformed or unknown project field %s', async (key, value) => {
     const application = open();
@@ -454,19 +461,25 @@ describe('independent control HTTP: configured scope and honest reads', () => {
     ).toEqual([]);
   });
 
-  it.each(['name', 'repository', 'ref', 'targetId', 'ownershipConfirmed', 'modelConsent'])(
-    'requires project field %s',
-    async (key) => {
-      const application = open();
-      const body: Record<string, unknown> = projectInput();
-      delete body[key];
-      await expectError(
-        await request(application, '/api/projects', 'POST', body, bearer('missing-field')),
-        400,
-        'INVALID_INPUT',
-      );
-    },
-  );
+  it.each([
+    'name',
+    'repository',
+    'ref',
+    'targetId',
+    'targetOrigin',
+    'modelConsentModel',
+    'ownershipConfirmed',
+    'modelConsent',
+  ])('requires project field %s', async (key) => {
+    const application = open();
+    const body: Record<string, unknown> = projectInput();
+    delete body[key];
+    await expectError(
+      await request(application, '/api/projects', 'POST', body, bearer('missing-field')),
+      400,
+      'INVALID_INPUT',
+    );
+  });
 
   it('rejects malformed JSON without creating a project', async () => {
     const application = open();
@@ -514,6 +527,21 @@ describe('independent control HTTP: configured scope and honest reads', () => {
         bearer(),
       ),
       404,
+    );
+  });
+
+  it('exposes cleanup retry only as an authenticated, request-idempotent run action', async () => {
+    const application = open();
+    await expectError(
+      await request(
+        application,
+        '/api/runs/missing-run/cleanup',
+        'POST',
+        {},
+        bearer('missing-run-cleanup'),
+      ),
+      404,
+      'NOT_FOUND',
     );
   });
 });
@@ -568,6 +596,30 @@ describe('independent control HTTP: durable action idempotency', () => {
     expect(
       await json(await request(reopened, '/api/projects', 'GET', undefined, bearer())),
     ).toEqual([first]);
+  });
+
+  // Implementation-aware post-review regression. This is not blind independent evidence.
+  it('keeps the consented target origin and fails closed after an origin-only restart change', async () => {
+    const application = open();
+    const first = await createProject(application, 'origin-bound-action');
+    expect(first).toMatchObject({ targetOrigin: 'http://127.0.0.1:39991' });
+    await close(application);
+
+    const reopened = open('reference', 'http://127.0.0.1:49991');
+    expect(
+      await json(await request(reopened, '/api/projects', 'GET', undefined, bearer())),
+    ).toEqual([first]);
+    await expectError(
+      await request(
+        reopened,
+        `/api/projects/${stringField(first, 'id')}/preflight`,
+        'POST',
+        { mode: 'local_replay' },
+        bearer('changed-origin-preflight'),
+      ),
+      409,
+      'PROJECT_CONFIG_CHANGED',
+    );
   });
 
   it('rejects reusing an action ID for changed arguments', async () => {

@@ -9,7 +9,7 @@ import { TargetTransport } from '#integrations/network';
 import { LocalReplayAdapter } from '#integrations/replay';
 
 // Signed synthetic LocalReplayAdapter delivery through actual reference handlers.
-// The only listening server binds an ephemeral loopback port. No Stripe SDK,
+// The only listening server binds an ephemeral loopback port. No provider SDK,
 // provider credentials, TrueForge endpoint, or external service is used.
 
 type Reference = ReturnType<typeof createReferenceApp>;

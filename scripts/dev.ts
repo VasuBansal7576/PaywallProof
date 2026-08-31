@@ -51,6 +51,7 @@ const env = {
   ARTIFACT_RETENTION_DAYS: process.env.ARTIFACT_RETENTION_DAYS ?? '60',
   STAGING_ENABLED: 'true',
   TARGET_BUILD_ID: build,
+  PAYWALLPROOF_REVIEW_SKILL_REF: build,
   TARGET_ADAPTER_TOKEN: config.adapterToken,
   LOCAL_REPLAY_SECRET: config.replaySecret,
   POLAR_WEBHOOK_SECRET: process.env.POLAR_WEBHOOK_SECRET ?? config.webhookSecret,

@@ -1,6 +1,10 @@
 import { type Billing, type AccessPolicy, hashValue } from '#domain';
 import { EvidenceStore, evaluateEvidence, type EvidenceEvaluation } from './index.ts';
-import { type TargetContractV1Adapter } from '#integrations/target-contract';
+import {
+  bindTargetFeatureProbe,
+  type TargetContractV1Adapter,
+  type TargetDescription,
+} from '#integrations/target-contract';
 import { type BrowserRunner } from '#integrations/browser';
 
 export class ScenarioError extends Error {
@@ -93,6 +97,7 @@ export async function observeFeature(input: {
   fixtureMarker: string;
   policy: AccessPolicy;
   targetBuild: string;
+  featureProbeHash: string;
   mode: 'local_replay' | 'polar_sandbox';
   notBefore: number;
   billing: () => Promise<Billing>;
@@ -103,12 +108,17 @@ export async function observeFeature(input: {
     },
   ) => void;
 }) {
+  const assertTargetBinding = (target: TargetDescription) => {
+    if (
+      target.buildId !== input.targetBuild ||
+      hashValue(target.feature) !== input.policy.featureConfigHash
+    )
+      throw new Error('TARGET_CHANGED');
+    if (bindTargetFeatureProbe(target.feature).hash !== input.featureProbeHash)
+      throw new Error('FEATURE_PROBE_BINDING_MISMATCH');
+  };
   const target = await input.target.describe();
-  if (
-    target.buildId !== input.targetBuild ||
-    hashValue(target.feature) !== input.policy.featureConfigHash
-  )
-    throw new Error('TARGET_CHANGED');
+  assertTargetBinding(target);
   const session = await input.target.session({ runId: input.runId, principalId: input.subjectId });
   // Cold browser startup may take longer than the evidence freshness window.
   // Observe it first, then obtain fresh independent reads. Never restamp old facts.
@@ -125,11 +135,7 @@ export async function observeFeature(input: {
   ]);
   const billing = provider.payload;
   const finalTarget = await input.target.describe();
-  if (
-    finalTarget.buildId !== input.targetBuild ||
-    hashValue(finalTarget.feature) !== input.policy.featureConfigHash
-  )
-    throw new Error('TARGET_CHANGED');
+  assertTargetBinding(finalTarget);
   const common = {
     runId: input.runId,
     scenarioId: input.scenarioId,

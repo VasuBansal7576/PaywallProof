@@ -59,7 +59,7 @@ async function close(store: EvidenceStore) {
   stores.delete(store);
 }
 
-function stripePayload(overrides: Record<string, unknown> = {}) {
+function providerPayload(overrides: Record<string, unknown> = {}) {
   return {
     livemode: false,
     identityResolved: true,
@@ -111,7 +111,7 @@ function observationInput(overrides: Record<string, unknown> = {}) {
     observedAt: observedNow,
     billingTime: 1_000,
     mode: 'local_replay',
-    payload: stripePayload(),
+    payload: providerPayload(),
     ...overrides,
   };
 }
@@ -122,7 +122,7 @@ async function collect(
   metadata: Record<string, unknown> = {},
 ) {
   const defaults: Record<Source, unknown> = {
-    billing_provider: stripePayload(),
+    billing_provider: providerPayload(),
     application: applicationPayload(),
     api_probe: probePayload(),
     browser: probePayload(),
@@ -381,7 +381,7 @@ describe('independent evidence: evaluation and state drift', () => {
 
   it('keeps stale application state separate from correct canceled-user access', async () => {
     const store = open();
-    const canceled = stripePayload();
+    const canceled = providerPayload();
     canceled.subscription.status = 'canceled';
     const denial = probePayload({ status: 403, body: { error: 'ACCESS_DENIED' } });
     const ids = await collect(store, {
@@ -400,7 +400,7 @@ describe('independent evidence: evaluation and state drift', () => {
 
   it('does not let a correct application label hide an actual canceled-user leak', async () => {
     const store = open();
-    const canceled = stripePayload();
+    const canceled = providerPayload();
     canceled.subscription.status = 'canceled';
     const ids = await collect(store, {
       billing_provider: { payload: canceled },
@@ -432,7 +432,7 @@ describe('independent evidence: evaluation and state drift', () => {
       store,
       {
         billing_provider: {
-          payload: stripePayload({
+          payload: providerPayload({
             noSubscriptionConfirmed: true,
             customerId: null,
             subscription: null,
@@ -485,17 +485,17 @@ describe('independent evidence: evaluation and state drift', () => {
     'cannot evaluate access from an unknown billing expectation',
     async (change) => {
       const store = open();
-      const ids = await collect(store, { billing_provider: { payload: stripePayload(change) } });
+      const ids = await collect(store, { billing_provider: { payload: providerPayload(change) } });
       expectAllInconclusive(await evaluateEvidence(store, evaluationInput(ids)));
     },
   );
 
   it('does not turn an unsupported subscription state into denial', async () => {
     const store = open();
-    const stripe = stripePayload();
-    stripe.subscription.status = 'trialing';
+    const provider = providerPayload();
+    provider.subscription.status = 'trialing';
     const ids = await collect(store, {
-      billing_provider: { payload: stripe },
+      billing_provider: { payload: provider },
       application: { payload: applicationPayload({ status: 'trialing' }) },
     });
     expectAllInconclusive(await evaluateEvidence(store, evaluationInput(ids)));
@@ -584,7 +584,7 @@ describe('independent evidence: provenance and freshness', () => {
     const store = open();
     const ids = await collect(store);
     await expectInvalid(() =>
-      evaluateEvidence(store, { ...evaluationInput(ids), billing_provider: stripePayload() }),
+      evaluateEvidence(store, { ...evaluationInput(ids), billing_provider: providerPayload() }),
     );
     await expectInvalid(() =>
       evaluateEvidence(store, { ...evaluationInput(ids), outcome: 'passed' }),

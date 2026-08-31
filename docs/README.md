@@ -11,7 +11,7 @@ The root [README](../README.md) explains the product and local setup. The [produ
 
 ## Contract archive
 
-The files in [`contracts/`](contracts/) are retained because the independent test suite cites them as the specifications it received before implementation. They are audit inputs, not extra setup guides.
+The files in [`contracts/`](contracts/) began as the specifications supplied to the independent test suite before implementation. A 2026-08-30 audit amended the probe-binding passages after implementation. Git history preserves the original text. Those amendments document the current contract and did not change the existing independent assertions.
 
 [`public-contracts.md`](public-contracts.md) contains the shared public types and rules used across those contracts.
 

@@ -1,5 +1,6 @@
 import { type IncomingHttpHeaders } from 'node:http';
 import { z } from 'zod';
+import { FEATURE_PROBE_RULES_V1, hashValue } from '#domain';
 import { TargetTransport } from './network.ts';
 
 const targetIdentifierSchema = z
@@ -23,15 +24,17 @@ const targetTestIdSchema = z
   .max(64)
   .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/);
 
+const targetDenialStatusesSchema = z
+  .array(z.number().int().min(400).max(499))
+  .min(1)
+  .max(16)
+  .refine((statuses) => new Set(statuses).size === statuses.length);
+
 export const targetFeatureSchema = z.strictObject({
   id: targetIdentifierSchema.max(100),
   method: z.literal('GET'),
   path: targetPathSchema,
-  denialStatuses: z
-    .array(z.number().int().min(400).max(499))
-    .min(1)
-    .max(16)
-    .refine((statuses) => new Set(statuses).size === statuses.length),
+  denialStatuses: targetDenialStatusesSchema,
   browserPath: targetPathSchema,
   actionTestId: targetTestIdSchema,
   resultTestId: targetTestIdSchema,
@@ -46,6 +49,99 @@ export const targetDescriptionSchema = z.strictObject({
   feature: targetFeatureSchema,
 });
 export type TargetDescription = Readonly<z.infer<typeof targetDescriptionSchema>>;
+
+export const targetFeatureProbeContractSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  rulesVersion: z.literal(FEATURE_PROBE_RULES_V1.version),
+  featureId: targetIdentifierSchema.max(100),
+  api: z.strictObject({
+    method: z.literal('GET'),
+    path: targetPathSchema,
+    input: z.strictObject({
+      authentication: z.literal(FEATURE_PROBE_RULES_V1.input.authentication),
+      body: z.literal(FEATURE_PROBE_RULES_V1.input.body),
+    }),
+    allow: z.strictObject({
+      status: z.literal(FEATURE_PROBE_RULES_V1.allow.status),
+      markerProperty: z.literal(FEATURE_PROBE_RULES_V1.allow.markerProperty),
+      markerMatch: z.literal(FEATURE_PROBE_RULES_V1.allow.markerMatch),
+    }),
+    denial: z.strictObject({
+      statuses: targetDenialStatusesSchema,
+      errorProperty: z.literal(FEATURE_PROBE_RULES_V1.denial.errorProperty),
+      errorValue: z.literal(FEATURE_PROBE_RULES_V1.denial.errorValue),
+      protectedMarker: z.literal(FEATURE_PROBE_RULES_V1.denial.protectedMarker),
+    }),
+  }),
+  browser: z.strictObject({
+    page: z.literal(FEATURE_PROBE_RULES_V1.browser.page),
+    profilePath: z.literal(FEATURE_PROBE_RULES_V1.browser.profilePath),
+    path: targetPathSchema,
+    action: z.strictObject({
+      kind: z.literal(FEATURE_PROBE_RULES_V1.browser.action),
+      testId: targetTestIdSchema,
+    }),
+    result: z.strictObject({
+      testId: targetTestIdSchema,
+      statusAttribute: z.literal(FEATURE_PROBE_RULES_V1.browser.statusAttribute),
+      allowStatus: z.literal(FEATURE_PROBE_RULES_V1.browser.allowStatus),
+      denyStatus: z.literal(FEATURE_PROBE_RULES_V1.browser.denyStatus),
+      unavailableStatus: z.literal(FEATURE_PROBE_RULES_V1.browser.unavailableStatus),
+    }),
+    network: z.strictObject({ method: z.literal('GET'), path: targetPathSchema }),
+    allow: z.strictObject({
+      markerElement: z.literal(FEATURE_PROBE_RULES_V1.browser.allowMarkerElement),
+      markerMatch: z.literal(FEATURE_PROBE_RULES_V1.browser.allowMarkerMatch),
+    }),
+    denial: z.strictObject({
+      visibleText: z.literal(FEATURE_PROBE_RULES_V1.browser.denialText),
+      network: z.literal(FEATURE_PROBE_RULES_V1.browser.denialNetwork),
+    }),
+  }),
+});
+export type TargetFeatureProbeContract = Readonly<z.infer<typeof targetFeatureProbeContractSchema>>;
+
+export function bindTargetFeatureProbe(input: unknown): Readonly<{
+  contract: TargetFeatureProbeContract;
+  hash: string;
+}> {
+  const feature = targetFeatureSchema.parse(input);
+  const contract = targetFeatureProbeContractSchema.parse({
+    schemaVersion: 1,
+    rulesVersion: FEATURE_PROBE_RULES_V1.version,
+    featureId: feature.id,
+    api: {
+      method: feature.method,
+      path: feature.path,
+      input: FEATURE_PROBE_RULES_V1.input,
+      allow: FEATURE_PROBE_RULES_V1.allow,
+      denial: { statuses: feature.denialStatuses, ...FEATURE_PROBE_RULES_V1.denial },
+    },
+    browser: {
+      page: FEATURE_PROBE_RULES_V1.browser.page,
+      profilePath: FEATURE_PROBE_RULES_V1.browser.profilePath,
+      path: feature.browserPath,
+      action: { kind: FEATURE_PROBE_RULES_V1.browser.action, testId: feature.actionTestId },
+      result: {
+        testId: feature.resultTestId,
+        statusAttribute: FEATURE_PROBE_RULES_V1.browser.statusAttribute,
+        allowStatus: FEATURE_PROBE_RULES_V1.browser.allowStatus,
+        denyStatus: FEATURE_PROBE_RULES_V1.browser.denyStatus,
+        unavailableStatus: FEATURE_PROBE_RULES_V1.browser.unavailableStatus,
+      },
+      network: { method: feature.method, path: feature.path },
+      allow: {
+        markerElement: FEATURE_PROBE_RULES_V1.browser.allowMarkerElement,
+        markerMatch: FEATURE_PROBE_RULES_V1.browser.allowMarkerMatch,
+      },
+      denial: {
+        visibleText: FEATURE_PROBE_RULES_V1.browser.denialText,
+        network: FEATURE_PROBE_RULES_V1.browser.denialNetwork,
+      },
+    },
+  });
+  return Object.freeze({ contract, hash: hashValue(contract) });
+}
 
 export const targetPrincipalIdSchema = z
   .string()
@@ -184,14 +280,17 @@ export class TargetContractV1Adapter {
     );
   }
 
-  async cleanup(input: { runId: string; principalId: string }) {
+  async cleanup(input: { runId: string; principalId: string; beforeDispatch?: () => void }) {
     const receipt = targetCleanupReceiptSchema.safeParse(
       await this.call(
         `/staging/users/${principalPath(input.principalId)}?runId=${encodeURIComponent(input.runId)}`,
         200,
         'DELETE',
         undefined,
-        () => this.beforeMutation?.(input.runId, 'cleanup'),
+        () => {
+          this.beforeMutation?.(input.runId, 'cleanup');
+          input.beforeDispatch?.();
+        },
       ),
     );
     if (
@@ -204,12 +303,16 @@ export class TargetContractV1Adapter {
   }
 
   async probe(cookie: string, feature: TargetDescription['feature']) {
-    const response = await this.transport.request(feature.path, { headers: { Cookie: cookie } });
+    const probe = bindTargetFeatureProbe(feature).contract;
+    const response = await this.transport.request(probe.api.path, {
+      method: probe.api.method,
+      headers: { Cookie: cookie },
+    });
     return {
       status: response.status,
       body: response.body,
       transportError: false,
-      denialStatuses: feature.denialStatuses,
+      denialStatuses: probe.api.denial.statuses,
     };
   }
 }

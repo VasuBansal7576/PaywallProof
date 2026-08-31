@@ -11,7 +11,7 @@ import {
   policySchema,
   verdictSchema,
 } from '#domain';
-import { targetFeatureSchema } from '#integrations/target-contract';
+import { bindTargetFeatureProbe, targetFeatureSchema } from '#integrations/target-contract';
 
 export class ControlError extends Error {
   constructor(readonly code: string) {
@@ -24,9 +24,11 @@ const createSchema = z.strictObject({
   policy: policySchema,
   targetBuild: identifier,
   featureConfigHash: digest,
+  featureProbeHash: digest.optional(),
   targetFeature: targetFeatureSchema.optional(),
   mode: z.enum(['polar_sandbox', 'local_replay']),
   projectConfigHash: digest.optional(),
+  cleanupConfigHash: digest.optional(),
 });
 export const runSchema = createSchema.extend({
   id: identifier,
@@ -64,17 +66,32 @@ const claimSchema = z.strictObject({
   approvalId: identifier,
   leaseMs: z.number().int().min(1).max(30000),
 });
+const confirmedOperationSchema = z.strictObject({
+  runId: identifier,
+  operationId: identifier,
+  kind: operationKind,
+  args: z.record(z.string(), z.unknown()),
+});
 const operationSchema = z.strictObject({
   operationId: identifier,
   runId: identifier,
   kind: operationKind,
+  args: z.record(z.string(), z.unknown()).optional(),
   argsHash: digest,
   state: z.enum(['dispatched', 'unknown', 'confirmed']),
   idempotencyKey: identifier,
   leaseUntil: milliseconds,
   receipt: z.unknown(),
 });
-type Operation = z.infer<typeof operationSchema>;
+export type RunOperation = z.infer<typeof operationSchema>;
+type Operation = RunOperation;
+const operationQuerySchema = z.strictObject({
+  runId: identifier,
+  states: z
+    .array(z.enum(['dispatched', 'unknown', 'confirmed']))
+    .max(3)
+    .optional(),
+});
 const eventSchema = z.object({
   sequence: z.number().int(),
   type: identifier,
@@ -87,6 +104,8 @@ const externalWaitSchema = z.strictObject({
   startedAt: milliseconds,
   endedAt: milliseconds,
 });
+const externalWaitCreditRequestSchema = externalWaitSchema.pick({ runId: true, waitId: true });
+const externalWaitCreditSchema = externalWaitSchema.pick({ startedAt: true, endedAt: true });
 export const RUN_LIMITS = Object.freeze({
   users: 2,
   customers: 1,
@@ -174,6 +193,12 @@ export function openRunStore(options: { path: string; clock?: () => number }) {
         )
           throw new ControlError('INVALID_INPUT');
         if (
+          config.featureProbeHash !== undefined &&
+          (config.targetFeature === undefined ||
+            bindTargetFeatureProbe(config.targetFeature).hash !== config.featureProbeHash)
+        )
+          throw new ControlError('INVALID_INPUT');
+        if (
           database
             .prepare('SELECT 1 FROM runs WHERE project_id=? AND active=1')
             .get(config.projectId)
@@ -213,6 +238,24 @@ export function openRunStore(options: { path: string; clock?: () => number }) {
     getRun(id: unknown): RunRecord {
       return boundary(() => loadRun(id));
     },
+    /**
+     * Returns a durable receipt before checking mutable live-run preconditions.
+     * Exact retries remain readable after completion or configuration drift; changed
+     * arguments under the same operation ID remain a conflict.
+     */
+    confirmedOperation(input: unknown): Operation | null {
+      return boundary(() => {
+        const request = confirmedOperationSchema.parse(parseJson(input, 36));
+        const args = parseJson(request.args);
+        const run = loadRun(request.runId);
+        const operation = loadOperation(request.operationId);
+        if (!operation) return null;
+        if (operation.runId !== run.id) throw new ControlError('OWNERSHIP_MISMATCH');
+        if (operation.kind !== request.kind || operation.argsHash !== hashValue(args))
+          throw new ControlError('OPERATION_CONFLICT');
+        return operation.state === 'confirmed' ? operation : null;
+      });
+    },
     decidePlan(input: unknown): RunRecord {
       return transactional(() => {
         const decision = decisionSchema.parse(parseJson(input));
@@ -240,6 +283,18 @@ export function openRunStore(options: { path: string; clock?: () => number }) {
         return run;
       });
     },
+    externalWaitCredit(input: unknown): z.infer<typeof externalWaitCreditSchema> | null {
+      return boundary(() => {
+        const request = externalWaitCreditRequestSchema.parse(parseJson(input));
+        loadRun(request.runId);
+        const credit = database
+          .prepare(
+            'SELECT started_at AS startedAt,ended_at AS endedAt FROM external_wait_credits WHERE run_id=? AND wait_id=?',
+          )
+          .get(request.runId, request.waitId);
+        return credit === undefined ? null : externalWaitCreditSchema.parse(credit);
+      });
+    },
     creditExternalWait(input: unknown): RunRecord {
       return transactional(() => {
         const request = externalWaitSchema.parse(parseJson(input));
@@ -250,9 +305,7 @@ export function openRunStore(options: { path: string; clock?: () => number }) {
           )
           .get(request.runId, request.waitId);
         if (previous) {
-          const credited = z
-            .object({ startedAt: milliseconds, endedAt: milliseconds })
-            .parse(previous);
+          const credited = externalWaitCreditSchema.parse(previous);
           if (credited.startedAt !== request.startedAt || credited.endedAt !== request.endedAt)
             throw new ControlError('OPERATION_CONFLICT');
           return run;
@@ -285,7 +338,7 @@ export function openRunStore(options: { path: string; clock?: () => number }) {
     } {
       return transactional(() => {
         const claim = claimSchema.parse(parseJson(input, 36));
-        const args = parseJson(claim.args);
+        const args = z.record(z.string(), z.unknown()).parse(parseJson(claim.args));
         const run = loadRun(claim.runId);
         const previous = loadOperation(claim.operationId);
         if (previous && previous.runId !== run.id) throw new ControlError('OWNERSHIP_MISMATCH');
@@ -321,6 +374,7 @@ export function openRunStore(options: { path: string; clock?: () => number }) {
           operationId: claim.operationId,
           runId: run.id,
           kind: claim.kind,
+          args,
           argsHash,
           state: 'dispatched',
           idempotencyKey: `pp:${run.id}:${claim.operationId}:${argsHash}`,
@@ -336,6 +390,41 @@ export function openRunStore(options: { path: string; clock?: () => number }) {
           argsHash,
         });
         return { kind: 'dispatch', operation };
+      });
+    },
+    operations(input: unknown): RunOperation[] {
+      return boundary(() => {
+        const request = operationQuerySchema.parse(parseJson(input));
+        loadRun(request.runId);
+        const states = request.states ? new Set(request.states) : null;
+        return database
+          .prepare('SELECT record FROM operations WHERE run_id=? ORDER BY id')
+          .all(request.runId)
+          .map((row) =>
+            operationSchema.parse(JSON.parse(z.object({ record: z.string() }).parse(row).record)),
+          )
+          .filter((operation) => !states || states.has(operation.state));
+      });
+    },
+    abandonDispatched(input: unknown): RunOperation[] {
+      return transactional(() => {
+        const request = z.strictObject({ runId: identifier }).parse(parseJson(input));
+        loadRun(request.runId);
+        const operations = database
+          .prepare('SELECT record FROM operations WHERE run_id=? ORDER BY id')
+          .all(request.runId)
+          .map((row) =>
+            operationSchema.parse(JSON.parse(z.object({ record: z.string() }).parse(row).record)),
+          );
+        for (const operation of operations) {
+          if (operation.state !== 'dispatched') continue;
+          operation.state = 'unknown';
+          saveOperation(operation);
+          event(request.runId, 'operation.unknown', { operationId: operation.operationId });
+        }
+        return operations
+          .filter((operation) => operation.state === 'unknown')
+          .map((operation) => operationSchema.parse(parseJson(operation)));
       });
     },
     confirmOperation(input: unknown): Operation {

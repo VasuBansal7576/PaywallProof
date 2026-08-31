@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { createReferenceApp } from '#reference';
 
 // Real local HTTP handlers and SQLite; synthetic signed local_replay only.
-// No Stripe key, provider client, external HTTP request, or real secret is used.
+// No live provider key, provider client, external HTTP request, or real secret is used.
 
 type Target = ReturnType<typeof createReferenceApp>;
 type User = { principalId: string; runId: string; fixtureMarker: string };
@@ -1154,7 +1154,7 @@ describe('independent reference: malformed boundaries and fault controls', () =>
     expect(() => open({ replaySecret: webhookSecret })).toThrow();
   });
 
-  it('rejects a live Stripe key before any provider call', () => {
+  it('rejects a legacy live-provider key before any provider call', () => {
     expect(() => open({ polarToken: 'sk_live_SYNTHETIC_REJECT_BEFORE_NETWORK' })).toThrow();
   });
 

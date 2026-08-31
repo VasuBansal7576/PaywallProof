@@ -234,4 +234,26 @@ describe('recorded evidence presentation', () => {
     expect(markup).toContain('View screenshot');
     expect(markup).not.toContain('<img');
   });
+
+  it('disables the independent review action until the lifecycle runtime is terminal', () => {
+    const blocked = renderToStaticMarkup(
+      createElement(RunReport, { detail: fixture(), onReview: () => {} }),
+    );
+    const blockedButton = /<button[^>]*>Run independent review<\/button>/.exec(blocked)?.[0];
+    expect(blockedButton).toContain('disabled=""');
+
+    const readyDetail = fixture();
+    readyDetail.runtime = {
+      sessionId: 'review-session',
+      turnId: 'lifecycle-turn',
+      lastSequenceNumber: 1,
+      status: 'done',
+    };
+    const ready = renderToStaticMarkup(
+      createElement(RunReport, { detail: readyDetail, onReview: () => {} }),
+    );
+    const readyButton = /<button[^>]*>Run independent review<\/button>/.exec(ready)?.[0];
+    expect(readyButton).toBeDefined();
+    expect(readyButton).not.toContain('disabled=""');
+  });
 });
