@@ -571,7 +571,9 @@ Each evidence file has a SHA-256 hash, content type, collection source, and coll
 
 ### 10.1 TrueForge responsibilities
 
-Use one TrueForge session per run. Register the restricted MCP server and enable the configured sandbox. The model reads approved project context, calls the restricted tools, investigates findings, and writes the repair.
+Use one TrueForge lifecycle session per run. Register the restricted MCP server and enable the configured sandbox. The model reads approved project context, calls the restricted tools, investigates findings, and writes the repair.
+
+An operator-requested evidence review starts a separate post-run TrueForge session. That auxiliary session mounts an immutable review-skill commit and receives only the read-and-record review tools. Its two dynamic subagents inspect the same data-only report projection independently. The review session cannot resume lifecycle work, change the saved outcome, prepare a repair, or publish code.
 
 The default agent instructions MUST require evidence-backed claims, respect unsupported capabilities, forbid self-approval, and forbid changes to the policy or test oracle during a repair. These instructions supplement server enforcement; they are not the security boundary.
 
@@ -583,7 +585,7 @@ The current SDK documents `sessions.create`, `createTurnStream`, `getTurn`, `sub
 
 Persist session ID, turn ID, and stream sequence number. Reconnect to a running turn with `subscribeToTurn` and its saved sequence. If the turn has ended, rebuild the display from stored events. Do not create a new turn to recover a dropped display connection.
 
-Before opening HTTP or MCP serving, recover persisted control state. Before reconnecting or continuing an approved lifecycle, revalidate the saved project configuration, schema-v2 Adapter Doctor receipt, feature descriptor, code-owned probe hash, and process-local Polar sandbox preflight. A legacy or drifted run remains readable but MUST NOT rearm its TrueForge session. Cleanup requires its separately bound destinations; unrelated model/runtime drift cannot block it, while changed target or Polar destinations fail before intent and remain retryable.
+Before opening HTTP or MCP serving, recover persisted lifecycle, repair, and evidence-review state. Before reconnecting or continuing an approved lifecycle, revalidate the saved project configuration, schema-v2 Adapter Doctor receipt, feature descriptor, code-owned probe hash, and process-local Polar sandbox preflight. A legacy or drifted run remains readable but MUST NOT rearm its TrueForge lifecycle session. Reconcile a dispatched plan or checkout continuation through read-only turn lookup. If lookup cannot prove the continuation, expose an unknown continuation receipt and do not resend it. Cleanup requires its separately bound destinations; unrelated model or runtime drift cannot block it, while changed target or Polar destinations fail before intent and remain retryable. Evidence-review recovery requires unchanged processing consent, a completed run, and the exact saved report binding.
 
 TrueForge approval pauses arrive through required actions. Resume the paused call with the SDK's matching `user.tool_approval`, including the original tool call and thread reference. A turn with a pending approval is not a completed product run.
 

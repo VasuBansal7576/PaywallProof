@@ -508,7 +508,7 @@ describe('skill-backed evidence review', () => {
     await coordinator.start(runId);
     const registration = runtime.registerMcpServer.mock.calls[0]?.[0];
     const token = new Headers(registration?.headers).get('authorization')?.replace(/^Bearer /, '');
-    const completed = await coordinator.tool(runId, 'record_evidence_review', completedReview);
+    await coordinator.tool(runId, 'record_evidence_review', completedReview);
     authorized = false;
 
     expect(coordinator.authorize(runId, token ?? '')).toBe(false);
@@ -794,7 +794,7 @@ describe('skill-backed evidence review', () => {
     await coordinator.start(runId);
     await vi.waitFor(() => expect(runtime.cancel).toHaveBeenCalledTimes(1));
 
-    const completed = await coordinator.tool(runId, 'record_evidence_review', completedReview);
+    await coordinator.tool(runId, 'record_evidence_review', completedReview);
     finishCancellation?.(undefined);
 
     await new Promise<void>((resolve) => setTimeout(resolve, 0));

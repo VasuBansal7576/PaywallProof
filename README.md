@@ -40,6 +40,8 @@ The main flow is:
 
 After a run, a separate TrueForge session can review the saved report. The repository's `paywallproof-evidence-review` skill starts two dynamically delegated reviewers with read-only report access. Their synthesis is stored separately and cannot change the primary verdict.
 
+The worker pins that skill to an immutable Git commit. `pnpm dev` uses the current commit for `PAYWALLPROOF_REVIEW_SKILL_REF`. If you start `pnpm dev:worker` directly, set `PAYWALLPROOF_REVIEW_SKILL_REF` yourself. You can also set `PAYWALLPROOF_REVIEW_SKILL_REPOSITORY`; it defaults to `VasuBansal7576/PaywallProof`.
+
 ## Repository map
 
 | Path                                  | Purpose                                                                  |

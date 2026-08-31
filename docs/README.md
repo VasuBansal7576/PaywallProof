@@ -8,6 +8,7 @@ The root [README](../README.md) explains the product and local setup. The [produ
 - [Implementation decisions](decisions.md) records decisions that changed the runtime or its trust boundary.
 - [Codex subscription boundary](codex-subscription.md) documents model access, spending controls, and privacy limits.
 - [Repair sandbox](repair-sandbox.md) describes the isolation boundary for generated repairs.
+- [Product UI API contract](contracts/http-contract.md) records lifecycle, continuation-recovery, and post-run evidence-review responses.
 
 ## Contract archive
 
